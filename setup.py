@@ -22,6 +22,8 @@ setup(
         'django>=2.1,<3',
         'django-db-signals',
         'djangorestframework',
+        'cached-property',
+        'nepalicalendar',
     ],   
     classifiers=[
         'Environment :: Web Environment',
