@@ -14,5 +14,5 @@ def displayshortformat(self):
 NepDate.displayshortformat = displayshortformat
 
 def displaylongformat(self):
-    return "%s %s %s %s" % (self.weekday_name, self.ne_day, self.month_name, self.ne_year)
+    return "%s %s %s %s" % (self.weekday_name(), self.ne_day, self.month_name(), self.ne_year)
 NepDate.displaylongformat = displaylongformat

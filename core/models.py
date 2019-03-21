@@ -1,18 +1,30 @@
 import sys
 import json
 import logging
+import uuid
 from django.db import models
 from cached_property import cached_property
 
 logger = logging.getLogger(__name__)
 
 """
+Abstract entity, parent of all (new) openIMIS entities.
+Enforces the UUID identifier.
+"""
+class UUIDModel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    class Meta:
+        abstract = True
+    def __str__(self):
+        return "[%s]" %(self.id)
+
+"""
 Generic entity to save every modules' configuration (json format)
 """
-class ModuleConfiguration(models.Model):
+class ModuleConfiguration(UUIDModel):
     module = models.CharField(max_length=20)
     version = models.CharField(max_length=10)
-    config = models.CharField(max_length=1024)
+    config = models.TextField()
 
     @classmethod
     def get_or_default(cls, module, default):
