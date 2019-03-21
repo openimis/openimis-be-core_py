@@ -1,34 +1,34 @@
 from django.test import TestCase
-from ..dates.ad_date import AdDate
+from ..datetimes.ad_datetime import date
 from .ad_calendar import *
 
 
 class CalendarTestCase(TestCase):
     def test_weekfirstday(self):
-        dte = AdDate(2019, 3, 19)
+        dte = date(2019, 3, 19)
         fwd = weekfirstday(dte)
-        self.assertEqual(fwd, AdDate(2019, 3, 18))
+        self.assertEqual(fwd, date(2019, 3, 18))
 
     def test_weeklastday(self):
-        dte = AdDate(2019, 3, 19)
+        dte = date(2019, 3, 19)
         fwd = weeklastday(dte)
-        self.assertEqual(fwd, AdDate(2019, 3, 24))
+        self.assertEqual(fwd, date(2019, 3, 24))
 
     def test_monthfirstday(self):
         dte = monthfirstday(2019, 3)
-        self.assertEqual(dte, AdDate(2019, 3, 1))
+        self.assertEqual(dte, date(2019, 3, 1))
 
     def test_monthlastday(self):
         dte = monthlastday(2019, 3)
-        self.assertEqual(dte, AdDate(2019, 3, 31))
+        self.assertEqual(dte, date(2019, 3, 31))
 
     def test_yearfirstday(self):
         dte = yearfirstday(2019)
-        self.assertEqual(dte, AdDate(2019, 1, 1))
+        self.assertEqual(dte, date(2019, 1, 1))
 
     def test_yearlastday(self):
         dte = yearlastday(2019)
-        self.assertEqual(dte, AdDate(2019, 12, 31))
+        self.assertEqual(dte, date(2019, 12, 31))
 
     def test_monthdayscount(self):
         self.assertEqual(29, monthdayscount(2020, 2))

@@ -13,11 +13,12 @@ this = sys.modules[MODULE_NAME]
 DEFAULT_CFG = {
     "calendar_package": "core",
     "calendar_module": ".calendars.ad_calendar",
-    "date_package": "core",
-    "date_module": ".dates.ad_date",
-    "date_class": "AdDate",
+    "datetime_package": "core",
+    "datetime_module": ".datetimes.ad_datetime",
     "shortstrfdate": "%d/%m/%Y",
     "longstrfdate": "%a %d %B %Y",
+    "db_raw_date": "True",
+    "iso_raw_date": "True",
 }
 
 
@@ -28,21 +29,19 @@ class CoreConfig(AppConfig):
         return importlib.import_module(
             cfg["%s_module" % k], package=cfg["%s_package" % k])
 
-    def _import_class(self, cfg, k):
-        return getattr(self._import_module(cfg, k), cfg["%s_class" % k])
-
     def _configure_calendar(self, cfg):
         this.shortstrfdate = cfg["shortstrfdate"]
         this.longstrfdate = cfg["longstrfdate"]
+        this.db_raw_date = False if cfg["db_raw_date"] == None else cfg["db_raw_date"].lower() == "true"
+        this.iso_raw_date = False if cfg["iso_raw_date"] == None else cfg["iso_raw_date"].lower() == "true"
         try:
             this.calendar = self._import_module(cfg, "calendar")
-            this.date = self._import_class(cfg, "date")            
+            this.datetime = self._import_module(cfg, "datetime")            
         except:
             logger.error('Failed to configure calendar, using default!\n%s: %s' % (
                 sys.exc_info()[0].__name__, sys.exc_info()[1]))
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
-            this.date = self._import_class(DEFAULT_CFG, "date")
-        print("date class is %s" % this.date)
+            this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
     def ready(self):
         from .models import ModuleConfiguration
