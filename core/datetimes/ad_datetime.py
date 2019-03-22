@@ -20,7 +20,7 @@ class AdDate(py_date):
     def from_db_date(cls, value):
         if value is None:
             return None
-        return value
+        return AdDate(value.year, value.month, value.day)
 
     def to_db_date(self):
         return self
@@ -35,6 +35,14 @@ class AdDate(py_date):
         return self.strftime(core.shortstrfdate)
 
     def displaylongformat(self):
-        return self.strftime(core.longstrfdate)
+        return selfstrftime(core.longstrfdate)
+
+    def __add__(self, other):
+        dt = super(AdDate, self).__add__(other)
+        return AdDate(dt.year, dt.month, dt.day)
+
+    def __sub__(self, other):
+        dt = super(AdDate, self).__sub__(other)
+        return AdDate(dt.year, dt.month, dt.day)       
 
 date = AdDate
