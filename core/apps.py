@@ -17,7 +17,6 @@ DEFAULT_CFG = {
     "datetime_module": ".datetimes.ad_datetime",
     "shortstrfdate": "%d/%m/%Y",
     "longstrfdate": "%a %d %B %Y",
-    "db_raw_date": "True",
     "iso_raw_date": "True",
 }
 
@@ -33,7 +32,6 @@ class CoreConfig(AppConfig):
     def _configure_calendar(self, cfg):
         this.shortstrfdate = cfg["shortstrfdate"]
         this.longstrfdate = cfg["longstrfdate"]
-        this.db_raw_date = False if cfg["db_raw_date"] == None else cfg["db_raw_date"].lower() == "true"
         this.iso_raw_date = False if cfg["iso_raw_date"] == None else cfg["iso_raw_date"].lower() == "true"
         try:
             this.calendar = self._import_module(cfg, "calendar")

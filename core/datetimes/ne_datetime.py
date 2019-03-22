@@ -48,20 +48,12 @@ date.to_ad_date = to_ad_date
 def from_db_date(cls, value):
     if value is None:
         return None
-    if core.db_raw_date:
-        dt = date(value.year, value.month, value.day)
-        dt.update()        
-        return dt
-    else:
-        ad_dt = py_datetime.date(value.year, value.month, value.day)
-        dt = date.from_ad_date(ad_dt)
-        dt.update()
-        return dt
+    ad_dt = py_datetime.date(value.year, value.month, value.day)
+    dt = date.from_ad_date(ad_dt)
+    dt.update()
+    return dt
 date.from_db_date = classmethod(from_db_date)
 
 def to_db_date(self):
-    if core.db_raw_date:
-        return py_datetime.date(self.year, self.month, self.day)
-    else:
-        return self.to_ad_date()  
+    return self.to_ad_date()  
 date.to_db_date = to_db_date
