@@ -25,10 +25,16 @@ class AdDate(py_date):
     def to_db_date(self):
         return self
 
+    def raw_isoformat(self):
+        return self.isoformat()
+
+    def ad_isoformat(self):
+        return self.isoformat()
+
     def displayshortformat(self):
         return self.strftime(core.shortstrfdate)
 
     def displaylongformat(self):
         return self.strftime(core.longstrfdate)
-    pass
+
 date = AdDate

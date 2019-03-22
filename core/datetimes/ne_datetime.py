@@ -1,10 +1,6 @@
 import sys
 from nepalicalendar import NepDate
 from nepalicalendar import values
-# from datetime import timedelta as py_timedelta
-# from datetime import time as py_time
-# from datetime import tzinfo as py_tzinfo
-# from datetime import timezone as py_timezone
 import datetime as py_datetime
 
 """
@@ -19,12 +15,20 @@ tzinfo = py_datetime.tzinfo
 timezone = py_datetime.timezone
 date = NepDate
 
+def raw_isoformat(self):
+    return "{0:04d}-{1:02d}-{2:02d}".format(self.year, self.month, self.day)
+date.raw_isoformat = raw_isoformat
+
+def ad_isoformat(self):
+    dt = self.to_ad_date()
+    return "{0:04d}-{1:02d}-{2:02d}".format(dt.year, dt.month, dt.day)
+date.ad_isoformat = ad_isoformat
+
 def isoformat(self):
     if core.iso_raw_date:
-        return "{0:04d}-{1:02d}-{2:02d}".format(self.year, self.month, self.day)
+        return self.raw_isoformat()
     else:
-        dt = self.to_ad_date()
-        return "{0:04d}-{1:02d}-{2:02d}".format(dt.year, dt.month, dt.day)
+        return self.ad_isoformat()
 date.isoformat = isoformat
 
 def displayshortformat(self):
@@ -56,5 +60,8 @@ def from_db_date(cls, value):
 date.from_db_date = classmethod(from_db_date)
 
 def to_db_date(self):
-    return self    
+    if core.db_raw_date:
+        return py_datetime.date(self.year, self.month, self.day)
+    else:
+        return self.to_ad_date()  
 date.to_db_date = to_db_date

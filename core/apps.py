@@ -26,6 +26,7 @@ class CoreConfig(AppConfig):
     name = MODULE_NAME
 
     def _import_module(self, cfg, k):
+        logger.info('import %s.%s' %(cfg["%s_module" % k], cfg["%s_package" % k]))
         return importlib.import_module(
             cfg["%s_module" % k], package=cfg["%s_package" % k])
 
@@ -42,7 +43,7 @@ class CoreConfig(AppConfig):
                 sys.exc_info()[0].__name__, sys.exc_info()[1]))
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
-
+        
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(
