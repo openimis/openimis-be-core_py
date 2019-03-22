@@ -35,7 +35,7 @@ class AdDate(py_date):
         return self.strftime(core.shortstrfdate)
 
     def displaylongformat(self):
-        return selfstrftime(core.longstrfdate)
+        return self.strftime(core.longstrfdate)
 
     def __add__(self, other):
         dt = super(AdDate, self).__add__(other)
