@@ -32,24 +32,6 @@ class AdDate(py_date):
     def to_ad_datetime(self):
         return AdDatetime(self.year, self.month, self.day)
 
-    @classmethod
-    def from_db_date(cls, value):
-        if value is None:
-            return None
-        return AdDate(value.year, value.month, value.day)
-
-    def to_db_date(self):
-        return self
-
-    @classmethod
-    def from_db_datetime(cls, value):
-        if value is None:
-            return None
-        return AdDate(value.year, value.month, value.day)
-
-    def to_db_datetime(self):
-        return py_datetime(self.year, self.month, self.day)
-
     def raw_isoformat(self):
         return self.isoformat()
 
@@ -89,26 +71,6 @@ class AdDatetime(py_datetime):
                           value.tzinfo)
 
     def to_ad_datetime(self):
-        return self
-
-    @classmethod
-    def from_db_date(cls, value):
-        if value is None:
-            return None
-        return AdDatetime(value.year, value.month, value.day)
-
-    def to_db_date(self):
-        return py_date(self.year, self.month, self.day)
-
-    @classmethod
-    def from_db_datetime(cls, value):
-        if value is None:
-            return None
-        return AdDatetime(value.year, value.month, value.day,
-                          value.hour, value.minute, value.second, value.microsecond,
-                          value.tzinfo)
-
-    def to_db_datetime(self):
         return self
 
 

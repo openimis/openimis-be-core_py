@@ -86,22 +86,10 @@ def from_ad_datetime(cls, value):
 
 date.from_ad_datetime = classmethod(from_ad_datetime)
 
-date.from_db_date = date.from_ad_date
-date.from_db_datetime = date.from_ad_date
+def __repr__(self):
+    return "NepDate(%d, %d, %d)" % (self.year, self.month, self.day)
 
-
-def to_db_date(self):
-    return self.to_ad_date()
-
-
-date.to_db_date = to_db_date
-
-
-def to_db_datetime(self):
-    return self.to_ad_datetime()
-
-
-date.to_db_datetime = to_db_datetime
+date.__repr__ = __repr__
 
 
 class NepDatetime(object):
@@ -145,6 +133,30 @@ class NepDatetime(object):
     def __eq__(self, other):
         return self._date == other._date and self._time == other._time and self._fold == other._fold
 
+    def __gt__(self, other):
+        if self._date >  other._date:
+            return True
+        if self._date <  other._date:
+            return False
+        return self._time > other._time
+
+    def __lt__(self, other):
+        return (not self == other) and (not self > other)
+
+    def __ge__(self, other):
+        return not self < other
+
+    def __le__(self, other):
+        return not self > other
+
+    def __add__(self, other):
+        dt = self.to_ad_datetime + other
+        return self.from_ad_datetime(dt.year, dt.month, dt.day)
+
+    def __sub__(self, other):
+        dt = self.to_ad_datetime() - other
+        return self.from_ad_datetime(dt.year, dt.month, dt.day)
+        
     def __repr__(self):
         return "NepDatetime(%d, %d, %d, %d, %d, %d, %d, %s, %d)" % (
             self._date.year, self._date.month, self._date.day,

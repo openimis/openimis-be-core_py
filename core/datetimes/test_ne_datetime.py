@@ -33,6 +33,24 @@ class DateTestCase(TestCase):
         dt_plus = dt + timedelta(days=14)
         self.assertEquals(date(2075, 11, 7), dt_plus)
 
+    def test_sub_days(self):
+        dt = date(2075, 10, 11)
+        dt_plus = dt - timedelta(days=14)
+        self.assertEquals(date(2075, 9, 27), dt_plus)
+
+    def test_eq_gt_lt(self):
+        dt = date(2076, 3, 11)
+        dt_bis = date(2076, 3, 11)
+        dt_after = date(2076, 3, 12)
+        self.assertTrue(dt == dt_bis)
+        self.assertTrue(dt >= dt_bis)
+        self.assertTrue(dt <= dt_bis)
+        self.assertTrue(dt < dt_after)
+        self.assertTrue(dt <= dt_after)
+        self.assertTrue(dt_after > dt)
+        self.assertTrue(dt_after >= dt)
+
+
 
 class DatetimeTestCase(TestCase):
     def test_from_ad_date(self):
@@ -49,3 +67,37 @@ class DatetimeTestCase(TestCase):
         looped_dt = ne_dt.to_ad_datetime()
         self.assertEqual(looped_dt, py_datetime(
             2020, 1, 13, 11, 23, 42, 123987))
+
+    def test_to_ad_date(self):
+        ne_dt = datetime(2076, 9, 28, 11, 22, 33, 444555)
+        ad_dt = ne_dt.to_ad_date()
+        py_dt = py_date(2020, 1, 13)
+        self.assertEqual(ad_dt, py_dt)
+
+    def test_to_ad_datetime(self):
+        ne_dt = datetime(2076, 9, 28, 11, 22, 33, 444555)
+        ad_dt = ne_dt.to_ad_datetime()
+        py_dt = py_datetime(2020, 1, 13, 11, 22, 33, 444555)
+        self.assertEqual(ad_dt, py_dt)
+
+    def test_add_days(self):
+        dt = date(2075, 10, 22)
+        dt_plus = dt + timedelta(days=14)
+        self.assertEquals(date(2075, 11, 7), dt_plus)
+
+    def test_sub_days(self):
+        dt = date(2075, 10, 11)
+        dt_plus = dt - timedelta(days=14)
+        self.assertEquals(date(2075, 9, 27), dt_plus)
+
+    def test_eq_gt_lt(self):
+        dt = datetime(2076, 3, 11)
+        dt_bis = datetime(2076, 3, 11)
+        dt_after = datetime(2076, 3, 12)
+        self.assertTrue(dt == dt_bis)
+        self.assertTrue(dt >= dt_bis)
+        self.assertTrue(dt <= dt_bis)
+        self.assertTrue(dt < dt_after)
+        self.assertTrue(dt <= dt_after)
+        self.assertTrue(dt_after > dt)
+        self.assertTrue(dt_after >= dt)
