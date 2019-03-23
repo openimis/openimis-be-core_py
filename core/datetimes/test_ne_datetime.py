@@ -38,7 +38,7 @@ class DateTestCase(TestCase):
         dt_plus = dt - timedelta(days=14)
         self.assertEquals(date(2075, 9, 27), dt_plus)
 
-    def test_eq_gt_lt(self):
+    def test_eq_gt_ge_lt_le(self):
         dt = date(2076, 3, 11)
         dt_bis = date(2076, 3, 11)
         dt_after = date(2076, 3, 12)
@@ -90,10 +90,22 @@ class DatetimeTestCase(TestCase):
         dt_plus = dt - timedelta(days=14)
         self.assertEquals(date(2075, 9, 27), dt_plus)
 
-    def test_eq_gt_lt(self):
+    def test_date_eq_gt_ge_lt_le(self):
         dt = datetime(2076, 3, 11)
         dt_bis = datetime(2076, 3, 11)
         dt_after = datetime(2076, 3, 12)
+        self.assertTrue(dt == dt_bis)
+        self.assertTrue(dt >= dt_bis)
+        self.assertTrue(dt <= dt_bis)
+        self.assertTrue(dt < dt_after)
+        self.assertTrue(dt <= dt_after)
+        self.assertTrue(dt_after > dt)
+        self.assertTrue(dt_after >= dt)
+
+    def test_datetime_eq_gt_ge_lt_le(self):
+        dt = datetime(2076, 3, 11, 11, 12, 13, 567999)
+        dt_bis = datetime(2076, 3, 11, 11, 12, 13, 567999)
+        dt_after = datetime(2076, 3, 11, 11, 12, 13, 568999)
         self.assertTrue(dt == dt_bis)
         self.assertTrue(dt >= dt_bis)
         self.assertTrue(dt <= dt_bis)
