@@ -1,44 +1,51 @@
+import sys
+import importlib
+import core
 from django.test import TestCase
 from datetime import date as py_date
-from ..datetimes.ne_datetime import date
-from .ne_calendar import *
 
 
 class CalendarTestCase(TestCase):
+    def setUp(self):
+        core.calendar = importlib.import_module(
+            '.calendars.ne_calendar', 'core')
+        core.datetime = importlib.import_module(
+            '.datetimes.ne_datetime', 'core')
+
     def test_from_ad_date(self):
-        dt = date.from_ad_date(py_date(2020, 1, 13))
-        self.assertEqual(dt, date(2076, 9, 28))
+        dt = core.datetime.date.from_ad_date(py_date(2020, 1, 13))
+        self.assertEqual(dt, core.datetime.date(2076, 9, 28))
 
     def test_weekfirstday(self):
-        dt = date(2076, 9, 28)
-        fwd = weekfirstday(dt)
-        self.assertEqual(fwd, date(2076, 9, 27))
+        dt = core.datetime.date(2076, 9, 28)
+        fwd = core.calendar.weekfirstday(dt)
+        self.assertEqual(fwd, core.datetime.date(2076, 9, 27))
 
     def test_weeklastday(self):
-        dt = date(2076, 9, 28)
-        fwd = weeklastday(dt)
-        self.assertEqual(fwd, date(2076, 10, 4))
+        dt = core.datetime.date(2076, 9, 28)
+        fwd = core.calendar.weeklastday(dt)
+        self.assertEqual(fwd, core.datetime.date(2076, 10, 4))
 
     def test_monthfirstday(self):
-        dt = monthfirstday(2076, 9)
-        self.assertEqual(dt, date(2076, 9, 1))
+        dt = core.calendar.monthfirstday(2076, 9)
+        self.assertEqual(dt, core.datetime.date(2076, 9, 1))
 
     def test_monthlastday(self):
-        dt = monthlastday(2019, 2)
-        self.assertEqual(dt, date(2019, 2, 32))
+        dt = core.calendar.monthlastday(2019, 2)
+        self.assertEqual(dt, core.datetime.date(2019, 2, 32))
 
     def test_yearfirstday(self):
-        dt = yearfirstday(2075)
-        self.assertEqual(dt, date(2075, 1, 1))
+        dt = core.calendar.yearfirstday(2075)
+        self.assertEqual(dt, core.datetime.date(2075, 1, 1))
 
     def test_yearlastday(self):
-        dt = yearlastday(2075)
-        self.assertEqual(dt, date(2075, 12, 30))
+        dt = core.calendar.yearlastday(2075)
+        self.assertEqual(dt, core.datetime.date(2075, 12, 30))
 
     def test_monthdayscount(self):
-        self.assertEqual(32, monthdayscount(2019, 2))
-        self.assertEqual(29, monthdayscount(2075, 10))              
+        self.assertEqual(32, core.calendar.monthdayscount(2019, 2))
+        self.assertEqual(29, core.calendar.monthdayscount(2075, 10))
 
     def test_yeardayscount(self):
-        self.assertEqual(365, yeardayscount(2076))
-        self.assertEqual(366, yeardayscount(2077))        
+        self.assertEqual(365, core.calendar.yeardayscount(2076))
+        self.assertEqual(366, core.calendar.yeardayscount(2077))

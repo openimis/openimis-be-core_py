@@ -37,6 +37,9 @@ def yearlastday(year):
 def monthdayscount(year: int, month: int):
     return monthrange(year, month)[1]
 
+def yearmonthscount(year: int):
+    return 12
+
 def yeardayscount(year: int):
     return sum(values.NEPALI_MONTH_DAY_DATA[year])
 

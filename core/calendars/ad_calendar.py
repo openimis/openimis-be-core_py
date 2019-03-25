@@ -31,5 +31,8 @@ def yearlastday(year: int):
 def monthdayscount(year: int, month: int):
     return monthrange(year, month)[1]
 
+def yearmonthscount(year: int):
+    return 12
+    
 def yeardayscount(year: int):
     return 366 if isleap(year) else 365
