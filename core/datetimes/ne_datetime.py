@@ -51,18 +51,21 @@ class NeDate(NepDate):
     @classmethod
     def from_ad_date(cls, date):
         if date is None:
-            return None        
+            return None
         ne_dte = NepDate.from_ad_date(date)
-        return NeDate(ne_dte.year, ne_dte.month, ne_dte.day)
+        return NeDate(ne_dte.year, ne_dte.month, ne_dte.day).update()
 
     @classmethod
     def from_ad_datetime(cls, value):
         if value is None:
             return None
         ad_dt = py_datetime.date(value.year, value.month, value.day)
-        dt = date.from_ad_date(ad_dt)
-        dt.update()
-        return dt
+        return date.from_ad_date(ad_dt)
+
+    @classmethod
+    def today(cls):
+        nep_today = NepDate.today()
+        return NeDate(nep_today.year, nep_today.month, nep_today.day).update()
 
     def __add__(self, other):
         if isinstance(other, datedelta):
@@ -71,7 +74,7 @@ class NeDate(NepDate):
 
     def __sub__(self, other):
         if isinstance(other, datedelta):
-            return datedelta.add_to_date(-other, self)   
+            return datedelta.add_to_date(-other, self)
         return super(NeDate, self).__sub__(other)
 
     def __repr__(self):
@@ -85,7 +88,9 @@ class NeDate(NepDate):
     def __str__(self):
         return self.raw_isoformat()
 
+
 date = NeDate
+
 
 class NeDatetime(object):
     __slots__ = ['_date', '_time', '_fold']
@@ -136,8 +141,8 @@ class NeDatetime(object):
         ne_dte = NeDate.from_ad_date(py_datetime.date(
             datetime.year, datetime.month, datetime.day))
         return NeDatetime(ne_dte.year, ne_dte.month, ne_dte.day,
-                           datetime.hour, datetime.minute, datetime.second, datetime.microsecond,
-                           datetime.tzinfo)
+                          datetime.hour, datetime.minute, datetime.second, datetime.microsecond,
+                          datetime.tzinfo)
 
     def to_ad_datetime(self):
         start_date = NeDate(values.START_NP_YEAR, 1, 1)
