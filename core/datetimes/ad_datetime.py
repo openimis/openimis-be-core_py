@@ -49,13 +49,17 @@ class AdDate(py_date):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(other, self)
         dt = super(AdDate, self).__add__(other)
-        return AdDate(dt.year, dt.month, dt.day)
+        if isinstance(dt, py_date):
+            return AdDate(dt.year, dt.month, dt.day)
+        return dt
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDate, self).__sub__(other)
-        return AdDate(dt.year, dt.month, dt.day)
+        if isinstance(dt, py_date):
+            return AdDate(dt.year, dt.month, dt.day)
+        return dt
 
     def __repr__(self):
         L = [self.year, self.month, self.day]
@@ -68,6 +72,8 @@ class AdDate(py_date):
 
 
 date = AdDate
+date.min = AdDate(1, 1, 1)
+date.max = AdDate(9999, 12, 31)
 
 
 class AdDatetime(py_datetime):
@@ -102,14 +108,17 @@ class AdDatetime(py_datetime):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(other, self)
         dt = super(AdDatetime, self).__add__(other)
-        return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
+        if isinstance(dt, py_date):
+            return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
+        return dt
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDatetime, self).__sub__(other)
-        return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
-       
+        if isinstance(dt, py_date):
+            return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
+        return dt
 
     def __repr__(self):
         L = [self.year, self.month, self.day,
