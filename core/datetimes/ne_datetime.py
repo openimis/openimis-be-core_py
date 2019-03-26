@@ -49,10 +49,16 @@ class NeDate(NepDate):
         return py_datetime.datetime(ad_date.year, ad_date.month, ad_date.day)
 
     @classmethod
-    def from_ad_date(cls, date):
-        if date is None:
+    def from_ad_date(cls, dt):
+        if isinstance(dt, py_datetime.datetime):
+            dt = py_datetime.date(dt.year, dt.month, dt.day)
+        if dt is None:
             return None
-        ne_dte = NepDate.from_ad_date(date)
+        if dt < values.START_EN_DATE:
+            return date.min
+        if dt > values.END_EN_DATE:
+            return date.max
+        ne_dte = NepDate.from_ad_date(dt)
         return NeDate(ne_dte.year, ne_dte.month, ne_dte.day).update()
 
     @classmethod
@@ -96,6 +102,11 @@ class NeDate(NepDate):
 
 
 date = NeDate
+date.min = NeDate.from_ad_date(values.START_EN_DATE)
+date.max = NeDate.from_ad_date(values.END_EN_DATE)
+date.min_ad = values.START_EN_DATE
+date.max_ad = values.END_EN_DATE
+date.resolution = timedelta(days=1)
 
 
 class NeDatetime(object):
@@ -147,12 +158,16 @@ class NeDatetime(object):
         return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
 
     @classmethod
-    def from_ad_datetime(cls, datetime):
+    def from_ad_datetime(cls, dt):
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day):
+            return datetime.min
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999):
+            return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
-            datetime.year, datetime.month, datetime.day))
+            dt.year, dt.month, dt.day))
         return NeDatetime(ne_dte.year, ne_dte.month, ne_dte.day,
-                          datetime.hour, datetime.minute, datetime.second, datetime.microsecond,
-                          datetime.tzinfo)
+                          dt.hour, dt.minute, dt.second, dt.microsecond,
+                          dt.tzinfo)
 
     def to_ad_datetime(self):
         start_date = NeDate(values.START_NP_YEAR, 1, 1)
@@ -163,14 +178,20 @@ class NeDatetime(object):
                                     self._time.tzinfo)
 
     @classmethod
-    def from_ad_date(cls, date):
+    def from_ad_date(cls, dt):
+        if isinstance(dt, py_datetime.date):
+            dt = py_datetime.datetime(dt.year, dt.month, dt.day)
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day):
+            return datetime.min
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999):
+            return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
-            date.year, date.month, date.day))
+            dt.year, dt.month, dt.day))
         return NeDatetime(ne_dte.year, ne_dte.month, ne_dte.day)
 
-    def to_ad_date(date):
+    def to_ad_date(self):
         start_date = NeDate(values.START_NP_YEAR, 1, 1)
-        days = date.date() - start_date
+        days = self.date() - start_date
         ad_dt = values.START_EN_DATE + days
         return py_datetime.date(ad_dt.year, ad_dt.month, ad_dt.day)
 
@@ -187,11 +208,27 @@ class NeDatetime(object):
         return NotImplemented
 
     def __gt__(self, other):
-        if self._date > other._date:
-            return True
-        if self._date < other._date:
-            return False
-        return self._time > other._time
+        if isinstance(other, NeDatetime):
+            if self._date > other._date:
+                return True
+            if self._date < other._date:
+                return False
+            return self._time > other._time
+        if isinstance(other, NeDate):
+            if self.year > other.year:
+                return True
+            if self.year < other.year:
+                return False
+            if self.month > other.month:
+                return True
+            if self.month < other.month:
+                return False
+            if self.day > other.day:
+                return True
+            if self.year < other.day:
+                return False
+            return self.hour > 0 or self.minute > 0 or self.second > 0 or self.microsecond > 0
+        return NotImplemented
 
     def __lt__(self, other):
         return (not self == other) and (not self > other)
@@ -206,15 +243,21 @@ class NeDatetime(object):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_datetime(other, self)
         if isinstance(other, NeDatetime):
-            return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other.to_ad_datetime))
-        return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other))
+            return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other.to_ad_datetime()))
+        dt = self.to_ad_datetime().__add__(other)
+        if isinstance(dt, py_datetime.datetime):
+            return NeDatetime.from_ad_datetime(dt)
+        return dt
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(-other, self)
         if isinstance(other, NeDatetime):
-            return NeDatetime.from_ad_datetime(self.to_ad_datetime().__sub__(other.to_ad_datetime))
-        return NeDatetime.from_ad_datetime(self.to_ad_datetime().__sub__(other))
+            return self.to_ad_datetime().__sub__(other.to_ad_datetime())
+        dt = self.to_ad_datetime().__sub__(other)
+        if isinstance(dt, py_datetime.datetime):
+            return NeDatetime.from_ad_datetime(dt)
+        return dt
 
     def __repr__(self):
         L = [self._date.year, self._date.month, self._date.day,
@@ -242,3 +285,10 @@ class NeDatetime(object):
 
 
 datetime = NeDatetime
+datetime.min = NeDatetime(date.min.year, date.min.month, date.min.day)
+datetime.max = NeDatetime(date.max.year, date.max.month,
+                          date.max.day, 23, 59, 59, 999999)
+datetime.min_ad = py_datetime.datetime(
+    date.min_ad.year, date.min_ad.month, date.min_ad.day)
+datetime.max_ad = py_datetime.datetime(
+    date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999)

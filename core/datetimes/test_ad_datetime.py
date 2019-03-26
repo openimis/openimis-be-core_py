@@ -48,41 +48,53 @@ class DateTestCase(TestCase):
 
     def test_add_sub_years(self):
         dt = core.datetime.date(2020, 10, 22)
-        self.assertEquals(core.datetime.date(2022, 10, 22), (dt + datetimedelta(years=2)))
-        self.assertEquals(core.datetime.date(2018, 10, 22), (dt + datetimedelta(years=-2)))
-        self.assertEquals(core.datetime.date(2022, 10, 22), (dt - datetimedelta(years=-2)))
-        self.assertEquals(core.datetime.date(2018, 10, 22), (dt - datetimedelta(years=2)))
+        self.assertEquals(core.datetime.date(2022, 10, 22),
+                          (dt + datetimedelta(years=2)))
+        self.assertEquals(core.datetime.date(2018, 10, 22),
+                          (dt + datetimedelta(years=-2)))
+        self.assertEquals(core.datetime.date(2022, 10, 22),
+                          (dt - datetimedelta(years=-2)))
+        self.assertEquals(core.datetime.date(2018, 10, 22),
+                          (dt - datetimedelta(years=2)))
 
     def test_add_sub_months(self):
         dt = core.datetime.date(2020, 10, 22)
-        self.assertEquals(core.datetime.date(2020, 12, 22), (dt + datetimedelta(months=2)))
-        self.assertEquals(core.datetime.date(2020, 8, 22), (dt + datetimedelta(months=-2)))
-        self.assertEquals(core.datetime.date(2020, 8, 22), (dt - datetimedelta(months=2)))
-        self.assertEquals(core.datetime.date(2020, 12, 22), (dt - datetimedelta(months=-2)))
+        self.assertEquals(core.datetime.date(2020, 12, 22),
+                          (dt + datetimedelta(months=2)))
+        self.assertEquals(core.datetime.date(2020, 8, 22),
+                          (dt + datetimedelta(months=-2)))
+        self.assertEquals(core.datetime.date(2020, 8, 22),
+                          (dt - datetimedelta(months=2)))
+        self.assertEquals(core.datetime.date(2020, 12, 22),
+                          (dt - datetimedelta(months=-2)))
 
     def test_add_sub_days(self):
         dt = core.datetime.date(2019, 3, 22)
-        self.assertEquals(core.datetime.date(2019, 4, 5), (dt + core.datetime.timedelta(days=14)))
-        self.assertEquals(core.datetime.date(2019, 4, 5), (dt - core.datetime.timedelta(days= -14)))
+        self.assertEquals(core.datetime.date(2019, 4, 5),
+                          (dt + core.datetime.timedelta(days=14)))
+        self.assertEquals(core.datetime.date(2019, 4, 5),
+                          (dt - core.datetime.timedelta(days=-14)))
 
         dt = core.datetime.date(2019, 3, 11)
-        self.assertEquals(core.datetime.date(2019, 2, 25), (dt - core.datetime.timedelta(days=14)))
-        self.assertEquals(core.datetime.date(2019, 2, 25), (dt + core.datetime.timedelta(days= -14)))
+        self.assertEquals(core.datetime.date(2019, 2, 25),
+                          (dt - core.datetime.timedelta(days=14)))
+        self.assertEquals(core.datetime.date(2019, 2, 25),
+                          (dt + core.datetime.timedelta(days=-14)))
 
     def test_add_sub_mixed(self):
         dt = core.datetime.date(2020, 10, 22)
         self.assertEquals(
             core.datetime.date(2020, 12, 6),
-             (dt + datetimedelta(months= 1, days=14)))
+            (dt + datetimedelta(months=1, days=14)))
         self.assertEquals(
             core.datetime.date(2021, 2, 28),
-             (dt + 4 * datetimedelta(months= 1, days=1, hours=14, seconds=36)))
+            (dt + 4 * datetimedelta(months=1, days=1, hours=14, seconds=36)))
         self.assertEquals(
             core.datetime.datetime(2020, 10, 22),
-             (dt + datetimedelta(days=-1, hours=24)))
+            (dt + datetimedelta(days=-1, hours=24)))
         self.assertEquals(
             core.datetime.date(2021, 2, 20),
-             (dt + 4 * datetimedelta(months= 1, days=-1, hours=14, seconds=36)))
+            (dt + 4 * datetimedelta(months=1, days=-1, hours=14, seconds=36)))
 
     def test_eq_gt_ge_lt_le(self):
         dt = core.datetime.date(2019, 3, 11)
@@ -95,6 +107,15 @@ class DateTestCase(TestCase):
         self.assertTrue(dt <= dt_after)
         self.assertTrue(dt_after > dt)
         self.assertTrue(dt_after >= dt)
+
+    def test_diff(self):
+        ne_dt_1 = core.datetime.date(2019, 12, 7)
+        ne_dt_2 = core.datetime.date(2019, 12, 8)
+        self.assertEqual(ne_dt_2 - ne_dt_1, core.datetime.timedelta(1))
+
+        ne_dt_1 = core.datetime.date(2019, 12, 7)
+        ne_dt_2 = core.datetime.date(2020, 1, 7)
+        self.assertEqual(ne_dt_2 - ne_dt_1, core.datetime.timedelta(days=31))
 
 
 class DatetimeTestCase(TestCase):
@@ -124,7 +145,7 @@ class DatetimeTestCase(TestCase):
             core.datetime.datetime(2022, 10, 22, 14, 25, 44, 876134),
             (dt + datetimedelta(years=2)))
         self.assertEquals(
-            core.datetime.datetime(2018, 10, 22, 14, 25, 44,876134),
+            core.datetime.datetime(2018, 10, 22, 14, 25, 44, 876134),
             (dt + datetimedelta(years=-2)))
         self.assertEquals(
             core.datetime.datetime(2022, 10, 22, 14, 25, 44, 876134),
@@ -165,16 +186,16 @@ class DatetimeTestCase(TestCase):
         dt = core.datetime.datetime(2019, 10, 22, 5, 33, 24, 786222)
         self.assertEquals(
             core.datetime.datetime(2019, 12, 6, 5, 33, 24, 786222),
-             (dt + datetimedelta(months= 1, days=14)))
+            (dt + datetimedelta(months=1, days=14)))
         self.assertEquals(
             core.datetime.datetime(2020, 2, 28, 13, 35, 48, 786222),
-             (dt + 4 * datetimedelta(months= 1, days=1, hours=14, seconds=36)))
+            (dt + 4 * datetimedelta(months=1, days=1, hours=14, seconds=36)))
         self.assertEquals(
             core.datetime.datetime(2019, 10, 22, 5, 33, 24, 786222),
-             (dt + datetimedelta(days=-1, hours=24)))
+            (dt + datetimedelta(days=-1, hours=24)))
         self.assertEquals(
             core.datetime.datetime(2020, 2, 20, 13, 35, 48, 786222),
-             (dt + 4 * datetimedelta(months= 1, days=-1, hours=14, seconds=36)))
+            (dt + 4 * datetimedelta(months=1, days=-1, hours=14, seconds=36)))
 
     def test_eq_gt_ge_lt_le(self):
         dt = core.datetime.datetime(2019, 3, 11)
@@ -187,3 +208,13 @@ class DatetimeTestCase(TestCase):
         self.assertTrue(dt <= dt_after)
         self.assertTrue(dt_after > dt)
         self.assertTrue(dt_after >= dt)
+
+    def test_diff(self):
+        ne_dt_1 = core.datetime.datetime(2019, 12, 7)
+        ne_dt_2 = core.datetime.datetime(2019, 12, 8)
+        self.assertEqual(ne_dt_2 - ne_dt_1, core.datetime.timedelta(1))
+
+        ne_dt_1 = core.datetime.datetime(2019, 12, 7, 11, 5, 34, 999999)
+        ne_dt_2 = core.datetime.datetime(2020, 1, 7, 11, 7, 34, 999999)
+        self.assertEqual(ne_dt_2 - ne_dt_1,
+                         core.datetime.timedelta(days=31, minutes=2))
