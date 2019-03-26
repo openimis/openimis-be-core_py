@@ -4,7 +4,7 @@ from datetime import tzinfo as py_tzinfo
 from datetime import timezone as py_timezone
 from datetime import date as py_date
 from datetime import datetime as py_datetime
-from .shared import datedelta
+from .shared import datetimedelta
 
 """
 Standard Gregorian date,
@@ -46,14 +46,14 @@ class AdDate(py_date):
         return self.strftime(core.longstrfdate)
 
     def __add__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date(other, self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date(other, self)
         dt = super(AdDate, self).__add__(other)
         return AdDate(dt.year, dt.month, dt.day)
 
     def __sub__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date((other * -1), self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDate, self).__sub__(other)
         return AdDate(dt.year, dt.month, dt.day)
 
@@ -87,15 +87,26 @@ class AdDatetime(py_datetime):
     def to_ad_datetime(self):
         return self
 
+    def __eq__(self, other):
+        if isinstance(other, py_datetime):
+            return self.year == other.year and self.month == other.month and self.day == other.day \
+                and self.hour == other.hour and self.minute == other.minute and self.second == other.second and self.microsecond == other.microsecond \
+                and self.tzinfo == other.tzinfo and self.fold == other.fold
+        if isinstance(other, py_date):
+            return self.year == other.year and self.month == other.month and self.day == other.day \
+                and self.hour == 0 and self.minute == 0 and self.second == 0 and self.microsecond == 0 \
+                and self.fold == 0
+        return NotImplemented
+
     def __add__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date(other, self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date(other, self)
         dt = super(AdDatetime, self).__add__(other)
         return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
 
     def __sub__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date((other * -1), self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDatetime, self).__sub__(other)
         return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
        

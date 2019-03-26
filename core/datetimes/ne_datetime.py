@@ -2,7 +2,7 @@ import sys
 from nepalicalendar import NepDate
 from nepalicalendar import values
 import datetime as py_datetime
-from .shared import datedelta
+from .shared import datetimedelta
 
 """
 Nepali date (from https://github.com/nepalicalendar/nepalicalendar-py),
@@ -68,14 +68,20 @@ class NeDate(NepDate):
         return NeDate(nep_today.year, nep_today.month, nep_today.day).update()
 
     def __add__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date(other, self)
-        return super(NeDate, self).__add__(other)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date(other, self)
+        dt = super(NeDate, self).__add__(other)
+        if isinstance(dt, NepDate):
+            return NeDate(dt.year, dt.month, dt.day).update()
+        return dt
 
     def __sub__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date(-other, self)
-        return super(NeDate, self).__sub__(other)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date(-other, self)
+        dt = super(NeDate, self).__sub__(other)
+        if isinstance(dt, NepDate):
+            return NeDate(dt.year, dt.month, dt.day).update()
+        return dt
 
     def __repr__(self):
         L = [self.year, self.month, self.day]
@@ -133,6 +139,10 @@ class NeDatetime(object):
     def tzinfo(self):
         return self._time.tzinfo
 
+    @property
+    def fold(self):
+        return self._fold
+
     def isoformat(self, *args, **kwargs):
         return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
 
@@ -168,7 +178,13 @@ class NeDatetime(object):
         return self._date
 
     def __eq__(self, other):
-        return self._date == other._date and self._time == other._time and self._fold == other._fold
+        if isinstance(other, NeDatetime):
+            return self._date == other._date and self._time == other._time and self.fold == other.fold
+        if isinstance(other, NeDate):
+            return self.year == other.year and self.month == other.month and self.day == other.day \
+                and self.hour == 0 and self.minute == 0 and self.second == 0 and self.microsecond == 0 \
+                and self.fold == 0
+        return NotImplemented
 
     def __gt__(self, other):
         if self._date > other._date:
@@ -187,15 +203,15 @@ class NeDatetime(object):
         return not self > other
 
     def __add__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_datetime(other, self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_datetime(other, self)
         if isinstance(other, NeDatetime):
             return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other.to_ad_datetime))
         return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other))
 
     def __sub__(self, other):
-        if isinstance(other, datedelta):
-            return datedelta.add_to_date(-other, self)
+        if isinstance(other, datetimedelta):
+            return datetimedelta.add_to_date(-other, self)
         if isinstance(other, NeDatetime):
             return NeDatetime.from_ad_datetime(self.to_ad_datetime().__sub__(other.to_ad_datetime))
         return NeDatetime.from_ad_datetime(self.to_ad_datetime().__sub__(other))
