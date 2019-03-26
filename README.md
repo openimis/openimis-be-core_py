@@ -20,5 +20,13 @@ For example, to mount the nepali calendar (instead of the default gregorian one)
 }
 ```
 
-The core also exposes the configured calendar to be used instead of the standard python (gregorian) calendar.
-This calendar is dedicated to be switchable (and today openIMIS supports gregorian and nepali calendars) and provides helpers method to perform date calculations according to the configured calendar (add months, years,...)
+The core also exposes the configured calendar to be used instead of the standard python (gregorian) calendar. This calendar is dedicated to be switchable (and today openIMIS supports gregorian and nepali calendars) and provides helpers method to perform date calculations according to the configured calendar (add months, years,....)
+
+Ensure you profit from this feature by importing calendar and datetime from core instead of the python standard ones:
+```
+from core import calendar, datetime
+```
+Your models should also use the provided custom fields:
+```
+from core.fields import DateField, DateTimeField
+```
