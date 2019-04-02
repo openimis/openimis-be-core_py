@@ -4,6 +4,7 @@ from datetime import tzinfo as py_tzinfo
 from datetime import timezone as py_timezone
 from datetime import date as py_date
 from datetime import datetime as py_datetime
+from dateutil import parser
 from .shared import datetimedelta
 
 """
@@ -29,6 +30,14 @@ class AdDate(py_date):
     @classmethod
     def from_ad_datetime(cls, value):
         return AdDate(value.year, value.month, value.day)
+
+    @classmethod
+    def from_ad_isoformat(cls, dt_str):
+        return cls.from_ad_date(parser.isoparse(dt_str))
+
+    @classmethod
+    def from_raw_isoformat(cls, dt_str):
+        return cls.from_ad_date(parser.isoparse(dt_str))
 
     def to_ad_datetime(self):
         return AdDatetime(self.year, self.month, self.day)
@@ -89,6 +98,14 @@ class AdDatetime(py_datetime):
         return AdDatetime(value.year, value.month, value.day,
                           value.hour, value.minute, value.second, value.microsecond,
                           value.tzinfo)
+
+    @classmethod
+    def from_ad_isoformat(cls, dt_str):
+        return cls.from_ad_datetime(parser.isoparse(dt_str))
+
+    @classmethod
+    def from_raw_isoformat(cls, dt_str):
+        return cls.from_ad_datetime(parser.isoparse(dt_str))
 
     def to_ad_datetime(self):
         return self

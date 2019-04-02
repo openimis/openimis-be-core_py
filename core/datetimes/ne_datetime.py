@@ -2,6 +2,8 @@ import sys
 from nepalicalendar import NepDate
 from nepalicalendar import values
 import datetime as py_datetime
+from dateutil import parser
+import re
 from .shared import datetimedelta
 
 """
@@ -47,6 +49,15 @@ class NeDate(NepDate):
         days = self - start_date
         ad_date = values.START_EN_DATE + days
         return py_datetime.datetime(ad_date.year, ad_date.month, ad_date.day)
+
+    @classmethod
+    def from_ad_isoformat(cls, dt_str):
+        return date.from_ad_date(parser.isoparse(dt_str))
+
+    @classmethod
+    def from_raw_isoformat(cls, dt_str):
+        dt = re.search(r"([0-9]{4})-([0-9]{2})-([0-9]{2}).*", dt_str)
+        return NeDate(int(dt[1]), int(dt[2]), int(dt[3]))
 
     @classmethod
     def from_ad_date(cls, dt):
@@ -154,14 +165,36 @@ class NeDatetime(object):
     def fold(self):
         return self._fold
 
-    def isoformat(self, *args, **kwargs):
-        return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
+    def raw_isoformat(self, *args, **kwargs):
+        return "%sT%s" % (self._date.raw_isoformat(), self._time.isoformat(*args, **kwargs))
+
+    def ad_isoformat(self, *args, **kwargs):
+        return "%sT%s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
+
+    def isoformat(self):
+        if core.iso_raw_date:
+            return self.raw_isoformat()
+        else:
+            return self.ad_isoformat()
+
+    @classmethod
+    def from_ad_isoformat(cls, dt_str):
+        return datetime.from_ad_datetime(parser.isoparse(dt_str))
+
+    @classmethod
+    def from_raw_isoformat(cls, dt_str):
+        dt = re.search(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T?(.*)", dt_str)
+        if bool(dt[4]):
+            t = parser.parse(dt[4])
+        else:
+            t = py_datetime.time()
+        return NeDatetime(int(dt[1]), int(dt[2]), int(dt[3]), t.hour, t.minute, t.second, t.microsecond, t.tzinfo)
 
     @classmethod
     def from_ad_datetime(cls, dt):
-        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo= dt.tzinfo):
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo=dt.tzinfo):
             return datetime.min
-        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo= dt.tzinfo):
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo=dt.tzinfo):
             return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
             dt.year, dt.month, dt.day))
@@ -181,9 +214,9 @@ class NeDatetime(object):
     def from_ad_date(cls, dt):
         if isinstance(dt, py_datetime.date):
             dt = py_datetime.datetime(dt.year, dt.month, dt.day)
-        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo= dt.tzinfo):
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo=dt.tzinfo):
             return datetime.min
-        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo= dt.tzinfo):
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo=dt.tzinfo):
             return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
             dt.year, dt.month, dt.day))

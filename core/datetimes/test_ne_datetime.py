@@ -135,6 +135,20 @@ class DateTestCase(TestCase):
         ne_dt_2 = core.datetime.date(2076, 1, 7)
         self.assertEqual(ne_dt_2 - ne_dt_1, core.datetime.timedelta(days=30))
 
+    def test_from_ad_isoformat(self):
+        ad_dt = core.datetime.date(2075, 12, 19)
+        ad_iso = core.datetime.date.from_ad_isoformat('2019-04-02')
+        self.assertEqual(ad_dt, ad_iso)
+        adt_iso = core.datetime.date.from_ad_isoformat('2019-04-02T12:34:49')
+        self.assertEqual(ad_dt, adt_iso)
+
+    def test_from_raw_isoformat(self):
+        ad_dt = core.datetime.date(2075, 12, 19)
+        ad_iso = core.datetime.date.from_raw_isoformat('2075-12-19')
+        self.assertEqual(ad_dt, ad_iso)
+        adt_iso = core.datetime.date.from_raw_isoformat('2075-12-19T12:34:49')
+        self.assertEqual(ad_dt, adt_iso)
+
 
 class DatetimeTestCase(TestCase):
     def setUp(self):
@@ -279,3 +293,21 @@ class DatetimeTestCase(TestCase):
         ne_dt_2 = core.datetime.datetime(2076, 1, 7, 11, 7, 34, 999999)
         self.assertEqual(ne_dt_2 - ne_dt_1,
                          core.datetime.timedelta(days=30, minutes=2))
+
+    def test_from_ad_isoformat(self):
+        ne_dt = core.datetime.datetime(2075, 12, 19)
+        ad_iso = core.datetime.datetime.from_ad_isoformat('2019-04-02')
+        self.assertEqual(ne_dt, ad_iso)
+        ne_dt = core.datetime.datetime(2075, 12, 19, 12, 34, 49)
+        adt_iso = core.datetime.datetime.from_ad_isoformat(
+            '2019-04-02T12:34:49')
+        self.assertEqual(ne_dt, adt_iso)
+
+    def test_from_raw_isoformat(self):
+        ne_dt = core.datetime.datetime(2075, 12, 12)
+        ne_iso = core.datetime.datetime.from_raw_isoformat('2075-12-12')
+        self.assertEqual(ne_dt, ne_iso)
+        ne_dt = core.datetime.datetime(2075, 12, 12, 12, 34, 49)
+        net_iso = core.datetime.datetime.from_raw_isoformat(
+            '2075-12-12T12:34:49')
+        self.assertEqual(ne_dt, net_iso)
