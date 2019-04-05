@@ -15,11 +15,12 @@ class TechnicalUserForm(forms.ModelForm):
     )    
     class Meta:
         model = TechnicalUser
-        fields = ['username', 'email', 'validity_from', 'validity_to']
+        fields = ['username', 'email', 'is_superuser', 'validity_from', 'validity_to']
 
     def save(self, commit=True):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password"])
+        user.is_staff=self.cleaned_data["is_superuser"]
         if commit:
             user.save()
         return user        

@@ -8,6 +8,8 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from cached_property import cached_property
 from .fields import DateField, DateTimeField
 from datetime import datetime as py_datetime
+from rest_framework import permissions
+from guardian.mixins import GuardianUserMixin
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +83,13 @@ class UserManager(BaseUserManager):
         tech.save()
         return tech
 
-    def create_user(self, username, email=None, password=None, **extra_fields):
+    def create_user(self, username, password, email=None, **extra_fields):
         extra_fields.setdefault('is_staff', False)
         extra_fields['is_superuser'] = False
         self._create_tech_user(
             username, email, password, **extra_fields)
 
-    def create_superuser(self, username, email, password, **extra_fields):
+    def create_superuser(self, username, password, email=None, **extra_fields):
         extra_fields['is_staff'] = True
         extra_fields['is_superuser'] = True
         self._create_tech_user(
@@ -97,20 +99,19 @@ class UserManager(BaseUserManager):
 class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
-    email = models.EmailField(blank=True)
+    email = models.EmailField(blank=True, null=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
+    validity_from = models.DateTimeField(blank=True, null=True)
+    validity_to = models.DateTimeField(blank=True, null=True)
 
     USERNAME_FIELD = 'username'
 
     @property
     def is_active(self):
         return True
-
-    def save(self):
+    
+    def _bind_User(self):
         save_required = False
         try:
             usr = User.objects.get(t_user=self)
@@ -125,8 +126,11 @@ class TechnicalUser(AbstractBaseUser):
             usr.email = self.email
             save_required = True
         if save_required:
-            usr.save()
+            usr.save()        
+
+    def save(self):
         super().save()
+        self._bind_User()
 
     class Meta:
         managed = True
@@ -188,18 +192,15 @@ class InteractiveUser(models.Model):
         managed = False
         db_table = 'tblUsers'
 
-
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, GuardianUserMixin):
     username = models.CharField(unique=True, max_length=25)
-    email = models.CharField(max_length=200)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(
         InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
 
     USERNAME_FIELD = 'username'
-    EMAIL_FIELD = 'email'
-    REQUIRED_FIELDS = ['email']
+    REQUIRED_FIELDS = []
 
     objects = UserManager()
 
@@ -216,24 +217,28 @@ class User(UUIDModel, PermissionsMixin):
         return True
 
     @property
-    def is_active(self):
-        return self._u.is_active
-
-    @property
     def is_staff(self):
         return self._u.is_staff
 
     @property
     def is_superuser(self):
-        return self._u.is_superuser
+        return self._u.is_superuser        
 
-    def set_password(self, raw_password):
+    @property
+    def is_active(self):
+        return self._u.is_active
+
+    def __getattr__(self, name):
+        if name == '_u':
+            raise ValueError('wrapper has not been initialised')
         if not self._u:
             return None
-        return self._u.set_password(raw_password)
+        return getattr(self._u, name)
 
-    def check_password(self, raw_password):
-        return self._u.check_password(raw_password)
+    def __call__(self, *args, **kwargs):
+        # if not self._u:
+        #     raise ValueError('wrapper has not been initialised')
+        return self._u(*args, **kwargs)
     
     def __str__(self):
         return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
@@ -241,3 +246,20 @@ class User(UUIDModel, PermissionsMixin):
     class Meta:
         managed = True
         db_table = 'core_User'
+
+def get_anonymous_user_instance(User):
+    return User.objects.get_or_create(username='Anonymous')[0]
+
+class ObjectPermissions(permissions.DjangoObjectPermissions):
+    """
+    Similar to `DjangoObjectPermissions`, but adding 'view' permissions.
+    """
+    perms_map = {
+        'GET': ['%(app_label)s.view_%(model_name)s'],
+        'OPTIONS': ['%(app_label)s.view_%(model_name)s'],
+        'HEAD': ['%(app_label)s.view_%(model_name)s'],
+        'POST': ['%(app_label)s.add_%(model_name)s'],
+        'PUT': ['%(app_label)s.change_%(model_name)s'],
+        'PATCH': ['%(app_label)s.change_%(model_name)s'],
+        'DELETE': ['%(app_label)s.delete_%(model_name)s'],
+    }
