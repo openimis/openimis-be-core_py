@@ -8,7 +8,6 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from cached_property import cached_property
 from .fields import DateField, DateTimeField
 from datetime import datetime as py_datetime
-from rest_framework import permissions
 from guardian.mixins import GuardianUserMixin
 
 logger = logging.getLogger(__name__)
@@ -121,9 +120,6 @@ class TechnicalUser(AbstractBaseUser):
             save_required = True
         if usr.username != self.username:   
             usr.username = self.username
-            save_required = True
-        if usr.email != self.email:
-            usr.email = self.email
             save_required = True
         if save_required:
             usr.save()        
@@ -246,20 +242,3 @@ class User(UUIDModel, PermissionsMixin, GuardianUserMixin):
     class Meta:
         managed = True
         db_table = 'core_User'
-
-def get_anonymous_user_instance(User):
-    return User.objects.get_or_create(username='Anonymous')[0]
-
-class ObjectPermissions(permissions.DjangoObjectPermissions):
-    """
-    Similar to `DjangoObjectPermissions`, but adding 'view' permissions.
-    """
-    perms_map = {
-        'GET': ['%(app_label)s.view_%(model_name)s'],
-        'OPTIONS': ['%(app_label)s.view_%(model_name)s'],
-        'HEAD': ['%(app_label)s.view_%(model_name)s'],
-        'POST': ['%(app_label)s.add_%(model_name)s'],
-        'PUT': ['%(app_label)s.change_%(model_name)s'],
-        'PATCH': ['%(app_label)s.change_%(model_name)s'],
-        'DELETE': ['%(app_label)s.delete_%(model_name)s'],
-    }
