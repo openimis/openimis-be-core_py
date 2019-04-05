@@ -3,8 +3,11 @@ import json
 import logging
 import uuid
 from django.db import models
+from django.core.exceptions import ObjectDoesNotExist
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from cached_property import cached_property
 from .fields import DateField, DateTimeField
+from datetime import datetime as py_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,67 @@ class Language(models.Model):
         db_table = 'tblLanguages'
 
 
-class User(models.Model):
+class UserManager(BaseUserManager):
+
+    def _create_tech_user(self, username, email, password, **extra_fields):
+        tech = TechnicalUser(username=username, email=email, **extra_fields)
+        tech.set_password(password)
+        tech.save()
+        return tech
+
+    def create_user(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', False)
+        extra_fields['is_superuser'] = False
+        self._create_tech_user(
+            username, email, password, **extra_fields)
+
+    def create_superuser(self, username, email, password, **extra_fields):
+        extra_fields['is_staff'] = True
+        extra_fields['is_superuser'] = True
+        self._create_tech_user(
+            username, email, password, **extra_fields)
+
+
+class TechnicalUser(AbstractBaseUser):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    username = models.CharField(max_length=150, unique=True)
+    email = models.EmailField(blank=True)
+    is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
+    validity_from = models.DateTimeField(db_column='ValidityFrom')
+    validity_to = models.DateTimeField(
+        db_column='ValidityTo', blank=True, null=True)
+
+    USERNAME_FIELD = 'username'
+
+    @property
+    def is_active(self):
+        return True
+
+    def save(self):
+        save_required = False
+        try:
+            usr = User.objects.get(t_user=self)
+        except ObjectDoesNotExist:
+            usr = User()
+            usr.t_user = self
+            save_required = True
+        if usr.username != self.username:   
+            usr.username = self.username
+            save_required = True
+        if usr.email != self.email:
+            usr.email = self.email
+            save_required = True
+        if save_required:
+            usr.save()
+        super().save()
+
+    class Meta:
+        managed = True
+        db_table = 'core_TechnicalUser'
+
+
+class InteractiveUser(models.Model):
     id = models.AutoField(db_column='UserID', primary_key=True)
     legacy_id = models.IntegerField(
         db_column='LegacyID', blank=True, null=True)
@@ -90,9 +153,91 @@ class User(models.Model):
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # password = models.BinaryField(blank=True, null=True)
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
-    email_id = models.CharField(
+    email = models.CharField(
         db_column='EmailId', max_length=200, blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        # exclusively managed from legacy openIMIS for now!
+        raise NotImplementedError()
+
+    @property
+    def username(self):
+        return self.login_name
+
+    @property
+    def is_active(self):
+        return True
+
+    @property
+    def is_staff(self):
+        return False
+
+    @property
+    def is_superuser(self):
+        return False
+
+    def set_password(self, raw_password):
+        # exclusively managed from legacy openIMIS for now!
+        raise NotImplementedError()
+
+    def check_password(self, raw_password):
+        # exclusively managed from legacy openIMIS for now!
+        raise NotImplementedError()
 
     class Meta:
         managed = False
         db_table = 'tblUsers'
+
+
+class User(UUIDModel, PermissionsMixin):
+    username = models.CharField(unique=True, max_length=25)
+    email = models.CharField(max_length=200)
+    t_user = models.ForeignKey(
+        TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
+    i_user = models.ForeignKey(
+        InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
+
+    USERNAME_FIELD = 'username'
+    EMAIL_FIELD = 'email'
+    REQUIRED_FIELDS = ['email']
+
+    objects = UserManager()
+
+    def __init__(self, *args, **kwargs):
+        super(User, self).__init__(*args, **kwargs)
+        self._u = self.i_user or self.t_user
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_active(self):
+        return self._u.is_active
+
+    @property
+    def is_staff(self):
+        return self._u.is_staff
+
+    @property
+    def is_superuser(self):
+        return self._u.is_superuser
+
+    def set_password(self, raw_password):
+        if not self._u:
+            return None
+        return self._u.set_password(raw_password)
+
+    def check_password(self, raw_password):
+        return self._u.check_password(raw_password)
+    
+    def __str__(self):
+        return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
+
+    class Meta:
+        managed = True
+        db_table = 'core_User'
