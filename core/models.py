@@ -8,7 +8,6 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from cached_property import cached_property
 from .fields import DateField, DateTimeField
 from datetime import datetime as py_datetime
-from guardian.mixins import GuardianUserMixin
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +187,7 @@ class InteractiveUser(models.Model):
         managed = False
         db_table = 'tblUsers'
 
-class User(UUIDModel, PermissionsMixin, GuardianUserMixin):
+class User(UUIDModel, PermissionsMixin):
     username = models.CharField(unique=True, max_length=25)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -227,6 +226,8 @@ class User(UUIDModel, PermissionsMixin, GuardianUserMixin):
     def __getattr__(self, name):
         if name == '_u':
             raise ValueError('wrapper has not been initialised')
+        if name == '__name__':
+            return self.username            
         if not self._u:
             return None
         return getattr(self._u, name)
