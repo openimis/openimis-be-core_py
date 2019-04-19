@@ -21,6 +21,8 @@ timezone = py_timezone
 class AdDate(py_date):
     @classmethod
     def from_ad_date(cls, value):
+        if value is None:
+            return None
         return AdDate(value.year, value.month, value.day)
 
     def to_ad_date(self):
@@ -28,6 +30,8 @@ class AdDate(py_date):
 
     @classmethod
     def from_ad_datetime(cls, value):
+        if value is None:
+            return None
         return AdDate(value.year, value.month, value.day)
 
     def to_ad_datetime(self):
@@ -79,6 +83,8 @@ date.max = AdDate(9999, 12, 31)
 class AdDatetime(py_datetime):
     @classmethod
     def from_ad_date(cls, value):
+        if value is None:
+            return None
         return AdDatetime(value.year, value.month, value.day)
 
     def to_ad_date(self):
@@ -86,6 +92,8 @@ class AdDatetime(py_datetime):
 
     @classmethod
     def from_ad_datetime(cls, value):
+        if value is None:
+            return None
         return AdDatetime(value.year, value.month, value.day,
                           value.hour, value.minute, value.second, value.microsecond,
                           value.tzinfo)
