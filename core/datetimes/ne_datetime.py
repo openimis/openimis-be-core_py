@@ -50,10 +50,10 @@ class NeDate(NepDate):
 
     @classmethod
     def from_ad_date(cls, dt):
-        if isinstance(dt, py_datetime.datetime):
-            dt = py_datetime.date(dt.year, dt.month, dt.day)
         if dt is None:
             return None
+        if isinstance(dt, py_datetime.datetime):
+            dt = py_datetime.date(dt.year, dt.month, dt.day)
         if dt < values.START_EN_DATE:
             return date.min
         if dt > values.END_EN_DATE:
@@ -159,9 +159,11 @@ class NeDatetime(object):
 
     @classmethod
     def from_ad_datetime(cls, dt):
-        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo= dt.tzinfo):
+        if dt is None:
+            return None
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo=dt.tzinfo):
             return datetime.min
-        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo= dt.tzinfo):
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo=dt.tzinfo):
             return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
             dt.year, dt.month, dt.day))
@@ -179,11 +181,13 @@ class NeDatetime(object):
 
     @classmethod
     def from_ad_date(cls, dt):
+        if dt is None:
+            return None
         if isinstance(dt, py_datetime.date):
             dt = py_datetime.datetime(dt.year, dt.month, dt.day)
-        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo= dt.tzinfo):
+        if dt < py_datetime.datetime(date.min_ad.year, date.min_ad.month, date.min_ad.day, tzinfo=dt.tzinfo):
             return datetime.min
-        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo= dt.tzinfo):
+        if dt > py_datetime.datetime(date.max_ad.year, date.max_ad.month, date.max_ad.day, 23, 59, 59, 999999, tzinfo=dt.tzinfo):
             return datetime.max
         ne_dte = NeDate.from_ad_date(py_datetime.date(
             dt.year, dt.month, dt.day))
