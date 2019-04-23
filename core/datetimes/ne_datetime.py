@@ -158,6 +158,10 @@ class NeDatetime(object):
         return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
 
     @classmethod
+    def now(cls):
+        return cls.from_ad_datetime(py_datetime.datetime.now())
+
+    @classmethod
     def from_ad_datetime(cls, dt):
         if dt is None:
             return None

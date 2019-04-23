@@ -12,6 +12,12 @@ class CalendarTestCase(TestCase):
         core.datetime = importlib.import_module(
             '.datetimes.ne_datetime', 'core')
 
+    def tearDown(self):
+        core.calendar = importlib.import_module(
+            '.calendars.ad_calendar', 'core')
+        core.datetime = importlib.import_module(
+            '.datetimes.ad_datetime', 'core')                  
+
     def test_from_ad_date(self):
         dt = core.datetime.date.from_ad_date(py_date(2020, 1, 13))
         self.assertEqual(dt, core.datetime.date(2076, 9, 28))

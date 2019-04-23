@@ -15,6 +15,12 @@ class DateTestCase(TestCase):
         core.datetime = importlib.import_module(
             '.datetimes.ne_datetime', 'core')
 
+    def tearDown(self):
+        core.calendar = importlib.import_module(
+            '.calendars.ad_calendar', 'core')
+        core.datetime = importlib.import_module(
+            '.datetimes.ad_datetime', 'core')           
+
     def test_from_ad_date(self):
         ad_dt = py_date(2020, 1, 13)
         ne_dt = core.datetime.date.from_ad_date(ad_dt)
