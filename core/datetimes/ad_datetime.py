@@ -81,6 +81,11 @@ date.max = AdDate(9999, 12, 31)
 
 
 class AdDatetime(py_datetime):
+
+    @classmethod
+    def now(cls):
+        return cls.from_ad_datetime(py_datetime.now())
+
     @classmethod
     def from_ad_date(cls, value):
         if value is None:

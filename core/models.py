@@ -105,10 +105,6 @@ class TechnicalUser(AbstractBaseUser):
 
     USERNAME_FIELD = 'username'
 
-    @property
-    def is_active(self):
-        return True
-    
     def _bind_User(self):
         save_required = False
         try:
@@ -164,10 +160,6 @@ class InteractiveUser(models.Model):
         return self.login_name
 
     @property
-    def is_active(self):
-        return True
-
-    @property
     def is_staff(self):
         return False
 
@@ -221,7 +213,15 @@ class User(UUIDModel, PermissionsMixin):
 
     @property
     def is_active(self):
-        return self._u.is_active
+        if self._u.validity_from is None and self._u.validity_to is None:
+            return True
+        from core import datetime
+        now = datetime.datetime.now()
+        if not self._u.validity_from is None and self._u.validity_from > now:
+            return False
+        if not self._u.validity_to is None and self._u.validity_to < now:
+            return False
+        return True
 
     def __getattr__(self, name):
         if name == '_u':
