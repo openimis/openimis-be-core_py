@@ -1,9 +1,5 @@
 import sys
-from datetime import timedelta as py_timedelta
-from datetime import tzinfo as py_tzinfo
-from datetime import timezone as py_timezone
-from datetime import date as py_date
-from datetime import datetime as py_datetime
+import datetime as py_datetime
 from .shared import datetimedelta
 
 """
@@ -13,12 +9,16 @@ wrapped with openIMIS data handling helpers
 
 core = sys.modules["core"]
 
-timedelta = py_timedelta
-tzinfo = py_tzinfo
-timezone = py_timezone
+tzinfo = py_datetime.tzinfo
+timezone = py_datetime.timezone
 
 
-class AdDate(py_date):
+class AdDate(py_datetime.date):
+
+    @classmethod
+    def today(cls):
+        return AdDate.from_ad_date(py_datetime.date.today())
+
     @classmethod
     def from_ad_date(cls, value):
         if value is None:
@@ -30,9 +30,7 @@ class AdDate(py_date):
 
     @classmethod
     def from_ad_datetime(cls, value):
-        if value is None:
-            return None
-        return AdDate(value.year, value.month, value.day)
+        return AdDate.from_ad_date(value)
 
     def to_ad_datetime(self):
         return AdDatetime(self.year, self.month, self.day)
@@ -49,21 +47,25 @@ class AdDate(py_date):
     def displaylongformat(self):
         return self.strftime(core.longstrfdate)
 
+    @classmethod
+    def _convert_op_res(cls, res):
+        if isinstance(res, py_datetime.datetime):
+            return AdDate.from_ad_datetime(res)
+        if isinstance(res, py_datetime.date):
+            return AdDate.from_ad_date(res)
+        return res        
+
     def __add__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(other, self)
         dt = super(AdDate, self).__add__(other)
-        if isinstance(dt, py_date):
-            return AdDate(dt.year, dt.month, dt.day)
-        return dt
+        return AdDate._convert_op_res(dt)
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDate, self).__sub__(other)
-        if isinstance(dt, py_date):
-            return AdDate(dt.year, dt.month, dt.day)
-        return dt
+        return AdDate._convert_op_res(dt)
 
     def __repr__(self):
         L = [self.year, self.month, self.day]
@@ -80,11 +82,11 @@ date.min = AdDate(1, 1, 1)
 date.max = AdDate(9999, 12, 31)
 
 
-class AdDatetime(py_datetime):
+class AdDatetime(py_datetime.datetime):
 
     @classmethod
     def now(cls):
-        return cls.from_ad_datetime(py_datetime.now())
+        return cls.from_ad_datetime(py_datetime.datetime.now())
 
     @classmethod
     def from_ad_date(cls, value):
@@ -107,31 +109,29 @@ class AdDatetime(py_datetime):
         return self
 
     def __eq__(self, other):
-        if isinstance(other, py_datetime):
-            return self.year == other.year and self.month == other.month and self.day == other.day \
-                and self.hour == other.hour and self.minute == other.minute and self.second == other.second and self.microsecond == other.microsecond \
-                and self.tzinfo == other.tzinfo and self.fold == other.fold
-        if isinstance(other, py_date):
-            return self.year == other.year and self.month == other.month and self.day == other.day \
-                and self.hour == 0 and self.minute == 0 and self.second == 0 and self.microsecond == 0 \
-                and self.fold == 0
-        return NotImplemented
+        if isinstance(other, py_datetime.datetime):
+            return super(AdDatetime, self).__eq__(other)
+        if isinstance(other, py_datetime.date):
+            return super(AdDatetime, self).__eq__(AdDatetime.from_ad_date(other))
+        return self - other == datetimedelta()
+
+    @classmethod
+    def _convert_op_res(cls, res):
+        if isinstance(res, py_datetime.datetime):
+            return AdDatetime.from_ad_datetime(res)
+        return res
 
     def __add__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(other, self)
         dt = super(AdDatetime, self).__add__(other)
-        if isinstance(dt, py_date):
-            return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
-        return dt
+        return AdDatetime._convert_op_res(dt)
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date((other * -1), self)
         dt = super(AdDatetime, self).__sub__(other)
-        if isinstance(dt, py_date):
-            return AdDatetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, dt.tzinfo)
-        return dt
+        return AdDatetime._convert_op_res(dt)
 
     def __repr__(self):
         L = [self.year, self.month, self.day,

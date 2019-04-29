@@ -32,6 +32,12 @@ class CalendarTestCase(TestCase):
         fwd = core.calendar.weeklastday(dt)
         self.assertEqual(fwd, core.datetime.date(2076, 10, 4))
 
+    def test_weekday(self):
+        wd = core.calendar.weekday(2076, 9, 11)
+        self.assertEqual(wd, 5)
+        wd = core.calendar.weekday(2076, 9, 28)
+        self.assertEqual(wd, 1)        
+
     def test_monthfirstday(self):
         dt = core.calendar.monthfirstday(2076, 9)
         self.assertEqual(dt, core.datetime.date(2076, 9, 1))

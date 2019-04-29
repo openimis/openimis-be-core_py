@@ -17,7 +17,7 @@ DEFAULT_CFG = {
     "datetime_module": ".datetimes.ad_datetime",
     "shortstrfdate": "%d/%m/%Y",
     "longstrfdate": "%a %d %B %Y",
-    "iso_raw_date": "True",
+    "iso_raw_date": "False",
 }
 
 

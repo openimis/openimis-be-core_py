@@ -11,7 +11,6 @@ wrapped with openIMIS data handling helpers
 
 core = sys.modules["core"]
 
-timedelta = py_datetime.timedelta
 tzinfo = py_datetime.tzinfo
 timezone = py_datetime.timezone
 
@@ -31,9 +30,11 @@ class NeDate(NepDate):
             return self.ad_isoformat()
 
     def displayshortformat(self):
+        self.update()
         return "%s/%s/%s" % (self.ne_day, self.ne_month, self.ne_year)
 
     def displaylongformat(self):
+        self.update()
         return "%s %s %s %s" % (self.weekday_name(), self.ne_day, self.month_name(), self.ne_year)
 
     def to_ad_date(self):
@@ -73,21 +74,25 @@ class NeDate(NepDate):
         nep_today = NepDate.today()
         return NeDate(nep_today.year, nep_today.month, nep_today.day).update()
 
+    @classmethod
+    def _convert_op_res(cls, res):
+        if isinstance(res, py_datetime.datetime):
+            return NeDate.from_ad_datetime(res)
+        if isinstance(res, py_datetime.date):
+            return NeDate.from_ad_date(res)
+        return res        
+
     def __add__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(other, self)
         dt = super(NeDate, self).__add__(other)
-        if isinstance(dt, NepDate):
-            return NeDate(dt.year, dt.month, dt.day).update()
-        return dt
+        return NeDate._convert_op_res(dt)
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_date(-other, self)
         dt = super(NeDate, self).__sub__(other)
-        if isinstance(dt, NepDate):
-            return NeDate(dt.year, dt.month, dt.day).update()
-        return dt
+        return NeDate._convert_op_res(dt)
 
     def __repr__(self):
         L = [self.year, self.month, self.day]
@@ -106,7 +111,7 @@ date.min = NeDate.from_ad_date(values.START_EN_DATE)
 date.max = NeDate.from_ad_date(values.END_EN_DATE)
 date.min_ad = values.START_EN_DATE
 date.max_ad = values.END_EN_DATE
-date.resolution = timedelta(days=1)
+date.resolution = py_datetime.timedelta(days=1)
 
 
 class NeDatetime(object):
@@ -215,27 +220,27 @@ class NeDatetime(object):
                 and self.fold == 0
         return NotImplemented
 
+    def _gt_ne_datetime(self, other):
+        if self._date > other._date:
+            return True
+        if self._date < other._date:
+            return False
+        return self._time > other._time
+
+    def _gt_ne_date(self, other):
+        if self.year != other.year:
+            return self.year > other.year
+        if self.month != other.month:
+            return self.month > other.month
+        if self.day != other.day:
+            return self.day > other.day
+        return self.hour > 0 or self.minute > 0 or self.second > 0 or self.microsecond > 0
+
     def __gt__(self, other):
         if isinstance(other, NeDatetime):
-            if self._date > other._date:
-                return True
-            if self._date < other._date:
-                return False
-            return self._time > other._time
+            return self._gt_ne_datetime(other)
         if isinstance(other, NeDate):
-            if self.year > other.year:
-                return True
-            if self.year < other.year:
-                return False
-            if self.month > other.month:
-                return True
-            if self.month < other.month:
-                return False
-            if self.day > other.day:
-                return True
-            if self.year < other.day:
-                return False
-            return self.hour > 0 or self.minute > 0 or self.second > 0 or self.microsecond > 0
+            return self._gt_ne_date(other)
         return NotImplemented
 
     def __lt__(self, other):
@@ -247,15 +252,19 @@ class NeDatetime(object):
     def __le__(self, other):
         return not self > other
 
+    @classmethod
+    def _convert_op_res(cls, res):
+        if isinstance(res, py_datetime.datetime):
+            return NeDatetime.from_ad_datetime(res)
+        return res
+
     def __add__(self, other):
         if isinstance(other, datetimedelta):
             return datetimedelta.add_to_datetime(other, self)
         if isinstance(other, NeDatetime):
             return NeDatetime.from_ad_datetime(self.to_ad_datetime().__add__(other.to_ad_datetime()))
         dt = self.to_ad_datetime().__add__(other)
-        if isinstance(dt, py_datetime.datetime):
-            return NeDatetime.from_ad_datetime(dt)
-        return dt
+        return NeDatetime._convert_op_res(dt)
 
     def __sub__(self, other):
         if isinstance(other, datetimedelta):
@@ -263,9 +272,7 @@ class NeDatetime(object):
         if isinstance(other, NeDatetime):
             return self.to_ad_datetime().__sub__(other.to_ad_datetime())
         dt = self.to_ad_datetime().__sub__(other)
-        if isinstance(dt, py_datetime.datetime):
-            return NeDatetime.from_ad_datetime(dt)
-        return dt
+        return NeDatetime._convert_op_res(dt)
 
     def __repr__(self):
         L = [self._date.year, self._date.month, self._date.day,

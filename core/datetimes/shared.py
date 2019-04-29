@@ -1,4 +1,5 @@
 from datetime import timedelta
+from datetime import time as py_time
 
 
 def _cmperror(x, y):
@@ -6,8 +7,42 @@ def _cmperror(x, y):
                     type(x).__name__, type(y).__name__))
 
 
+def is_midnight(dt):
+    if hasattr(dt, 'hour') and dt.hour != 0:
+        return False
+    if hasattr(dt, 'minute') and dt.minute != 0:
+        return False
+    if hasattr(dt, 'second') and dt.second != 0:
+        return False
+    if hasattr(dt, 'microsecond') and dt.microsecond != 0:
+        return False
+    return True
+
+
+def _cmp(x, y):
+    return 0 if x == y else 1 if x > y else -1
+
+
+def _add_month(dt):
+    from core import calendar
+    return dt + timedelta(calendar.monthdayscount(dt.year, dt.month))
+
+
+def _sub_month(dt):
+    from core import calendar
+    if dt.month == 1:
+        prev_year = dt.year - 1
+        return dt - \
+            timedelta(calendar.monthdayscount(
+                prev_year, calendar.yearmonthscount(prev_year)))
+    else:
+        return dt - \
+            timedelta(calendar.monthdayscount(
+                dt.year, dt.month - 1))
+
+
 class datetimedelta(object):
-    __slots__ = ['_years', '_months', '_timedelta']
+    __slots__ = ['_years', '_months', '_timedelta', '_hashcode']
 
     def __init__(self, years=0, months=0, weeks=0, days=0,
                  hours=0, minutes=0, seconds=0, microseconds=0):
@@ -16,6 +51,7 @@ class datetimedelta(object):
         self._timedelta = timedelta(
             weeks=weeks, days=days,
             hours=hours, minutes=minutes, seconds=seconds, microseconds=microseconds)
+        self._hashcode = -1
 
     @property
     def years(self):
@@ -38,46 +74,34 @@ class datetimedelta(object):
         return self._timedelta.microseconds
 
     @classmethod
-    def _add_month(cls, dt):
-        from core import calendar
-        return dt + timedelta(calendar.monthdayscount(dt.year, dt.month))
+    def from_timedelta(cls, td):
+        return datetimedelta(years=0, months=0, days=td.days, seconds=td.seconds, microseconds=td.microseconds)
 
-    @classmethod
-    def _sub_month(cls, dt):
-        from core import calendar
-        if dt.month == 1:
-            prev_year = dt.year - 1
-            return dt - \
-                timedelta(calendar.monthdayscount(
-                    prev_year, calendar.yearmonthscount(prev_year)))
-        else:
-            return dt - \
-                timedelta(calendar.monthdayscount(
-                    dt.year, dt.month - 1))
-
-    def add_to_date(self, dt):
+    def _add_years(self, dt):
         from core import calendar
         for i in range(abs(self._years)):
             for j in range(calendar.yearmonthscount(dt.year)):
                 if self._years > 0:
-                    dt = datetimedelta._add_month(dt)
+                    dt = _add_month(dt)
                 else:
-                    dt = datetimedelta._sub_month(dt)
+                    dt = _sub_month(dt)
+        return dt
+
+    def _add_months(self, dt):
         for i in range(abs(self._months)):
             if self._months > 0:
-                dt = datetimedelta._add_month(dt)
+                dt = _add_month(dt)
             else:
-                dt = datetimedelta._sub_month(dt)
+                dt = _sub_month(dt)
+        return dt
+
+    def add_to_date(self, dt):
+        dt = self._add_years(dt)
+        dt = self._add_months(dt)
         return dt + self._timedelta
 
     def add_to_datetime(self, datetime):
         return self.add_to_date(datetime)
-
-    def sub_to_date(self, date):
-        return self.add_to_date(date * -1)
-
-    def sub_to_datetime(self, datetime):
-        return self.add_to_datetime(datetime * -1)
 
     def __add__(self, other):
         if isinstance(other, datetimedelta):
@@ -115,10 +139,14 @@ class datetimedelta(object):
         return self
 
     def __abs__(self):
-        if self._days < 0:
+        if self.years < 0:
             return -self
-        else:
-            return self
+        if self.years == 0 and self.months < 0:
+            return -self
+        if self.years == 0 and self.months == 0:
+            td = abs(self._timedelta)
+            return datetimedelta(years=0, months=0, days=td.days, seconds=td.seconds, microseconds=td.microseconds)
+        return self
 
     def __mul__(self, other):
         if isinstance(other, int):
@@ -132,10 +160,12 @@ class datetimedelta(object):
     __rmul__ = __mul__
 
     def __eq__(self, other):
+        if isinstance(other, timedelta):
+            return self._cmp(datetimedelta.from_timedelta(other)) == 0
         if isinstance(other, datetimedelta):
             return self._cmp(other) == 0
         else:
-            return False
+            _cmperror(self, other)
 
     def __le__(self, other):
         if isinstance(other, datetimedelta):
