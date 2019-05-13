@@ -150,6 +150,11 @@ class InteractiveUser(models.Model):
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
     email = models.CharField(
         db_column='EmailId', max_length=200, blank=True, null=True)
+    # private_key = models.CharField(db_column='PrivateKey', max_length=256, blank=True, null=True)
+    # stored_password = models.CharField(db_column='StoredPassword', max_length=256, blank=True, null=True)
+    # password_validity = models.DateTimeField(db_column='PasswordValidity', blank=True, null=True)
+    # is_associated = models.BooleanField(db_column='IsAssociated', blank=True, null=True)
+
 
     def save(self, *args, **kwargs):
         # exclusively managed from legacy openIMIS for now!
