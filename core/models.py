@@ -16,7 +16,6 @@ Abstract entity, parent of all (new) openIMIS entities.
 Enforces the UUID identifier.
 """
 
-
 class UUIDModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -30,7 +29,6 @@ class UUIDModel(models.Model):
 """
 Generic entity to save every modules' configuration (json format)
 """
-
 
 class ModuleConfiguration(UUIDModel):
     module = models.CharField(max_length=20)
@@ -98,6 +96,7 @@ class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(blank=True, null=True)
+    language_id = 'en'
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     validity_from = models.DateTimeField(blank=True, null=True)
