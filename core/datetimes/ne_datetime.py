@@ -80,7 +80,7 @@ class NeDate(NepDate):
             return NeDate.from_ad_datetime(res)
         if isinstance(res, py_datetime.date):
             return NeDate.from_ad_date(res)
-        return res        
+        return res
 
     def __add__(self, other):
         if isinstance(other, datetimedelta):
@@ -158,6 +158,10 @@ class NeDatetime(object):
     @property
     def fold(self):
         return self._fold
+
+
+    def raw_isoformat(self, *args, **kwargs):
+        return "%s %s" % (self._date.raw_isoformat(), self._time.isoformat(*args, **kwargs))        
 
     def isoformat(self, *args, **kwargs):
         return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))

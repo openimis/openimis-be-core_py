@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 from django.db import models
+from django.db.models import Q
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from cached_property import cached_property
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 Abstract entity, parent of all (new) openIMIS entities.
 Enforces the UUID identifier.
 """
+
 
 class UUIDModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -30,15 +32,33 @@ class UUIDModel(models.Model):
 Generic entity to save every modules' configuration (json format)
 """
 
+
 class ModuleConfiguration(UUIDModel):
     module = models.CharField(max_length=20)
+    MODULE_LAYERS = [('fe', 'frontend'), ('be', 'backend')]
+    layer = models.CharField(
+        max_length=2,
+        choices=MODULE_LAYERS,
+        default='be',
+    )
     version = models.CharField(max_length=10)
     config = models.TextField()
+    is_exposed = models.BooleanField(default=False)
+    is_disabled_until = models.DateTimeField(
+        default=None,
+        blank=True,
+        null=True
+    )
 
     @classmethod
-    def get_or_default(cls, module, default):
+    def get_or_default(cls, module, default, layer='be'):
         try:
-            db_configuration = cls.objects.get(module=module)._cfg
+            now = py_datetime.now()  # can't use core config here...
+            db_configuration = cls.objects.get(
+                Q(is_disabled_until=None) | Q(is_disabled_until__lt=now),
+                layer=layer,
+                module=module
+            )._cfg
             return {**default, **db_configuration}
         except ModuleConfiguration.DoesNotExist:
             logger.info('No %s configuration, using default!' % module)
@@ -112,11 +132,11 @@ class TechnicalUser(AbstractBaseUser):
             usr = User()
             usr.t_user = self
             save_required = True
-        if usr.username != self.username:   
+        if usr.username != self.username:
             usr.username = self.username
             save_required = True
         if save_required:
-            usr.save()        
+            usr.save()
 
     def save(self):
         super().save()
@@ -154,7 +174,6 @@ class InteractiveUser(models.Model):
     # password_validity = models.DateTimeField(db_column='PasswordValidity', blank=True, null=True)
     # is_associated = models.BooleanField(db_column='IsAssociated', blank=True, null=True)
 
-
     def save(self, *args, **kwargs):
         # exclusively managed from legacy openIMIS for now!
         raise NotImplementedError()
@@ -182,6 +201,7 @@ class InteractiveUser(models.Model):
     class Meta:
         managed = False
         db_table = 'tblUsers'
+
 
 class User(UUIDModel, PermissionsMixin):
     username = models.CharField(unique=True, max_length=25)
@@ -213,7 +233,7 @@ class User(UUIDModel, PermissionsMixin):
 
     @property
     def is_superuser(self):
-        return self._u.is_superuser        
+        return self._u.is_superuser
 
     @property
     def is_active(self):
@@ -231,7 +251,7 @@ class User(UUIDModel, PermissionsMixin):
         if name == '_u':
             raise ValueError('wrapper has not been initialised')
         if name == '__name__':
-            return self.username            
+            return self.username
         if not self._u:
             return None
         return getattr(self._u, name)
@@ -240,7 +260,7 @@ class User(UUIDModel, PermissionsMixin):
         # if not self._u:
         #     raise ValueError('wrapper has not been initialised')
         return self._u(*args, **kwargs)
-    
+
     def __str__(self):
         return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
 

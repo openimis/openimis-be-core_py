@@ -1,26 +1,10 @@
+import os
 from django.test import TestCase
+from django.db import connections
 from django.test.runner import DiscoverRunner
+from django.test.utils import get_unique_databases_and_mirrors
 
 from .utils import full_class_name, comparable
-
-
-class UnManagedModelTestRunner(DiscoverRunner):
-
-    def setup_test_environment(self, *args, **kwargs):
-        from django.apps import apps
-        get_models = apps.get_models
-        self.unmanaged_models = [
-            m for m in get_models() if not m._meta.managed]
-        for m in self.unmanaged_models:
-            m._meta.managed = True
-        super(UnManagedModelTestRunner,
-              self).setup_test_environment(*args, **kwargs)
-
-    def teardown_test_environment(self, *args, **kwargs):
-        super(UnManagedModelTestRunner,
-              self).teardown_test_environment(*args, **kwargs)
-        for m in self.unmanaged_models:
-            m._meta.managed = False
 
 
 class ComparableTest(TestCase):
@@ -57,4 +41,3 @@ class UtilsTestCase(TestCase):
 
         self.assertEquals(full_class_name(
             1), 'int')
-
