@@ -1,5 +1,6 @@
 import sys
 import datetime as py_datetime
+import graphene
 from .shared import datetimedelta
 
 """
@@ -53,7 +54,7 @@ class AdDate(py_datetime.date):
             return AdDate.from_ad_datetime(res)
         if isinstance(res, py_datetime.date):
             return AdDate.from_ad_date(res)
-        return res        
+        return res
 
     def __add__(self, other):
         if isinstance(other, datetimedelta):

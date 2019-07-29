@@ -3,7 +3,6 @@ import importlib
 import core
 from django.test import TestCase
 from datetime import date as py_date
-from datetime import date as py_date
 from datetime import datetime as py_datetime
 from .shared import is_midnight, datetimedelta
 
