@@ -28,6 +28,16 @@ class UUIDModel(models.Model):
         return "[%s]" % (self.id)
 
 
+class Control(models.Model):
+    field_name = models.CharField(db_column='FieldName', primary_key=True, max_length=50)
+    adjustibility = models.CharField(db_column='Adjustibility', max_length=1)
+    usage = models.CharField(db_column='Usage', max_length=200, blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tblControls'
+
+
 """
 Generic entity to save every modules' configuration (json format)
 """
@@ -43,6 +53,8 @@ class ModuleConfiguration(UUIDModel):
     )
     version = models.CharField(max_length=10)
     config = models.TextField()
+    # is_exposed indicates wherever a configuration is safe to be accessible from api
+    # DON'T EXPOSE (backend) configurations that contain credentials,...
     is_exposed = models.BooleanField(default=False)
     is_disabled_until = models.DateTimeField(
         default=None,
