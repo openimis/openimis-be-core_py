@@ -31,3 +31,12 @@ def filter_validity(arg='validity', **kwargs):
         Q(validity_from=None) | Q(validity_from__lte=validity),
         Q(validity_to=None) | Q(validity_to__gte=validity)
     )
+
+
+def prefix_filterset(prefix, filterset):
+    if type(filterset) is dict:
+        return {(prefix + k): v for k, v in filterset.items()}
+    elif type(filterset) is list:
+        return [(prefix + x) for x in filterset]
+    else:
+        return filterset

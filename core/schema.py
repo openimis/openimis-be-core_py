@@ -7,13 +7,13 @@ from .models import ModuleConfiguration, Control
 from datetime import datetime as py_datetime
 
 
-class ControlGrapQLType(DjangoObjectType):
+class ControlGQLType(DjangoObjectType):
     class Meta:
         model = Control
 
 
-class ModuleConfigurationGrapQLType(DjangoObjectType):
-    controls = graphene.List(ControlGrapQLType)
+class ModuleConfigurationGQLType(DjangoObjectType):
+    controls = graphene.List(ControlGQLType)
 
     def resolve_controls(parent, info):
         # TODO: find a way to prevent the N+1 query!
@@ -25,11 +25,11 @@ class ModuleConfigurationGrapQLType(DjangoObjectType):
 
 class Query(graphene.ObjectType):
     core_controls = graphene.List(
-        ControlGrapQLType,
+        ControlGQLType,
         module=graphene.String(required=True)
     )
     core_module_configurations = graphene.List(
-        ModuleConfigurationGrapQLType,
+        ModuleConfigurationGQLType,
         validity=graphene.String(),
         layer=graphene.String())
 
