@@ -1,3 +1,4 @@
+import graphene
 from django.db.models import Q
 import core
 
@@ -40,3 +41,22 @@ def prefix_filterset(prefix, filterset):
         return [(prefix + x) for x in filterset]
     else:
         return filterset
+
+
+class ExtendedConnection(graphene.Connection):
+    """
+    Adds total_count and edgde_count to Graphene Relay connections. To use, simply add to the
+    Graphene object definition Meta:
+    `connection_class = ExtendedConnection`
+    """
+    class Meta:
+        abstract = True
+
+    total_count = graphene.Int()
+    edge_count = graphene.Int()
+
+    def resolve_total_count(root, info, **kwargs):
+        return root.length
+
+    def resolve_edge_count(root, info, **kwargs):
+        return len(root.edges)
