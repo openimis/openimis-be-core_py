@@ -1,10 +1,101 @@
-from django.db import connection
-from django.db.models import Q
-import graphene
+import json
 import re
-from graphene_django import DjangoObjectType
-from .models import ModuleConfiguration, Control
+import uuid
 from datetime import datetime as py_datetime
+
+import graphene
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Q
+from django.http import HttpRequest
+from graphene_django import DjangoObjectType
+
+from .models import ModuleConfiguration, Control
+
+MAX_SMALLINT = 32767
+MIN_SMALLINT = -32768
+
+
+class SmallInt(graphene.Int):
+    """
+    This represents a small Integer, with values ranging from -32768 to +32767
+    """
+
+    @staticmethod
+    def coerce_int(value):
+        res = super().coerce_int(value)
+        if MIN_SMALLINT <= res <= MAX_SMALLINT:
+            return res
+        else:
+            return None
+
+    serialize = coerce_int
+    parse_value = coerce_int
+
+    @staticmethod
+    def parse_literal(ast):
+        result = graphene.Int.parse_literal(ast)
+        if result is not None and MIN_SMALLINT <= result <= MAX_SMALLINT:
+            return result
+        else:
+            return None
+
+
+MAX_TINYINT = 255
+MIN_TINYINT = 0
+
+
+class TinyInt(graphene.Int):
+    """
+    This represents a tiny Integer (8 bit), with values ranging from 0 to 255
+    """
+
+    @staticmethod
+    def coerce_int(value):
+        res = super().coerce_int(value)
+        if MIN_TINYINT <= res <= MAX_TINYINT:
+            return res
+        else:
+            return None
+
+    serialize = coerce_int
+    parse_value = coerce_int
+
+    @staticmethod
+    def parse_literal(ast):
+        result = graphene.Int.parse_literal(ast)
+        if result is not None and MIN_TINYINT <= result <= MAX_TINYINT:
+            return result
+        else:
+            return None
+
+
+class OpenIMISJSONEncoder(DjangoJSONEncoder):
+    def default(self, o):
+        if isinstance(o, HttpRequest):
+            if o.user:
+                return f"HTTP_user: {o.user.id}"
+            else:
+                return None
+        return super().default(o)
+
+
+class OpenIMISMutation(graphene.relay.ClientIDMutation):
+    class Meta:
+        abstract = True
+
+    internal_id = graphene.Field(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, root, info, **data):
+        pass
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, **data):
+        # TODO persist the kwargs
+        print("TODO: persist", json.dumps(data, cls=OpenIMISJSONEncoder))
+        internal_id = str(uuid.uuid4())
+        cls.async_mutate(root, info, **data)
+        return cls(internal_id=internal_id)
 
 
 class ControlGQLType(DjangoObjectType):
@@ -17,7 +108,7 @@ class ModuleConfigurationGQLType(DjangoObjectType):
 
     def resolve_controls(parent, info):
         # TODO: find a way to prevent the N+1 query!
-        return Control.objects.filter(field_name__startswith=parent.module+'.')
+        return Control.objects.filter(field_name__startswith=parent.module + '.')
 
     class Meta:
         model = ModuleConfiguration
@@ -42,7 +133,7 @@ class Query(graphene.ObjectType):
             validity = py_datetime.now()
         else:
             d = re.split('\D', validity)
-            validity = py_datetime(*[int('0'+x) for x in d][:6])
+            validity = py_datetime(*[int('0' + x) for x in d][:6])
         # is_exposed indicates wherever a configuration
         # is safe to be accessible from api
         # DON'T EXPOSE (backend) configurations that contain credentials,...
@@ -57,5 +148,5 @@ class Query(graphene.ObjectType):
 
     def resolve_core_controls(self, info, **kwargs):
         return Control.objects.filter(
-            field_name__startswith=kwargs.get('module')+"."
+            field_name__startswith=kwargs.get('module') + "."
         )

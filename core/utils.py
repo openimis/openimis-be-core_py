@@ -45,7 +45,7 @@ def prefix_filterset(prefix, filterset):
 
 class ExtendedConnection(graphene.Connection):
     """
-    Adds total_count and edgde_count to Graphene Relay connections. To use, simply add to the
+    Adds total_count and edge_count to Graphene Relay connections. To use, simply add to the
     Graphene object definition Meta:
     `connection_class = ExtendedConnection`
     """
