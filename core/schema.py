@@ -1,15 +1,17 @@
 import json
 import re
-import uuid
 from datetime import datetime as py_datetime
 
 import graphene
+from core import ExtendedConnection
+from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
 from django.http import HttpRequest
 from graphene_django import DjangoObjectType
+from graphene_django.filter import DjangoFilterConnectionField
 
-from .models import ModuleConfiguration, Control
+from .models import ModuleConfiguration, Control, MutationLog
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -91,11 +93,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
-        # TODO persist the kwargs
-        print("TODO: persist", json.dumps(data, cls=OpenIMISJSONEncoder))
-        internal_id = str(uuid.uuid4())
+        mutation_log = MutationLog.objects.create(
+            json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
+            user_id=info.context.user.id if info.context.user else None,
+            client_mutation_id=data.get('client_mutation_id'),
+        )
         cls.async_mutate(root, info, **data)
-        return cls(internal_id=internal_id)
+        mutation_log.mark_as_successful()
+        return cls(internal_id=mutation_log.id)
 
 
 class ControlGQLType(DjangoObjectType):
@@ -114,6 +119,38 @@ class ModuleConfigurationGQLType(DjangoObjectType):
         model = ModuleConfiguration
 
 
+class MutationLogGQLType(DjangoObjectType):
+    """
+    This represents a requested mutation and its status.
+    The "user" search filter is only available for super-users. Otherwise, the user is automatically set to the
+    currently logged user.
+    """
+    class Meta:
+        model = MutationLog
+        interfaces = (graphene.relay.Node,)
+        filter_fields = {
+            "id": ["exact"],
+            "client_mutation_id": ["exact"],
+            "request_date_time": ["exact", "gte", "lte"],
+            "status": ["exact", "gte"],
+            "user": ["exact"],
+        }
+        connection_class = ExtendedConnection
+
+    status = graphene.Field(graphene.Int,
+                            description=", ".join([f"{pair[0]}: {pair[1]}" for pair in MutationLog.STATUS_CHOICES]))
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        if info.context.user.is_anonymous:
+            return queryset.none()
+        elif info.context.user.is_superuser:
+            return queryset
+        else:
+            queryset = queryset.filter(user=info.context.user)
+        return queryset
+
+
 class Query(graphene.ObjectType):
     core_controls = graphene.List(
         ControlGQLType,
@@ -123,6 +160,8 @@ class Query(graphene.ObjectType):
         ModuleConfigurationGQLType,
         validity=graphene.String(),
         layer=graphene.String())
+
+    mutation_logs = DjangoFilterConnectionField(MutationLogGQLType)
 
     def resolve_core_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')

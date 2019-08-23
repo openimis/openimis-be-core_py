@@ -3,29 +3,28 @@ import json
 import logging
 import uuid
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, DO_NOTHING
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from cached_property import cached_property
-from .fields import DateField, DateTimeField
+from .fields import DateTimeField
 from datetime import datetime as py_datetime
 
 logger = logging.getLogger(__name__)
 
-"""
-Abstract entity, parent of all (new) openIMIS entities.
-Enforces the UUID identifier.
-"""
-
 
 class UUIDModel(models.Model):
+    """
+    Abstract entity, parent of all (new) openIMIS entities.
+    Enforces the UUID identifier.
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class Meta:
         abstract = True
 
     def __str__(self):
-        return "[%s]" % (self.id)
+        return "[%s]" % (self.id,)
 
 
 class Control(models.Model):
@@ -38,12 +37,10 @@ class Control(models.Model):
         db_table = 'tblControls'
 
 
-"""
-Generic entity to save every modules' configuration (json format)
-"""
-
-
 class ModuleConfiguration(UUIDModel):
+    """
+    Generic entity to save every modules' configuration (json format)
+    """
     module = models.CharField(max_length=20)
     MODULE_LAYERS = [('fe', 'frontend'), ('be', 'backend')]
     layer = models.CharField(
@@ -279,3 +276,41 @@ class User(UUIDModel, PermissionsMixin):
     class Meta:
         managed = True
         db_table = 'core_User'
+
+
+class MutationLog(UUIDModel):
+    """
+    Maintains a log of every mutation requested along with its status. It is used to reply
+    immediately to the client and have longer processing in the various backend modules.
+    The ID of this table will be used for reference.
+    """
+    RECEIVED = 0
+    ERROR = 1
+    SUCCESS = 2
+    STATUS_CHOICES = (
+        (RECEIVED, "Received"),
+        (ERROR, "Error"),
+        (SUCCESS, "Success"),
+    )
+
+    json_content = models.TextField()
+    user = models.ForeignKey(User, on_delete=DO_NOTHING, blank=True, null=True)
+    request_date_time = models.DateTimeField(auto_now_add=True)
+    client_mutation_id = models.CharField(max_length=255, blank=True, null=True)
+    status = models.IntegerField(choices=STATUS_CHOICES, default=RECEIVED)
+    error = models.TextField(blank=True, null=True)
+
+    class Meta:
+        managed = True
+        db_table = "core_Mutation_Log"
+
+    def mark_as_successful(self):
+        """
+        Do not alter the mutation_log and then save it as it might override changes from another process. This
+        method will only set the mutation_log as successful if it is in RECEIVED status.
+        :return True if the status was updated, False if it was in ERROR or already in SUCCESS status
+        """
+        affected_rows = MutationLog.objects.filter(id=self.id)\
+            .filter(status=MutationLog.RECEIVED).update(status=MutationLog.SUCCESS)
+        self.refresh_from_db()
+        return affected_rows > 0
