@@ -87,6 +87,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     internal_id = graphene.Field(graphene.String)
 
+    class Input:
+        client_mutation_label = graphene.String(max_length=255, required=False)
+
     @classmethod
     def async_mutate(cls, root, info, **data):
         pass
@@ -97,6 +100,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get('client_mutation_id'),
+            client_mutation_label=data.get("client_mutation_label")
         )
         cls.async_mutate(root, info, **data)
         mutation_log.mark_as_successful()
@@ -131,6 +135,7 @@ class MutationLogGQLType(DjangoObjectType):
         filter_fields = {
             "id": ["exact"],
             "client_mutation_id": ["exact"],
+            "client_mutation_label": ["exact"],
             "request_date_time": ["exact", "gte", "lte"],
             "status": ["exact", "gte"],
             "user": ["exact"],
