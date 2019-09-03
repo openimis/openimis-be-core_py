@@ -28,9 +28,11 @@ class UUIDModel(models.Model):
 
 
 class Control(models.Model):
-    field_name = models.CharField(db_column='FieldName', primary_key=True, max_length=50)
+    field_name = models.CharField(
+        db_column='FieldName', primary_key=True, max_length=50)
     adjustibility = models.CharField(db_column='Adjustibility', max_length=1)
-    usage = models.CharField(db_column='Usage', max_length=200, blank=True, null=True)
+    usage = models.CharField(
+        db_column='Usage', max_length=200, blank=True, null=True)
 
     class Meta:
         managed = False
@@ -125,7 +127,7 @@ class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(blank=True, null=True)
-    language_id = 'en'
+    language = 'en'
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     validity_from = models.DateTimeField(blank=True, null=True)
@@ -160,7 +162,7 @@ class InteractiveUser(models.Model):
     id = models.AutoField(db_column='UserID', primary_key=True)
     legacy_id = models.IntegerField(
         db_column='LegacyID', blank=True, null=True)
-    language_id = models.ForeignKey(
+    language = models.ForeignKey(
         Language, models.DO_NOTHING, db_column='LanguageID')
     last_name = models.CharField(db_column='LastName', max_length=100)
     other_names = models.CharField(db_column='OtherNames', max_length=100)
@@ -189,6 +191,9 @@ class InteractiveUser(models.Model):
 
     @property
     def username(self):
+        return self.login_name
+
+    def get_username(self):
         return self.login_name
 
     @property
@@ -296,8 +301,10 @@ class MutationLog(UUIDModel):
     json_content = models.TextField()
     user = models.ForeignKey(User, on_delete=DO_NOTHING, blank=True, null=True)
     request_date_time = models.DateTimeField(auto_now_add=True)
-    client_mutation_id = models.CharField(max_length=255, blank=True, null=True)
-    client_mutation_label = models.CharField(max_length=255, blank=True, null=True)
+    client_mutation_id = models.CharField(
+        max_length=255, blank=True, null=True)
+    client_mutation_label = models.CharField(
+        max_length=255, blank=True, null=True)
     status = models.IntegerField(choices=STATUS_CHOICES, default=RECEIVED)
     error = models.TextField(blank=True, null=True)
 

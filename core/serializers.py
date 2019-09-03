@@ -1,13 +1,33 @@
 from rest_framework import serializers
-from .models import User, TechnicalUser, Language
+from .models import User, InteractiveUser, TechnicalUser, Language
 
-# class TechnicalUserSerializer(serializers.ModelSerializer):
+
+# class LanguageSerializer(serializers.ModelSerializer):
+
 #     class Meta:
-#         model = TechnicalUser
-#         fields = ('id', 'username', 'email')
+#         model = Language
+#         fields = ('code',)
+
+
+class InteractiveUserSerializer(serializers.ModelSerializer):
+    language = serializers.PrimaryKeyRelatedField(many=False, read_only=True)
+
+    class Meta:
+        model = InteractiveUser
+        fields = ('id', 'language', 'last_name',
+                  'other_names', 'health_facility_id')
+
+
+class TechnicalUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TechnicalUser
+        fields = ('id', 'language', 'username', 'email')
+
 
 class UserSerializer(serializers.ModelSerializer):
-    language = serializers.CharField(source='language_id')
+    i_user = InteractiveUserSerializer(many=False, read_only=True)
+    t_user = TechnicalUserSerializer(many=False, read_only=True)
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'language')
+        fields = ('id', 'username', 'i_user', 't_user')
