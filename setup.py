@@ -14,7 +14,7 @@ setup(
     include_package_data=True,
     license='GNU AGPL v3',
     description='The openIMIS Backend Core reference module.',
-    long_description=README,
+    # long_description=README,
     url='https://openimis.org/',
     author='Xavier Gillmann',
     author_email='xgillmann@bluesquarehub.com',
