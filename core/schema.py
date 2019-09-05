@@ -92,11 +92,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         client_mutation_label = graphene.String(max_length=255, required=False)
 
     @classmethod
-    def async_mutate(cls, root, info, **data) -> Tuple[bool, str]:
+    def async_mutate(cls, root, info, **data) -> str:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB
-        :return: (success, error_message) if nothing is returned, the response is considered to be a success
+        :param root: Unused in this context
+        :param info: info.context.user contains the logged user
+        :param data: all parameters passed to the mutation
+        :return: error_message if None is returned, the response is considered to be a success
         """
         pass
 
