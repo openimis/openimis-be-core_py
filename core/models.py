@@ -149,8 +149,8 @@ class TechnicalUser(AbstractBaseUser):
         if save_required:
             usr.save()
 
-    def save(self):
-        super().save()
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
         self._bind_User()
 
     class Meta:
