@@ -322,3 +322,12 @@ class MutationLog(UUIDModel):
             .filter(status=MutationLog.RECEIVED).update(status=MutationLog.SUCCESS)
         self.refresh_from_db()
         return affected_rows > 0
+
+    def mark_as_failed(self, error):
+        """
+        Do not alter the mutation_log and then save it as it might override changes from another process.
+        This method will force the status to ERROR and set its error accordingly.
+        """
+        MutationLog.objects.filter(id=self.id)\
+            .update(status=MutationLog.ERROR, error=error)
+        self.refresh_from_db()

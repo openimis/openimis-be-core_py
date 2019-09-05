@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime as py_datetime
+from typing import Tuple
 
 import graphene
 from core import ExtendedConnection
@@ -91,7 +92,12 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         client_mutation_label = graphene.String(max_length=255, required=False)
 
     @classmethod
-    def async_mutate(cls, root, info, **data):
+    def async_mutate(cls, root, info, **data) -> Tuple[bool, str]:
+        """
+        This method has to be overridden in the subclasses to implement the actual mutation.
+        The response should contain a boolean for success and an error message that will be saved into the DB
+        :return: (success, error_message) if nothing is returned, the response is considered to be a success
+        """
         pass
 
     @classmethod
@@ -102,8 +108,15 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             client_mutation_id=data.get('client_mutation_id'),
             client_mutation_label=data.get("client_mutation_label")
         )
-        cls.async_mutate(root, info, **data)
-        mutation_log.mark_as_successful()
+        try:
+            error_message = cls.async_mutate(root, info, **data)
+            if error_message is None:
+                mutation_log.mark_as_successful()
+            else:
+                mutation_log.mark_as_failed(error_message)
+        except Exception as exc:
+            mutation_log.mark_as_failed(exc)
+
         return cls(internal_id=mutation_log.id)
 
 
