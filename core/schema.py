@@ -1,14 +1,13 @@
 import json
 import re
 from datetime import datetime as py_datetime
-from typing import Tuple
 
 import graphene
 from core import ExtendedConnection
-from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
 from django.http import HttpRequest
+from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
@@ -139,6 +138,46 @@ class ModuleConfigurationGQLType(DjangoObjectType):
         model = ModuleConfiguration
 
 
+class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
+    """
+    Adapted from https://github.com/graphql-python/graphene/issues/251
+    Substituting:
+    `mutation_logs = DjangoFilterConnectionField(MutationLogGQLType)`
+    with:
+    ```
+    mutation_logs = OrderedDjangoFilterConnectionField(MutationLogGQLType,
+        orderBy=graphene.List(of_type=graphene.String))
+    ```
+    """
+    @classmethod
+    def connection_resolver(cls, resolver, connection, default_manager, max_limit,
+                            enforce_first_or_last, filterset_class, filtering_args,
+                            root, info, **args):
+        filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
+        qs = filterset_class(
+            data=filter_kwargs,
+            queryset=default_manager.get_queryset(),
+            request=info.context
+        ).qs
+        order = args.get('orderBy', None)
+        if order:
+            if type(order) is str:
+                snake_order = to_snake_case(order)
+            else:
+                snake_order = [to_snake_case(o) for o in order]
+            qs = qs.order_by(*snake_order)
+        return super(DjangoFilterConnectionField, cls).connection_resolver(
+            resolver,
+            connection,
+            qs,
+            max_limit,
+            enforce_first_or_last,
+            root,
+            info,
+            **args
+        )
+
+
 class MutationLogGQLType(DjangoObjectType):
     """
     This represents a requested mutation and its status.
@@ -182,7 +221,7 @@ class Query(graphene.ObjectType):
         validity=graphene.String(),
         layer=graphene.String())
 
-    mutation_logs = DjangoFilterConnectionField(MutationLogGQLType)
+    mutation_logs = OrderedDjangoFilterConnectionField(MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
     def resolve_core_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
