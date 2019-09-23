@@ -6,6 +6,7 @@ import graphene
 from core import ExtendedConnection
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
+from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
@@ -161,10 +162,17 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         ).qs
         order = args.get('orderBy', None)
         if order:
+            # Django supports "?" as random ordering but uses RAND() instead of NEWID(), will patch on the fly
             if type(order) is str:
-                snake_order = to_snake_case(order)
+                if order == "?":
+                    snake_order = RawSQL("NEWID()", params=[])
+                else:
+                    snake_order = to_snake_case(order)
             else:
-                snake_order = [to_snake_case(o) for o in order]
+                snake_order = [
+                    to_snake_case(o) if o != "?" else RawSQL("NEWID()", params=[])
+                    for o in order
+                ]
             qs = qs.order_by(*snake_order)
         return super(DjangoFilterConnectionField, cls).connection_resolver(
             resolver,
