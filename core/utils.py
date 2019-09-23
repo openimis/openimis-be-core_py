@@ -43,6 +43,32 @@ def prefix_filterset(prefix, filterset):
         return filterset
 
 
+PATIENT_CATEGORY_MASK_MALE = 1
+PATIENT_CATEGORY_MASK_FEMALE = 2
+PATIENT_CATEGORY_MASK_ADULT = 4
+PATIENT_CATEGORY_MASK_MINOR = 8
+
+
+def patient_category_mask(insuree, target_date):
+    if type(target_date) is str:
+        from core import datetime
+        target_date = datetime.date(*[int(x) for x in target_date.split("-")])  # TODO: this should be nicer
+    mask = 0
+    if insuree.gender in ('M', 'O'):
+        mask = mask | PATIENT_CATEGORY_MASK_MALE
+    else:
+        mask = mask | PATIENT_CATEGORY_MASK_FEMALE
+
+    if insuree.dob:
+        if insuree.is_adult(target_date):
+            mask = mask | PATIENT_CATEGORY_MASK_ADULT
+        else:
+            mask = mask | PATIENT_CATEGORY_MASK_MINOR
+    else:
+        raise NotImplementedError("date of birth of insuree is unknown")  # TODO What should we do in this case ?
+    return mask
+
+
 class ExtendedConnection(graphene.Connection):
     """
     Adds total_count and edge_count to Graphene Relay connections. To use, simply add to the
