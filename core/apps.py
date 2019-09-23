@@ -18,6 +18,7 @@ DEFAULT_CFG = {
     "shortstrfdate": "%d/%m/%Y",
     "longstrfdate": "%a %d %B %Y",
     "iso_raw_date": "False",
+    "age_of_majority": "18",
 }
 
 
@@ -44,8 +45,11 @@ class CoreConfig(AppConfig):
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
+    def _configure_majority(self, cfg):
+        this.age_of_majority = int(cfg["age_of_majority"])
+
     def ready(self):
         from .models import ModuleConfiguration
-        cfg = ModuleConfiguration.get_or_default(
-            MODULE_NAME, DEFAULT_CFG)
+        cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
+        self._configure_majority(cfg)
