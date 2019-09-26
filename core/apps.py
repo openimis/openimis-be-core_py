@@ -11,6 +11,7 @@ MODULE_NAME = "core"
 this = sys.modules[MODULE_NAME]
 
 DEFAULT_CFG = {
+    "auto_provisioning_user_group": "user",
     "calendar_package": "core",
     "calendar_module": ".calendars.ad_calendar",
     "datetime_package": "core",
@@ -48,8 +49,12 @@ class CoreConfig(AppConfig):
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
 
+    def _configure_auto_provisioning(self, cfg):
+        this.auto_provisioning_user_group = cfg["auto_provisioning_user_group"]
+
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_majority(cfg)
+        self._configure_auto_provisioning(cfg)

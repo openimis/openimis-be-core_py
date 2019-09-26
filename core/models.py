@@ -2,10 +2,12 @@ import sys
 import json
 import logging
 import uuid
+import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.utils.crypto import salted_hmac
 from cached_property import cached_property
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
@@ -104,6 +106,11 @@ class Language(models.Model):
 
 class UserManager(BaseUserManager):
 
+    def _create_core_user(self, **fields):
+        user = User(**fields)
+        user.save()
+        return user
+
     def _create_tech_user(self, username, email, password, **extra_fields):
         tech = TechnicalUser(username=username, email=email, **extra_fields)
         tech.set_password(password)
@@ -121,6 +128,27 @@ class UserManager(BaseUserManager):
         extra_fields['is_superuser'] = True
         self._create_tech_user(
             username, email, password, **extra_fields)
+
+    def get_or_create(self, **kwargs):
+        created = False
+        try:
+            user = User.objects.get(**kwargs)
+        except User.DoesNotExist:
+            created = True
+            user = self._create_core_user(**kwargs)
+        if user._u is None:
+            try:
+                user.i_user = InteractiveUser.objects.get(
+                    login_name=user.username)
+            except InteractiveUser.DoesNotExist:
+                raise Exception("Unauthorized")
+            user.save()
+            if core.auto_provisioning_user_group:
+                group = Group.objects.get(
+                    name=core.auto_provisioning_user_group)
+                user_group = UserGroup(user=user, group=group)
+                user_group.save()
+        return user, created
 
 
 class TechnicalUser(AbstractBaseUser):
@@ -261,11 +289,17 @@ class User(UUIDModel, PermissionsMixin):
             return False
         return True
 
+    def get_session_auth_hash(self):
+        key_salt = "core.User.get_session_auth_hash"
+        return salted_hmac(key_salt, self.username).hexdigest()
+
     def __getattr__(self, name):
         if name == '_u':
             raise ValueError('wrapper has not been initialised')
         if name == '__name__':
             return self.username
+        if name == 'get_session_auth_hash':
+            return False
         if not self._u:
             return None
         return getattr(self._u, name)
@@ -281,6 +315,24 @@ class User(UUIDModel, PermissionsMixin):
     class Meta:
         managed = True
         db_table = 'core_User'
+
+
+class Group(models.Model):
+    name = models.CharField(unique=True, max_length=80)
+
+    class Meta:
+        managed = False
+        db_table = 'auth_group'
+
+
+class UserGroup(models.Model):
+    user = models.ForeignKey(User, models.DO_NOTHING)
+    group = models.ForeignKey(Group, models.DO_NOTHING)
+
+    class Meta:
+        managed = False
+        db_table = 'core_User_groups'
+        unique_together = (('user', 'group'),)
 
 
 class MutationLog(UUIDModel):
