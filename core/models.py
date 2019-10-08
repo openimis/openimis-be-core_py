@@ -11,6 +11,7 @@ from django.utils.crypto import salted_hmac
 from cached_property import cached_property
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
+from .utils import filter_validity
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,8 @@ class UserManager(BaseUserManager):
         if user._u is None:
             try:
                 user.i_user = InteractiveUser.objects.get(
-                    login_name=user.username)
+                    login_name=user.username,
+                    *filter_validity())
             except InteractiveUser.DoesNotExist:
                 raise Exception("Unauthorized")
             user.save()
