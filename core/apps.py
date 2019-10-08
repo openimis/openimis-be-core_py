@@ -52,12 +52,14 @@ class CoreConfig(AppConfig):
     def _configure_auto_provisioning(self, cfg):
         group = cfg["auto_provisioning_user_group"]
         this.auto_provisioning_user_group = group
-        from .models import Group
         try:
+            from .models import Group
             Group.objects.get(name=group)
         except Group.DoesNotExist:
             g = Group(name=group)
             g.save()
+        except Exception as e:
+            logger.error('Failed set auto_provisioning_user_group '+str(e))
 
     def ready(self):
         from .models import ModuleConfiguration
