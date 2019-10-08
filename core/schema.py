@@ -12,7 +12,7 @@ from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
-from .models import ModuleConfiguration, Control, MutationLog
+from .models import ModuleConfiguration, FieldControl, MutationLog
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -123,18 +123,12 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         return cls(internal_id=mutation_log.id)
 
 
-class ControlGQLType(DjangoObjectType):
+class FieldControlGQLType(DjangoObjectType):
     class Meta:
-        model = Control
+        model = FieldControl
 
 
 class ModuleConfigurationGQLType(DjangoObjectType):
-    controls = graphene.List(ControlGQLType)
-
-    def resolve_controls(parent, info):
-        # TODO: find a way to prevent the N+1 query!
-        return Control.objects.filter(field_name__startswith=parent.module + '.')
-
     class Meta:
         model = ModuleConfiguration
 
@@ -170,7 +164,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                     snake_order = to_snake_case(order)
             else:
                 snake_order = [
-                    to_snake_case(o) if o != "?" else RawSQL("NEWID()", params=[])
+                    to_snake_case(o) if o != "?" else RawSQL(
+                        "NEWID()", params=[])
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
@@ -220,16 +215,13 @@ class MutationLogGQLType(DjangoObjectType):
 
 
 class Query(graphene.ObjectType):
-    core_controls = graphene.List(
-        ControlGQLType,
-        module=graphene.String(required=True)
-    )
     core_module_configurations = graphene.List(
         ModuleConfigurationGQLType,
         validity=graphene.String(),
         layer=graphene.String())
 
-    mutation_logs = OrderedDjangoFilterConnectionField(MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
+    mutation_logs = OrderedDjangoFilterConnectionField(
+        MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
     def resolve_core_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
@@ -251,9 +243,4 @@ class Query(graphene.ObjectType):
         layer = kwargs.get('layer')
         if layer is not None:
             crits = (*crits, Q(layer=layer))
-        return ModuleConfiguration.objects.filter(*crits)
-
-    def resolve_core_controls(self, info, **kwargs):
-        return Control.objects.filter(
-            field_name__startswith=kwargs.get('module') + "."
-        )
+        return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)

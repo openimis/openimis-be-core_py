@@ -29,18 +29,6 @@ class UUIDModel(models.Model):
         return "[%s]" % (self.id,)
 
 
-class Control(models.Model):
-    field_name = models.CharField(
-        db_column='FieldName', primary_key=True, max_length=50)
-    adjustibility = models.CharField(db_column='Adjustibility', max_length=1)
-    usage = models.CharField(
-        db_column='Usage', max_length=200, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = 'tblControls'
-
-
 class ModuleConfiguration(UUIDModel):
     """
     Generic entity to save every modules' configuration (json format)
@@ -90,6 +78,17 @@ class ModuleConfiguration(UUIDModel):
 
     class Meta:
         db_table = 'core_ModuleConfiguration'
+
+
+class FieldControl(UUIDModel):
+    module = models.ForeignKey(
+        ModuleConfiguration, models.DO_NOTHING, related_name='controls')
+    field = models.CharField(unique=True, max_length=250)
+    # mask: Hidden | Readonly | Mandatory
+    usage = models.IntegerField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'core_FieldControl'
 
 
 class Language(models.Model):
@@ -188,6 +187,7 @@ class TechnicalUser(AbstractBaseUser):
 
 class InteractiveUser(models.Model):
     id = models.AutoField(db_column='UserID', primary_key=True)
+    uuid = models.UUIDField(db_column='UserUUID', default=uuid.uuid4, unique = True)
     legacy_id = models.IntegerField(
         db_column='LegacyID', blank=True, null=True)
     language = models.ForeignKey(
