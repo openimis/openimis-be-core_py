@@ -187,7 +187,7 @@ class TechnicalUser(AbstractBaseUser):
 
 class InteractiveUser(models.Model):
     id = models.AutoField(db_column='UserID', primary_key=True)
-    uuid = models.UUIDField(db_column='UserUUID', default=uuid.uuid4, unique = True)
+    uuid = models.CharField(db_column='UserUUID', max_length=36, default=uuid.uuid4, unique = True)
     legacy_id = models.IntegerField(
         db_column='LegacyID', blank=True, null=True)
     language = models.ForeignKey(
