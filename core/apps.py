@@ -58,8 +58,12 @@ class CoreConfig(AppConfig):
         except Group.DoesNotExist:
             g = Group(name=group)
             g.save()
+            from django.contrib.auth.models import Permission
+            p = Permission.objects.get(codename="view_user")
+            g.permissions.add(p)
+            g.save()
         except Exception as e:
-            logger.error('Failed set auto_provisioning_user_group '+str(e))
+            logger.warning('Failed set auto_provisioning_user_group '+str(e))
 
     def ready(self):
         from .models import ModuleConfiguration

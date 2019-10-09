@@ -6,7 +6,7 @@ import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
 from django.core.exceptions import ObjectDoesNotExist
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
 from cached_property import cached_property
 from .fields import DateTimeField
@@ -187,9 +187,49 @@ class TechnicalUser(AbstractBaseUser):
         db_table = 'core_TechnicalUser'
 
 
+class Role(models.Model):
+    id = models.AutoField(db_column='RoleID', primary_key=True)
+    uuid = models.CharField(db_column='RoleUUID', max_length=36)
+    name = models.CharField(db_column='RoleName', max_length=50)
+    altlanguage = models.CharField(
+        db_column='AltLanguage', max_length=50, blank=True, null=True)
+    is_system = models.IntegerField(db_column='IsSystem')
+    is_blocked = models.BooleanField(db_column='IsBlocked')
+    validity_from = models.DateTimeField(db_column='ValidityFrom')
+    validity_to = models.DateTimeField(
+        db_column='ValidityTo', blank=True, null=True)
+    audit_user_id = models.IntegerField(
+        db_column='AuditUserID', blank=True, null=True)
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tblRole'
+
+
+class RoleRight(models.Model):
+    id = models.AutoField(db_column='RoleRightID', primary_key=True)
+    role = models.ForeignKey(Role, models.DO_NOTHING,
+                             db_column='RoleID', related_name="rights")
+    right_id = models.IntegerField(db_column='RightID')
+    validity_from = models.DateTimeField(db_column='ValidityFrom')
+    validity_to = models.DateTimeField(
+        db_column='ValidityTo', blank=True, null=True)
+    audit_user_id = models.IntegerField(
+        db_column='AuditUserId', blank=True, null=True)
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tblRoleRight'
+
+
 class InteractiveUser(models.Model):
     id = models.AutoField(db_column='UserID', primary_key=True)
-    uuid = models.CharField(db_column='UserUUID', max_length=36, default=uuid.uuid4, unique = True)
+    uuid = models.CharField(db_column='UserUUID',
+                            max_length=36, default=uuid.uuid4, unique=True)
     legacy_id = models.IntegerField(
         db_column='LegacyID', blank=True, null=True)
     language = models.ForeignKey(
@@ -199,7 +239,7 @@ class InteractiveUser(models.Model):
     phone = models.CharField(
         db_column='Phone', max_length=50, blank=True, null=True)
     login_name = models.CharField(db_column='LoginName', max_length=25)
-    role_id = models.IntegerField(db_column='RoleID')
+    role = models.ForeignKey(Role, models.DO_NOTHING, db_column='RoleID')
     health_facility_id = models.IntegerField(
         db_column='HFID', blank=True, null=True)
     validity_from = DateTimeField(db_column='ValidityFrom')
@@ -233,6 +273,14 @@ class InteractiveUser(models.Model):
     @property
     def is_superuser(self):
         return False
+
+    @cached_property
+    def rights(self):
+        return [r.right_id for r in self.role.rights.all()]
+
+    @cached_property
+    def rights_str(self):
+        return [str(r.right_id) for r in self.role.rights.all()]
 
     def set_password(self, raw_password):
         # exclusively managed from legacy openIMIS for now!
@@ -291,6 +339,10 @@ class User(UUIDModel, PermissionsMixin):
             return False
         return True
 
+    def has_perm(self, perm, obj=None):
+        i_user = self.i_user if obj is None else obj.i_user
+        return True if i_user is not None and perm in i_user.rights_str else super(User, self).has_perm(perm, obj)
+
     def get_session_auth_hash(self):
         key_salt = "core.User.get_session_auth_hash"
         return salted_hmac(key_salt, self.username).hexdigest()
@@ -317,14 +369,6 @@ class User(UUIDModel, PermissionsMixin):
     class Meta:
         managed = True
         db_table = 'core_User'
-
-
-class Group(models.Model):
-    name = models.CharField(unique=True, max_length=80)
-
-    class Meta:
-        managed = False
-        db_table = 'auth_group'
 
 
 class UserGroup(models.Model):

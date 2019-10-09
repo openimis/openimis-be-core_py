@@ -14,18 +14,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Control',
-            fields=[
-                ('field_name', models.CharField(db_column='FieldName', max_length=50, primary_key=True, serialize=False)),
-                ('adjustibility', models.CharField(db_column='Adjustibility', max_length=1)),
-                ('usage', models.CharField(blank=True, db_column='Usage', max_length=200, null=True)),
-            ],
-            options={
-                'db_table': 'tblControls',
-                'managed': False,
-            },
-        ),
-        migrations.CreateModel(
             name='MutationLog',
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
