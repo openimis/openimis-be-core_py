@@ -276,11 +276,17 @@ class InteractiveUser(models.Model):
 
     @cached_property
     def rights(self):
-        return [r.right_id for r in self.role.rights.all()]
+        try:
+            return [r.right_id for r in self.role.rights.all()]
+        except Exception as e:
+            # Prevent data quality problem (0 instead of NULL as role,...)
+            logger.warning("Failed to load user %s role: %s" %
+                           (self.login_name, str(e)))
+            return []
 
     @cached_property
     def rights_str(self):
-        return [str(r.right_id) for r in self.role.rights.all()]
+        return [str(r) for r in self.rights]
 
     def set_password(self, raw_password):
         # exclusively managed from legacy openIMIS for now!
