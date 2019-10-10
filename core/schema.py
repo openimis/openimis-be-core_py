@@ -1,9 +1,13 @@
 import json
 import re
+import sys
 from datetime import datetime as py_datetime
 
 import graphene
 from core import ExtendedConnection
+from core.apps import CoreConfig
+from core.tasks import openimis_mutation_async
+from django import dispatch
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
@@ -16,6 +20,8 @@ from .models import ModuleConfiguration, FieldControl, MutationLog
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
+
+core = sys.modules["core"]
 
 
 class SmallInt(graphene.Int):
@@ -82,7 +88,19 @@ class OpenIMISJSONEncoder(DjangoJSONEncoder):
         return super().default(o)
 
 
+_mutation_signal_params = ["user", "mutation_module", "mutation_class", "mutation_log_id", "data"]
+signal_mutation = dispatch.Signal(providing_args=_mutation_signal_params)
+signal_mutation_module = {}
+
+for module in sys.modules:
+    signal_mutation_module[module] = dispatch.Signal(providing_args=_mutation_signal_params)
+
+
 class OpenIMISMutation(graphene.relay.ClientIDMutation):
+    """
+    This class is the generic Mutation for openIMIS. It will save the mutation content into the MutationLog,
+    submit it to validation, perform the potentially asynchronous mutation itself and update the MutationLog status.
+    """
     class Meta:
         abstract = True
 
@@ -111,8 +129,22 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             client_mutation_id=data.get('client_mutation_id'),
             client_mutation_label=data.get("client_mutation_label")
         )
+
+        # First call the synchronous validation
+        results = signal_mutation.send(
+            sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+            mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
+        results.extend(signal_mutation_module[cls._mutation_module].send(
+            sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+            mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
+        ))
+
         try:
-            error_message = cls.async_mutate(root, info, **data)
+            if core.async_mutations:
+                openimis_mutation_async.delay(mutation_log.id, cls._mutation_module, cls._mutation_class)
+                error_message = None
+            else:
+                error_message = cls.async_mutate(root, info, **data)
             if error_message is None:
                 mutation_log.mark_as_successful()
             else:
@@ -187,6 +219,7 @@ class MutationLogGQLType(DjangoObjectType):
     The "user" search filter is only available for super-users. Otherwise, the user is automatically set to the
     currently logged user.
     """
+
     class Meta:
         model = MutationLog
         interfaces = (graphene.relay.Node,)

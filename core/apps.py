@@ -20,6 +20,7 @@ DEFAULT_CFG = {
     "longstrfdate": "%a %d %B %Y",
     "iso_raw_date": "False",
     "age_of_majority": "18",
+    "async_mutations": "True",
 }
 
 
@@ -65,9 +66,13 @@ class CoreConfig(AppConfig):
         except Exception as e:
             logger.warning('Failed set auto_provisioning_user_group '+str(e))
 
+    def _configure_graphql(self, cfg):
+        this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
+
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
+        self._configure_graphql(cfg)
