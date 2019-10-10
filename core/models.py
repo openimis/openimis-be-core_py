@@ -94,7 +94,7 @@ class FieldControl(UUIDModel):
 
 class Language(models.Model):
     code = models.CharField(db_column='LanguageCode',
-                            primary_key=True, max_length=2)
+                            primary_key=True, max_length=5)
     name = models.CharField(db_column='LanguageName', max_length=50)
     sort_order = models.IntegerField(
         db_column='SortOrder', blank=True, null=True)
