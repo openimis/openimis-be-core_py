@@ -162,6 +162,10 @@ class TechnicalUser(AbstractBaseUser):
     validity_from = models.DateTimeField(blank=True, null=True)
     validity_to = models.DateTimeField(blank=True, null=True)
 
+    @property
+    def id_for_audit(self):
+        return -1
+
     USERNAME_FIELD = 'username'
 
     def _bind_User(self):
@@ -254,6 +258,10 @@ class InteractiveUser(models.Model):
     # stored_password = models.CharField(db_column='StoredPassword', max_length=256, blank=True, null=True)
     # password_validity = models.DateTimeField(db_column='PasswordValidity', blank=True, null=True)
     # is_associated = models.BooleanField(db_column='IsAssociated', blank=True, null=True)
+
+    @property
+    def id_for_audit(self):
+        return id
 
     def save(self, *args, **kwargs):
         # exclusively managed from legacy openIMIS for now!

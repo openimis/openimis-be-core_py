@@ -28,9 +28,12 @@ def openimis_mutation_async(mutation_id, module, class_name):
 
         if mutation.user and mutation.user.language:
             translation.activate(mutation.user.language)
-        mutation_class.async_mutate(mutation.user, **json.loads(mutation.json_content))
+        result = mutation_class.async_mutate(mutation.user, **json.loads(mutation.json_content))
 
-        mutation.mark_as_successful()
+        if result:
+            mutation.mark_as_failed(result)
+        else:
+            mutation.mark_as_successful()
         return "OK"
     except Exception as exc:
         if mutation:
