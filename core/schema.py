@@ -12,6 +12,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
+from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
@@ -129,6 +130,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             client_mutation_id=data.get('client_mutation_id'),
             client_mutation_label=data.get("client_mutation_label")
         )
+
+        if info and info.context and info.context.user and info.context.user.language:
+            translation.activate(info.context.user.language)
 
         # First call the synchronous validation
         results = signal_mutation.send(
