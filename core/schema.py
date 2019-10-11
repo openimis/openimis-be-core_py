@@ -5,7 +5,6 @@ from datetime import datetime as py_datetime
 
 import graphene
 from core import ExtendedConnection
-from core.apps import CoreConfig
 from core.tasks import openimis_mutation_async
 from django import dispatch
 from django.core.serializers.json import DjangoJSONEncoder
@@ -111,12 +110,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         client_mutation_label = graphene.String(max_length=255, required=False)
 
     @classmethod
-    def async_mutate(cls, root, info, **data) -> str:
+    def async_mutate(cls, user, **data) -> str:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB
-        :param root: Unused in this context
-        :param info: info.context.user contains the logged user
+        :param user: contains the logged user or None
         :param data: all parameters passed to the mutation
         :return: error_message if None is returned, the response is considered to be a success
         """
@@ -148,7 +146,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 openimis_mutation_async.delay(mutation_log.id, cls._mutation_module, cls._mutation_class)
                 error_message = None
             else:
-                error_message = cls.async_mutate(root, info, **data)
+                error_message = cls.async_mutate(
+                    info.context.user if info.context and info.context.user else None,
+                    **data)
             if error_message is None:
                 mutation_log.mark_as_successful()
             else:
