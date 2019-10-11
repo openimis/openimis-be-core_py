@@ -16,7 +16,7 @@ from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
-from .models import ModuleConfiguration, FieldControl, MutationLog
+from .models import ModuleConfiguration, FieldControl, MutationLog, Language
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -130,7 +130,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         )
 
         if info and info.context and info.context.user and info.context.user.language:
-            translation.activate(info.context.user.language)
+            lang = info.context.user.language
+            if isinstance(lang, Language):
+                translation.activate(lang.code)
+            else:
+                translation.activate(lang)
 
         # First call the synchronous validation
         results = signal_mutation.send(

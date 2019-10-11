@@ -4,7 +4,7 @@ import json
 import logging
 
 from celery import shared_task
-from core.models import MutationLog
+from core.models import MutationLog, Language
 from django.utils import translation
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,17 @@ def openimis_mutation_async(mutation_id, module, class_name):
     try:
         mutation = MutationLog.objects.get(id=mutation_id)
         # __import__ needs to import the module with .schema to force .schema to load, then .schema.TheRealMutation
-        mutation_class = getattr(__import__(f"{module}.schema").schema, class_name)
+        mutation_class = getattr(__import__(
+            f"{module}.schema").schema, class_name)
 
         if mutation.user and mutation.user.language:
-            translation.activate(mutation.user.language)
-        mutation_class.async_mutate(mutation.user, **json.loads(mutation.json_content))
+            lang = mutation.user.language
+            if isinstance(lang, Language):
+                translation.activate(lang.code)
+            else:
+                translation.activate(lang)
+        mutation_class.async_mutate(
+            mutation.user, **json.loads(mutation.json_content))
 
         mutation.mark_as_successful()
         return "OK"
