@@ -2,6 +2,8 @@ import sys
 import json
 import logging
 import uuid
+from copy import copy
+
 import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
@@ -443,3 +445,30 @@ class MutationLog(UUIDModel):
         MutationLog.objects.filter(id=self.id)\
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
+
+
+class VersionedModel(models.Model):
+    legacy_id = models.IntegerField(db_column='LegacyID', blank=True, null=True)
+    validity_from = DateTimeField(db_column='ValidityFrom')
+    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
+
+    def save_history(self, **kwargs):
+        if self.id:  # only copy if the data is being updated
+            histo = copy(self)
+            histo.id = None
+            if hasattr(histo, "uuid"):
+                setattr(histo, "uuid", uuid.uuid4())
+            from datetime import date
+            histo.validity_to = date.today()
+            histo.legacy_id = self.id
+            histo.save()
+
+    def delete_history(self, **kwargs):
+        self.save_history()
+        from datetime import date
+        self.validity_from = date.today()
+        self.validity_to = date.today()
+        self.save()
+
+    class Meta:
+        abstract = True
