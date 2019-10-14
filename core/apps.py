@@ -20,7 +20,7 @@ DEFAULT_CFG = {
     "longstrfdate": "%a %d %B %Y",
     "iso_raw_date": "False",
     "age_of_majority": "18",
-    "async_mutations": "True",
+    "async_mutations": "False",
 }
 
 

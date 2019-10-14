@@ -328,6 +328,10 @@ class User(UUIDModel, PermissionsMixin):
         self._u = self.i_user or self.t_user
 
     @property
+    def id_for_audit(self):
+        return self._u.id
+
+    @property
     def is_anonymous(self):
         return False
 
@@ -448,7 +452,8 @@ class MutationLog(UUIDModel):
 
 
 class VersionedModel(models.Model):
-    legacy_id = models.IntegerField(db_column='LegacyID', blank=True, null=True)
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
     validity_from = DateTimeField(db_column='ValidityFrom')
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 

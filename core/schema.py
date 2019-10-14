@@ -128,7 +128,6 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             client_mutation_id=data.get('client_mutation_id'),
             client_mutation_label=data.get("client_mutation_label")
         )
-
         if info and info.context and info.context.user and info.context.user.language:
             lang = info.context.user.language
             if isinstance(lang, Language):
