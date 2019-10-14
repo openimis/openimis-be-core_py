@@ -3,6 +3,7 @@ from django.contrib.auth.middleware import RemoteUserMiddleware as dj_RemoteUser
 from rest_framework import permissions
 import os
 
+
 class ObjectPermissions(permissions.DjangoObjectPermissions):
     perms_map = {
         'GET': ['%(app_label)s.view_%(model_name)s'],
@@ -14,10 +15,11 @@ class ObjectPermissions(permissions.DjangoObjectPermissions):
         'DELETE': ['%(app_label)s.delete_%(model_name)s'],
     }
 
+
 class RemoteUserBackend(dj_RemoteUserBackend):
     def __init__(self, *args, **kwargs):
-        self.create_unknown_user = False
+        self.create_unknown_user = True
+
 
 class RemoteUserMiddleware(dj_RemoteUserMiddleware):
     header = os.environ.get("REMOTE_USER_HEADER_NAME", "HTTP_REMOTE_USER")
-        

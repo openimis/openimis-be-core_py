@@ -12,6 +12,12 @@ class CalendarTestCase(TestCase):
         core.datetime = importlib.import_module(
             '.datetimes.ne_datetime', 'core')
 
+    def tearDown(self):
+        core.calendar = importlib.import_module(
+            '.calendars.ad_calendar', 'core')
+        core.datetime = importlib.import_module(
+            '.datetimes.ad_datetime', 'core')                  
+
     def test_from_ad_date(self):
         dt = core.datetime.date.from_ad_date(py_date(2020, 1, 13))
         self.assertEqual(dt, core.datetime.date(2076, 9, 28))
@@ -25,6 +31,12 @@ class CalendarTestCase(TestCase):
         dt = core.datetime.date(2076, 9, 28)
         fwd = core.calendar.weeklastday(dt)
         self.assertEqual(fwd, core.datetime.date(2076, 10, 4))
+
+    def test_weekday(self):
+        wd = core.calendar.weekday(2076, 9, 11)
+        self.assertEqual(wd, 5)
+        wd = core.calendar.weekday(2076, 9, 28)
+        self.assertEqual(wd, 1)        
 
     def test_monthfirstday(self):
         dt = core.calendar.monthfirstday(2076, 9)

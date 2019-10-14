@@ -9,12 +9,12 @@ os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
 setup(
     name='openimis-be-core',
-    version='0.0.4',
+    version='0.0.23',
     packages=find_packages(),
     include_package_data=True,
     license='GNU AGPL v3',
     description='The openIMIS Backend Core reference module.',
-    long_description=README,
+    # long_description=README,
     url='https://openimis.org/',
     author='Xavier Gillmann',
     author_email='xgillmann@bluesquarehub.com',
