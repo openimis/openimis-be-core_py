@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Role, RoleRight, InteractiveUser, TechnicalUser, Language
+from .models import User, UserRole, Role, RoleRight, InteractiveUser, TechnicalUser, Language
 
 
 # class LanguageSerializer(serializers.ModelSerializer):
@@ -8,21 +8,28 @@ from .models import User, Role, RoleRight, InteractiveUser, TechnicalUser, Langu
 #         model = Language
 #         fields = ('code',)
 
-
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
         fields = ('id', 'name')
 
 
+class UserRoleSerializer(serializers.ModelSerializer):
+    role = RoleSerializer(many=False, read_only=True)
+
+    class Meta:
+        model = UserRole
+        fields = ('role',)
+
+
 class InteractiveUserSerializer(serializers.ModelSerializer):
     language = serializers.PrimaryKeyRelatedField(many=False, read_only=True)
-    role = RoleSerializer(many=False, read_only=True)
+    roles = UserRoleSerializer(many=True, read_only=True)
 
     class Meta:
         model = InteractiveUser
         fields = ('id', 'language', 'last_name',
-                  'other_names', 'health_facility_id', 'role', 'rights')
+                  'other_names', 'health_facility_id', 'roles', 'rights')
 
 
 class TechnicalUserSerializer(serializers.ModelSerializer):
