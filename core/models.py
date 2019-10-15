@@ -2,6 +2,7 @@ import sys
 import json
 import logging
 import uuid
+import numpy
 from copy import copy
 
 import core
@@ -245,7 +246,6 @@ class InteractiveUser(models.Model):
     phone = models.CharField(
         db_column='Phone', max_length=50, blank=True, null=True)
     login_name = models.CharField(db_column='LoginName', max_length=25)
-    role = models.ForeignKey(Role, models.DO_NOTHING, db_column='RoleID')
     health_facility_id = models.IntegerField(
         db_column='HFID', blank=True, null=True)
     validity_from = DateTimeField(db_column='ValidityFrom')
@@ -285,9 +285,19 @@ class InteractiveUser(models.Model):
         return False
 
     @cached_property
+    def roles(self):
+        try:
+            return [ur.role for ur in self.userroles.all()]
+        except Exception as e:
+            # Prevent data quality problem (0 instead of NULL as role,...)
+            logger.warning("Failed to load user %s role: %s" %
+                           (self.login_name, str(e)))
+            return []
+
+    @cached_property
     def rights(self):
         try:
-            return [r.right_id for r in self.role.rights.all()]
+            return numpy.unique([r.right_id for role in self.roles for r in role.rights.all()])
         except Exception as e:
             # Prevent data quality problem (0 instead of NULL as role,...)
             logger.warning("Failed to load user %s role: %s" %
@@ -309,6 +319,25 @@ class InteractiveUser(models.Model):
     class Meta:
         managed = False
         db_table = 'tblUsers'
+
+
+class UserRole(models.Model):
+    id = models.AutoField(db_column='UserRoleID', primary_key=True)
+    user = models.ForeignKey(
+        InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="userroles")
+    role = models.ForeignKey(Role, models.DO_NOTHING,
+                             db_column='RoleID', related_name="userroles")
+    validity_from = models.DateTimeField(db_column='ValidityFrom')
+    validity_to = models.DateTimeField(
+        db_column='ValidityTo', blank=True, null=True)
+    audit_user_id = models.IntegerField(
+        db_column='AudituserID', blank=True, null=True)
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tblUserRole'
 
 
 class User(UUIDModel, PermissionsMixin):
