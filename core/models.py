@@ -288,7 +288,7 @@ class InteractiveUser(models.Model):
     def rights(self):
         return [rr.right_id for rr in RoleRight.objects.filter(
             role_id__in=[r.role_id for r in UserRole.objects.filter(
-                user_id=1)]).distinct()]
+                user_id=self.id)]).distinct()]
 
     @cached_property
     def rights_str(self):
@@ -310,9 +310,9 @@ class InteractiveUser(models.Model):
 class UserRole(models.Model):
     id = models.AutoField(db_column='UserRoleID', primary_key=True)
     user = models.ForeignKey(
-        InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="userroles")
+        InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="user_roles")
     role = models.ForeignKey(Role, models.DO_NOTHING,
-                             db_column='RoleID', related_name="userroles")
+                             db_column='RoleID', related_name="user_roles")
     validity_from = models.DateTimeField(db_column='ValidityFrom')
     validity_to = models.DateTimeField(
         db_column='ValidityTo', blank=True, null=True)
