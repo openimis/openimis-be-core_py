@@ -285,24 +285,10 @@ class InteractiveUser(models.Model):
         return False
 
     @cached_property
-    def roles(self):
-        try:
-            return [ur.role for ur in self.userroles.all()]
-        except Exception as e:
-            # Prevent data quality problem (0 instead of NULL as role,...)
-            logger.warning("Failed to load user %s role: %s" %
-                           (self.login_name, str(e)))
-            return []
-
-    @cached_property
     def rights(self):
-        try:
-            return numpy.unique([r.right_id for role in self.roles for r in role.rights.all()])
-        except Exception as e:
-            # Prevent data quality problem (0 instead of NULL as role,...)
-            logger.warning("Failed to load user %s role: %s" %
-                           (self.login_name, str(e)))
-            return []
+        return [rr.right_id for rr in RoleRight.objects.filter(
+            role_id__in=[r.role_id for r in UserRole.objects.filter(
+                user_id=1)]).distinct()]
 
     @cached_property
     def rights_str(self):
