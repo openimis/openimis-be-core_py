@@ -2,7 +2,6 @@ import sys
 import json
 import logging
 import uuid
-import numpy
 from copy import copy
 
 import core
