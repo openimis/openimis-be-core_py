@@ -135,27 +135,30 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 translation.activate(lang)
 
-        # First call the synchronous validation
-        results = signal_mutation.send(
-            sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-            mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
-        results.extend(signal_mutation_module[cls._mutation_module].send(
-            sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-            mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
-        ))
-
         try:
+            results = signal_mutation.send(
+                sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
+            results.extend(signal_mutation_module[cls._mutation_module].send(
+                sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
+            ))
+            errors = [err for r in results for err in r[1]]
+            if errors:
+                mutation_log.mark_as_failed(json.dumps(errors))
+                return cls(internal_id=mutation_log.id)
+
             if core.async_mutations:
                 openimis_mutation_async.delay(mutation_log.id, cls._mutation_module, cls._mutation_class)
-                error_message = None
+                error_messages = None
             else:
-                error_message = cls.async_mutate(
+                error_messages = cls.async_mutate(
                     info.context.user if info.context and info.context.user else None,
                     **data)
-            if error_message is None:
+            if not error_messages:
                 mutation_log.mark_as_successful()
             else:
-                mutation_log.mark_as_failed(error_message)
+                mutation_log.mark_as_failed(json.dumps(error_messages))
         except Exception as exc:
             mutation_log.mark_as_failed(exc)
 
@@ -255,7 +258,7 @@ class MutationLogGQLType(DjangoObjectType):
 
 
 class Query(graphene.ObjectType):
-    core_module_configurations = graphene.List(
+    module_configurations = graphene.List(
         ModuleConfigurationGQLType,
         validity=graphene.String(),
         layer=graphene.String())
@@ -263,7 +266,7 @@ class Query(graphene.ObjectType):
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
-    def resolve_core_module_configurations(self, info, **kwargs):
+    def resolve_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
         # configuration is loaded before even the core module
         # the datetime is ALWAYS a Gregorian one
