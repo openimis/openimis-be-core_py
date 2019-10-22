@@ -415,6 +415,35 @@ class UserGroup(models.Model):
         unique_together = (('user', 'group'),)
 
 
+class Officer(models.Model):
+    id = models.AutoField(db_column='OfficerID', primary_key=True)
+    uuid = models.CharField(db_column='OfficerUUID',
+                            max_length=36, default=uuid.uuid4, unique=True)
+    code = models.CharField(db_column='Code', max_length=8)
+    last_name = models.CharField(db_column='LastName', max_length=100)
+    other_names = models.CharField(db_column='OtherNames', max_length=100)
+    # dob = models.DateField(db_column='DOB', blank=True, null=True)
+    # phone = models.CharField(db_column='Phone', max_length=50, blank=True, null=True)
+    # location = models.ForeignKey(Tbllocations, models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
+    # officeridsubst = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
+    # worksto = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
+    # veocode = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
+    # veolastname = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
+    # veoothernames = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
+    # veodob = models.DateField(db_column='VEODOB', blank=True, null=True)
+    # veophone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
+    # audituserid = models.IntegerField(db_column='AuditUserID')
+    # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
+    # emailid = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
+    # phonecommunication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
+    # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
+    # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'tblOfficer'
+
+
 class MutationLog(UUIDModel):
     """
     Maintains a log of every mutation requested along with its status. It is used to reply
@@ -472,21 +501,24 @@ class VersionedModel(models.Model):
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
     def save_history(self, **kwargs):
-        if self.id:  # only copy if the data is being updated
-            histo = copy(self)
-            histo.id = None
-            if hasattr(histo, "uuid"):
-                setattr(histo, "uuid", uuid.uuid4())
-            from datetime import date
-            histo.validity_to = date.today()
-            histo.legacy_id = self.id
-            histo.save()
+        if not self.id: # only copy if the data is being updated
+            return None
+        histo = copy(self)
+        histo.id = None
+        if hasattr(histo, "uuid"):
+            setattr(histo, "uuid", uuid.uuid4())
+        from core import datetime
+        histo.validity_to = datetime.datetime.now()
+        histo.legacy_id = self.id
+        histo.save()
+        return histo.id
 
     def delete_history(self, **kwargs):
         self.save_history()
-        from datetime import date
-        self.validity_from = date.today()
-        self.validity_to = date.today()
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
         self.save()
 
     class Meta:

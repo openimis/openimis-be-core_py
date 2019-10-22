@@ -3,6 +3,17 @@ from django.db.models import Q
 import core
 
 
+class TimeUtils(object):
+
+    @classmethod
+    def now(cls):
+        return core.datetime.datetime.now()
+
+    @classmethod
+    def date(cls):
+        return core.datetime.datetime.date(cls.now())
+
+
 def full_class_name(o):
     module = o.__class__.__module__
     if module is None or module == str.__class__.__module__:
@@ -52,7 +63,8 @@ PATIENT_CATEGORY_MASK_MINOR = 8
 def patient_category_mask(insuree, target_date):
     if type(target_date) is str:
         from core import datetime
-        target_date = datetime.date(*[int(x) for x in target_date.split("-")])  # TODO: this should be nicer
+        # TODO: this should be nicer
+        target_date = datetime.date(*[int(x) for x in target_date.split("-")])
     mask = 0
     if insuree.gender in ('M', 'O'):
         mask = mask | PATIENT_CATEGORY_MASK_MALE
@@ -65,7 +77,8 @@ def patient_category_mask(insuree, target_date):
         else:
             mask = mask | PATIENT_CATEGORY_MASK_MINOR
     else:
-        raise NotImplementedError("date of birth of insuree is unknown")  # TODO What should we do in this case ?
+        # TODO What should we do in this case ?
+        raise NotImplementedError("date of birth of insuree is unknown")
     return mask
 
 
