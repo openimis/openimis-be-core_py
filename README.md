@@ -19,6 +19,7 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 * tblRole > Role: the openIMIS legacy roles (apply only on InteractiveUser)
 * tblRoleRight > RoleRight: the openIMIS legacy rights (apply only on InteractiveUser)
 * tblUserRole > UserRole: m-n link between users and their roles
+* tblOfficer > Officer (Known usages: policy.models.Policy and claim.models.Feedback)
 * core_TechnicalUser > TechnicalUser: backend-only users (external apps using FHIR API,...)
 * core_User > User: aggregate entity to bridge Django security on either InteractiveUser (i_user) or TechnicalUser (t_user)
 * core_User_groups > UserGroup: bridge of custom User model to Django permission model
