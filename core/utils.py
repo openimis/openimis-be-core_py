@@ -1,6 +1,7 @@
 import graphene
 from django.db.models import Q
 import core
+from django.utils.translation import gettext as _
 
 
 class TimeUtils(object):
@@ -52,6 +53,13 @@ def prefix_filterset(prefix, filterset):
         return [(prefix + x) for x in filterset]
     else:
         return filterset
+
+
+def assert_string_length(str_value, length):
+    if length and len(str_value) > length:
+        raise Exception(
+            _("core.string.over_max_length") % {
+                'value': str_value, 'max_length': length})
 
 
 PATIENT_CATEGORY_MASK_MALE = 1
