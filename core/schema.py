@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import decimal
 from datetime import datetime as py_datetime
 
 import graphene
@@ -85,15 +86,19 @@ class OpenIMISJSONEncoder(DjangoJSONEncoder):
                 return f"HTTP_user: {o.user.id}"
             else:
                 return None
+        if isinstance(o, decimal.Decimal):
+            return float(o)
         return super().default(o)
 
 
-_mutation_signal_params = ["user", "mutation_module", "mutation_class", "mutation_log_id", "data"]
+_mutation_signal_params = ["user", "mutation_module",
+                           "mutation_class", "mutation_log_id", "data"]
 signal_mutation = dispatch.Signal(providing_args=_mutation_signal_params)
 signal_mutation_module = {}
 
 for module in sys.modules:
-    signal_mutation_module[module] = dispatch.Signal(providing_args=_mutation_signal_params)
+    signal_mutation_module[module] = dispatch.Signal(
+        providing_args=_mutation_signal_params)
 
 
 class OpenIMISMutation(graphene.relay.ClientIDMutation):
@@ -147,9 +152,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
                 return cls(internal_id=mutation_log.id)
-
             if core.async_mutations:
-                openimis_mutation_async.delay(mutation_log.id, cls._mutation_module, cls._mutation_class)
+                openimis_mutation_async.delay(
+                    mutation_log.id, cls._mutation_module, cls._mutation_class)
                 error_messages = None
             else:
                 error_messages = cls.async_mutate(
