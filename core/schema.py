@@ -155,15 +155,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             if core.async_mutations:
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls._mutation_class)
-                error_messages = None
             else:
                 error_messages = cls.async_mutate(
                     info.context.user if info.context and info.context.user else None,
                     **data)
-            if not error_messages:
-                mutation_log.mark_as_successful()
-            else:
-                mutation_log.mark_as_failed(json.dumps(error_messages))
+                if not error_messages:
+                    mutation_log.mark_as_successful()
+                else:
+                    mutation_log.mark_as_failed(json.dumps(error_messages))
         except Exception as exc:
             mutation_log.mark_as_failed(exc)
 
