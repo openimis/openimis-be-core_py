@@ -74,19 +74,20 @@ def patient_category_mask(insuree, target_date):
         # TODO: this should be nicer
         target_date = datetime.date(*[int(x) for x in target_date.split("-")])
     mask = 0
-    if insuree.gender in ('M', 'O'):
+    if not insuree.gender:
+        raise NotImplementedError(_("core.insuree.unknown_gender"))
+    if not insuree.dob:
+        raise NotImplementedError(_("core.insuree.unknown_dob"))
+
+    if insuree.gender.code in ('M', 'O'):
         mask = mask | PATIENT_CATEGORY_MASK_MALE
     else:
         mask = mask | PATIENT_CATEGORY_MASK_FEMALE
 
-    if insuree.dob:
-        if insuree.is_adult(target_date):
-            mask = mask | PATIENT_CATEGORY_MASK_ADULT
-        else:
-            mask = mask | PATIENT_CATEGORY_MASK_MINOR
+    if insuree.is_adult(target_date):
+        mask = mask | PATIENT_CATEGORY_MASK_ADULT
     else:
-        # TODO What should we do in this case ?
-        raise NotImplementedError("date of birth of insuree is unknown")
+        mask = mask | PATIENT_CATEGORY_MASK_MINOR
     return mask
 
 
