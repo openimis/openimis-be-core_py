@@ -94,11 +94,15 @@ class OpenIMISJSONEncoder(DjangoJSONEncoder):
 _mutation_signal_params = ["user", "mutation_module",
                            "mutation_class", "mutation_log_id", "data"]
 signal_mutation = dispatch.Signal(providing_args=_mutation_signal_params)
-signal_mutation_module = {}
+signal_mutation_module_validate = {}
+signal_mutation_module_before_mutating = {}
+signal_mutation_module_after_mutating = {}
 
 for module in sys.modules:
-    signal_mutation_module[module] = dispatch.Signal(
-        providing_args=_mutation_signal_params)
+    signal_mutation_module_validate[module] = dispatch.Signal(providing_args=_mutation_signal_params)
+    signal_mutation_module_before_mutating[module] = dispatch.Signal(providing_args=_mutation_signal_params)
+    signal_mutation_module_after_mutating[module] = \
+        dispatch.Signal(providing_args=_mutation_signal_params + ["error_messages"])
 
 
 class OpenIMISMutation(graphene.relay.ClientIDMutation):
@@ -144,7 +148,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             results = signal_mutation.send(
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                 mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
-            results.extend(signal_mutation_module[cls._mutation_module].send(
+            results.extend(signal_mutation_module_validate[cls._mutation_module].send(
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                 mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
             ))
@@ -152,6 +156,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
                 return cls(internal_id=mutation_log.id)
+
+            signal_mutation_module_before_mutating[cls._mutation_module].send(
+                sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
+            )
             if core.async_mutations:
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls._mutation_class)
@@ -163,6 +172,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     mutation_log.mark_as_successful()
                 else:
                     mutation_log.mark_as_failed(json.dumps(error_messages))
+                signal_mutation_module_after_mutating[cls._mutation_module].send(
+                    sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
+                    mutation_module=cls._mutation_module, mutation_class=cls._mutation_class,
+                    error_messages=error_messages
+                )
         except Exception as exc:
             mutation_log.mark_as_failed(exc)
 
