@@ -1,6 +1,8 @@
 import json
 import re
 import sys
+import traceback
+import logging
 import decimal
 from datetime import datetime as py_datetime
 
@@ -24,6 +26,7 @@ MIN_SMALLINT = -32768
 
 core = sys.modules["core"]
 
+logger = logging.getLogger(__name__)
 
 class SmallInt(graphene.Int):
     """
@@ -113,6 +116,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
+        client_mutation_details = graphene.List(graphene.String)
 
     @classmethod
     def async_mutate(cls, user, **data) -> str:
@@ -131,7 +135,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get('client_mutation_id'),
-            client_mutation_label=data.get("client_mutation_label")
+            client_mutation_label=data.get("client_mutation_label"),
+            client_mutation_details=json.dumps(data.get(
+                "client_mutation_details"), cls=OpenIMISJSONEncoder) if data.get("client_mutation_details") else None
         )
         if info and info.context and info.context.user and info.context.user.language:
             lang = info.context.user.language
@@ -164,6 +170,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 else:
                     mutation_log.mark_as_failed(json.dumps(error_messages))
         except Exception as exc:
+            logger.warning(f"Exception while processing mutation id {mutation_log.id}", exc_info=True)
             mutation_log.mark_as_failed(exc)
 
         return cls(internal_id=mutation_log.id)

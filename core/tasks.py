@@ -1,5 +1,5 @@
 from __future__ import absolute_import, unicode_literals
-
+import sys, traceback
 import json
 import logging
 
@@ -43,5 +43,5 @@ def openimis_mutation_async(mutation_id, module, class_name):
     except Exception as exc:
         if mutation:
             mutation.mark_as_failed(str(exc))
-        logger.warning(f"Exception while processing mutation id {mutation_id}")
+        logger.warning(f"Exception while processing mutation id {mutation_id}", exc_info=True)
         raise exc

@@ -466,6 +466,7 @@ class MutationLog(UUIDModel):
         max_length=255, blank=True, null=True)
     client_mutation_label = models.CharField(
         max_length=255, blank=True, null=True)
+    client_mutation_details = models.TextField(blank=True, null=True)
     status = models.IntegerField(choices=STATUS_CHOICES, default=RECEIVED)
     error = models.TextField(blank=True, null=True)
 
