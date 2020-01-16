@@ -1,4 +1,5 @@
 import sys
+import os
 import json
 import logging
 import uuid
@@ -56,6 +57,10 @@ class ModuleConfiguration(UUIDModel):
 
     @classmethod
     def get_or_default(cls, module, default, layer='be'):
+        if bool(os.environ.get('NO_DATABASE', False)):
+            logger.info('env NO_DATABASE set to True: skipping DB connection')
+            return default
+
         try:
             now = py_datetime.now()  # can't use core config here...
             db_configuration = cls.objects.get(
