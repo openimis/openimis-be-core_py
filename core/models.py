@@ -58,7 +58,7 @@ class ModuleConfiguration(UUIDModel):
     @classmethod
     def get_or_default(cls, module, default, layer='be'):
         if bool(os.environ.get('NO_DATABASE', False)):
-            logger.info('env NO_DATABASE set to True: skipping DB connection')
+            logger.info('env NO_DATABASE set to True: ModuleConfiguration not loaded from db!')
             return default
 
         try:
