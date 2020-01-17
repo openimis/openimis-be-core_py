@@ -51,6 +51,9 @@ class CoreConfig(AppConfig):
         this.age_of_majority = int(cfg["age_of_majority"])
 
     def _configure_auto_provisioning(self, cfg):
+        if bool(os.environ.get('NO_DATABASE', False)):
+            logger.info('env NO_DATABASE set to True: no user auto provisioning possible!')
+            return default
         group = cfg["auto_provisioning_user_group"]
         this.auto_provisioning_user_group = group
         try:
