@@ -53,7 +53,7 @@ class CoreConfig(AppConfig):
     def _configure_auto_provisioning(self, cfg):
         if bool(os.environ.get('NO_DATABASE', False)):
             logger.info('env NO_DATABASE set to True: no user auto provisioning possible!')
-            return default
+            return
         group = cfg["auto_provisioning_user_group"]
         this.auto_provisioning_user_group = group
         try:
