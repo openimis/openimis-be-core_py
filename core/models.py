@@ -32,6 +32,35 @@ class UUIDModel(models.Model):
     def __str__(self):
         return "[%s]" % (self.id,)
 
+class VersionedModel(models.Model):
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+    validity_from = DateTimeField(db_column='ValidityFrom')
+    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
+
+    def save_history(self, **kwargs):
+        if not self.id: # only copy if the data is being updated
+            return None
+        histo = copy(self)
+        histo.id = None
+        if hasattr(histo, "uuid"):
+            setattr(histo, "uuid", uuid.uuid4())
+        from core import datetime
+        histo.validity_to = datetime.datetime.now()
+        histo.legacy_id = self.id
+        histo.save()
+        return histo.id
+
+    def delete_history(self, **kwargs):
+        self.save_history()
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
+
+    class Meta:
+        abstract = True
 
 class ModuleConfiguration(UUIDModel):
     """
@@ -420,7 +449,7 @@ class UserGroup(models.Model):
         unique_together = (('user', 'group'),)
 
 
-class Officer(models.Model):
+class Officer(VersionedModel):
     id = models.AutoField(db_column='OfficerID', primary_key=True)
     uuid = models.CharField(db_column='OfficerUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
@@ -498,34 +527,3 @@ class MutationLog(UUIDModel):
         MutationLog.objects.filter(id=self.id)\
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
-
-
-class VersionedModel(models.Model):
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
-    validity_from = DateTimeField(db_column='ValidityFrom')
-    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
-
-    def save_history(self, **kwargs):
-        if not self.id: # only copy if the data is being updated
-            return None
-        histo = copy(self)
-        histo.id = None
-        if hasattr(histo, "uuid"):
-            setattr(histo, "uuid", uuid.uuid4())
-        from core import datetime
-        histo.validity_to = datetime.datetime.now()
-        histo.legacy_id = self.id
-        histo.save()
-        return histo.id
-
-    def delete_history(self, **kwargs):
-        self.save_history()
-        from core import datetime
-        now = datetime.datetime.now()
-        self.validity_from = now
-        self.validity_to = now
-        self.save()
-
-    class Meta:
-        abstract = True
