@@ -32,9 +32,8 @@ class UUIDModel(models.Model):
     def __str__(self):
         return "[%s]" % (self.id,)
 
-class VersionedModel(models.Model):
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
+
+class BaseVersionedModel(models.Model):
     validity_from = DateTimeField(db_column='ValidityFrom')
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
@@ -58,6 +57,22 @@ class VersionedModel(models.Model):
         self.validity_from = now
         self.validity_to = now
         self.save()
+
+    class Meta:
+        abstract = True
+
+
+class VersionedModel(BaseVersionedModel):
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        abstract = True
+
+
+class UUIDVersionedModel(BaseVersionedModel):
+    legacy_id = models.UUIDField(
+        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         abstract = True
