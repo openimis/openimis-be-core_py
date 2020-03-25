@@ -36,6 +36,9 @@ class AdDate(py_datetime.date):
     def to_ad_datetime(self):
         return AdDatetime(self.year, self.month, self.day)
 
+    def to_datetime(self):
+        return self.to_ad_datetime()
+
     def raw_isoformat(self):
         return self.isoformat()
 
