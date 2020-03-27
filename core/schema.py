@@ -171,13 +171,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls._mutation_class)
             else:
-                error_messages = cls.async_mutate(
-                    info.context.user if info.context and info.context.user else None,
-                    **data)
-                if not error_messages:
-                    mutation_log.mark_as_successful()
-                else:
-                    mutation_log.mark_as_failed(json.dumps(error_messages))
+                try:
+                    error_messages = cls.async_mutate(
+                        info.context.user if info.context and info.context.user else None,
+                        **data)
+                    if not error_messages:
+                        mutation_log.mark_as_successful()
+                    else:
+                        mutation_log.mark_as_failed(json.dumps(error_messages))
+                except BaseException as exc:
+                    logger.error("async_mutate threw an exception. It should have gotten this far.", exc_info=exc)
+                    # Record the failure of the mutation but don't include details for security reasons
+                    mutation_log.mark_as_failed(f"The mutation threw a {type(exc)}, check logs for details")
                 signal_mutation_module_after_mutating[cls._mutation_module].send(
                     sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                     mutation_module=cls._mutation_module, mutation_class=cls._mutation_class,
