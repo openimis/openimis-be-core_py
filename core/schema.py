@@ -143,6 +143,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             client_mutation_details=json.dumps(data.get(
                 "client_mutation_details"), cls=OpenIMISJSONEncoder) if data.get("client_mutation_details") else None
         )
+        logging.debug("OpenIMISMutation: saved as %s, label: %s", mutation_log.id, mutation_log.client_mutation_label)
         if info and info.context and info.context.user and info.context.user.language:
             lang = info.context.user.language
             if isinstance(lang, Language):
@@ -151,6 +152,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 translation.activate(lang)
 
         try:
+            logging.debug("[OpenIMISMutation %s] Sending signals", mutation_log.id)
             results = signal_mutation.send(
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                 mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
@@ -159,6 +161,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
             ))
             errors = [err for r in results for err in r[1]]
+            logging.debug("[OpenIMISMutation %s] signals sent, got errors back: ", mutation_log.id, len(errors))
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
                 return cls(internal_id=mutation_log.id)
@@ -167,22 +170,30 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                 mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
             )
+            logging.debug("[OpenIMISMutation %s] before mutate signal sent", mutation_log.id)
             if core.async_mutations:
+                logging.debug("[OpenIMISMutation %s] Sending async mutation", mutation_log.id)
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls._mutation_class)
             else:
+                logging.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
                     error_messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
                         **data)
                     if not error_messages:
+                        logging.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
                     else:
-                        mutation_log.mark_as_failed(json.dumps(error_messages))
+                        errors_json = json.dumps(error_messages)
+                        logging.debug("[OpenIMISMutation %s] marked as failed: %s", mutation_log.id, errors_json)
+                        mutation_log.mark_as_failed(errors_json)
                 except BaseException as exc:
+                    error_messages = exc
                     logger.error("async_mutate threw an exception. It should have gotten this far.", exc_info=exc)
                     # Record the failure of the mutation but don't include details for security reasons
                     mutation_log.mark_as_failed(f"The mutation threw a {type(exc)}, check logs for details")
+                logging.debug("[OpenIMISMutation %s] send post mutation signal", mutation_log.id)
                 signal_mutation_module_after_mutating[cls._mutation_module].send(
                     sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
                     mutation_module=cls._mutation_module, mutation_class=cls._mutation_class,
