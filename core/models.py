@@ -61,6 +61,13 @@ class BaseVersionedModel(models.Model):
     class Meta:
         abstract = True
 
+    @classmethod
+    def filter_queryset(cls, queryset=None):
+        if queryset is None:
+            queryset = cls.objects.all()
+        queryset = queryset.filter(*filter_validity())
+        return queryset
+
 
 class VersionedModel(BaseVersionedModel):
     legacy_id = models.IntegerField(
