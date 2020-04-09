@@ -249,7 +249,7 @@ class TechnicalUser(AbstractBaseUser):
         db_table = 'core_TechnicalUser'
 
 
-class Role(models.Model):
+class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
     uuid = models.CharField(db_column='RoleUUID', max_length=36)
     name = models.CharField(db_column='RoleName', max_length=50)
@@ -257,43 +257,31 @@ class Role(models.Model):
         db_column='AltLanguage', max_length=50, blank=True, null=True)
     is_system = models.IntegerField(db_column='IsSystem')
     is_blocked = models.BooleanField(db_column='IsBlocked')
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AuditUserID', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
         db_table = 'tblRole'
 
 
-class RoleRight(models.Model):
+class RoleRight(VersionedModel):
     id = models.AutoField(db_column='RoleRightID', primary_key=True)
     role = models.ForeignKey(Role, models.DO_NOTHING,
                              db_column='RoleID', related_name="rights")
     right_id = models.IntegerField(db_column='RightID')
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AuditUserId', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
         db_table = 'tblRoleRight'
 
 
-class InteractiveUser(models.Model):
+class InteractiveUser(VersionedModel):
     id = models.AutoField(db_column='UserID', primary_key=True)
     uuid = models.CharField(db_column='UserUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
     language = models.ForeignKey(
         Language, models.DO_NOTHING, db_column='LanguageID')
     last_name = models.CharField(db_column='LastName', max_length=100)
@@ -303,8 +291,6 @@ class InteractiveUser(models.Model):
     login_name = models.CharField(db_column='LoginName', max_length=25)
     health_facility_id = models.IntegerField(
         db_column='HFID', blank=True, null=True)
-    validity_from = DateTimeField(db_column='ValidityFrom')
-    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # password = models.BinaryField(blank=True, null=True)
@@ -341,8 +327,8 @@ class InteractiveUser(models.Model):
 
     @cached_property
     def rights(self):
-        return [rr.right_id for rr in RoleRight.objects.filter(
-            role_id__in=[r.role_id for r in UserRole.objects.filter(
+        return [rr.right_id for rr in RoleRight.filter_queryset().filter(
+            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
                 user_id=self.id)]).distinct()]
 
     @cached_property
@@ -362,19 +348,14 @@ class InteractiveUser(models.Model):
         db_table = 'tblUsers'
 
 
-class UserRole(models.Model):
+class UserRole(VersionedModel):
     id = models.AutoField(db_column='UserRoleID', primary_key=True)
     user = models.ForeignKey(
         InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="user_roles")
     role = models.ForeignKey(Role, models.DO_NOTHING,
                              db_column='RoleID', related_name="user_roles")
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AudituserID', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
