@@ -34,7 +34,7 @@ class UUIDModel(models.Model):
 
 
 class BaseVersionedModel(models.Model):
-    validity_from = DateTimeField(db_column='ValidityFrom')
+    validity_from = DateTimeField(db_column='ValidityFrom', default=py_datetime.now)
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
     def save_history(self, **kwargs):
