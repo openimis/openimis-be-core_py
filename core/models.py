@@ -33,6 +33,57 @@ class UUIDModel(models.Model):
         return "[%s]" % (self.id,)
 
 
+class BaseVersionedModel(models.Model):
+    validity_from = DateTimeField(db_column='ValidityFrom', default=py_datetime.now)
+    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
+
+    def save_history(self, **kwargs):
+        if not self.id: # only copy if the data is being updated
+            return None
+        histo = copy(self)
+        histo.id = None
+        if hasattr(histo, "uuid"):
+            setattr(histo, "uuid", uuid.uuid4())
+        from core import datetime
+        histo.validity_to = datetime.datetime.now()
+        histo.legacy_id = self.id
+        histo.save()
+        return histo.id
+
+    def delete_history(self, **kwargs):
+        self.save_history()
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
+
+    class Meta:
+        abstract = True
+
+    @classmethod
+    def filter_queryset(cls, queryset=None):
+        if queryset is None:
+            queryset = cls.objects.all()
+        queryset = queryset.filter(*filter_validity())
+        return queryset
+
+
+class VersionedModel(BaseVersionedModel):
+    legacy_id = models.IntegerField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        abstract = True
+
+
+class UUIDVersionedModel(BaseVersionedModel):
+    legacy_id = models.UUIDField(
+        db_column='LegacyID', blank=True, null=True)
+
+    class Meta:
+        abstract = True
+
 class ModuleConfiguration(UUIDModel):
     """
     Generic entity to save every modules' configuration (json format)
@@ -198,7 +249,7 @@ class TechnicalUser(AbstractBaseUser):
         db_table = 'core_TechnicalUser'
 
 
-class Role(models.Model):
+class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
     uuid = models.CharField(db_column='RoleUUID', max_length=36)
     name = models.CharField(db_column='RoleName', max_length=50)
@@ -206,43 +257,31 @@ class Role(models.Model):
         db_column='AltLanguage', max_length=50, blank=True, null=True)
     is_system = models.IntegerField(db_column='IsSystem')
     is_blocked = models.BooleanField(db_column='IsBlocked')
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AuditUserID', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
         db_table = 'tblRole'
 
 
-class RoleRight(models.Model):
+class RoleRight(VersionedModel):
     id = models.AutoField(db_column='RoleRightID', primary_key=True)
     role = models.ForeignKey(Role, models.DO_NOTHING,
                              db_column='RoleID', related_name="rights")
     right_id = models.IntegerField(db_column='RightID')
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AuditUserId', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
         db_table = 'tblRoleRight'
 
 
-class InteractiveUser(models.Model):
+class InteractiveUser(VersionedModel):
     id = models.AutoField(db_column='UserID', primary_key=True)
     uuid = models.CharField(db_column='UserUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
     language = models.ForeignKey(
         Language, models.DO_NOTHING, db_column='LanguageID')
     last_name = models.CharField(db_column='LastName', max_length=100)
@@ -252,8 +291,6 @@ class InteractiveUser(models.Model):
     login_name = models.CharField(db_column='LoginName', max_length=25)
     health_facility_id = models.IntegerField(
         db_column='HFID', blank=True, null=True)
-    validity_from = DateTimeField(db_column='ValidityFrom')
-    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # password = models.BinaryField(blank=True, null=True)
@@ -290,8 +327,8 @@ class InteractiveUser(models.Model):
 
     @cached_property
     def rights(self):
-        return [rr.right_id for rr in RoleRight.objects.filter(
-            role_id__in=[r.role_id for r in UserRole.objects.filter(
+        return [rr.right_id for rr in RoleRight.filter_queryset().filter(
+            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
                 user_id=self.id)]).distinct()]
 
     @cached_property
@@ -311,19 +348,14 @@ class InteractiveUser(models.Model):
         db_table = 'tblUsers'
 
 
-class UserRole(models.Model):
+class UserRole(VersionedModel):
     id = models.AutoField(db_column='UserRoleID', primary_key=True)
     user = models.ForeignKey(
         InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="user_roles")
     role = models.ForeignKey(Role, models.DO_NOTHING,
                              db_column='RoleID', related_name="user_roles")
-    validity_from = models.DateTimeField(db_column='ValidityFrom')
-    validity_to = models.DateTimeField(
-        db_column='ValidityTo', blank=True, null=True)
     audit_user_id = models.IntegerField(
         db_column='AudituserID', blank=True, null=True)
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
 
     class Meta:
         managed = False
@@ -420,7 +452,7 @@ class UserGroup(models.Model):
         unique_together = (('user', 'group'),)
 
 
-class Officer(models.Model):
+class Officer(VersionedModel):
     id = models.AutoField(db_column='OfficerID', primary_key=True)
     uuid = models.CharField(db_column='OfficerUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
@@ -498,34 +530,3 @@ class MutationLog(UUIDModel):
         MutationLog.objects.filter(id=self.id)\
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
-
-
-class VersionedModel(models.Model):
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
-    validity_from = DateTimeField(db_column='ValidityFrom')
-    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
-
-    def save_history(self, **kwargs):
-        if not self.id: # only copy if the data is being updated
-            return None
-        histo = copy(self)
-        histo.id = None
-        if hasattr(histo, "uuid"):
-            setattr(histo, "uuid", uuid.uuid4())
-        from core import datetime
-        histo.validity_to = datetime.datetime.now()
-        histo.legacy_id = self.id
-        histo.save()
-        return histo.id
-
-    def delete_history(self, **kwargs):
-        self.save_history()
-        from core import datetime
-        now = datetime.datetime.now()
-        self.validity_from = now
-        self.validity_to = now
-        self.save()
-
-    class Meta:
-        abstract = True

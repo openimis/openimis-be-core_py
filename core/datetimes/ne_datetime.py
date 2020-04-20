@@ -69,6 +69,12 @@ class NeDate(NepDate):
         ad_dt = py_datetime.date(value.year, value.month, value.day)
         return date.from_ad_date(ad_dt)
 
+    def to_ne_datetime(self):
+        return NeDatetime(self.year, self.month, self.day)
+
+    def to_datetime(self):
+        return self.to_ne_datetime()
+
     @classmethod
     def today(cls):
         nep_today = NepDate.today()
@@ -161,7 +167,7 @@ class NeDatetime(object):
 
 
     def raw_isoformat(self, *args, **kwargs):
-        return "%s %s" % (self._date.raw_isoformat(), self._time.isoformat(*args, **kwargs))        
+        return "%s %s" % (self._date.raw_isoformat(), self._time.isoformat(*args, **kwargs))
 
     def isoformat(self, *args, **kwargs):
         return "%s %s" % (self._date.isoformat(), self._time.isoformat(*args, **kwargs))
