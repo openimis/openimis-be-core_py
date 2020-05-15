@@ -4,7 +4,7 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-## Code climat (develop branch)
+## Code climate (develop branch)
 
 [![Maintainability](https://img.shields.io/codeclimate/maintainability/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py/maintainability)
 [![Test Coverage](https://img.shields.io/codeclimate/coverage/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py)
@@ -33,7 +33,7 @@ None
 * module_configurations
 * mutation_logs
 
-## GraphQL Mutations 
+## GraphQL Mutations
 N.A.
 
 ## Generic features
@@ -142,7 +142,7 @@ class Query(graphene.ObjectType):
 It also provides the admin console forms (UI), including the TechnicalUserForm (ability to add technical users from the console)
 
 ## Additional endpoints
-* core/users/current_user: privides information on the logged (in session) user: login, rights, attached health facility,...
+* core/users/current_user: provides information on the logged (in session) user: login, rights, attached health facility,...
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER user is auto-provisioned(default: "user")
