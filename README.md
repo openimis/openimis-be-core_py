@@ -9,12 +9,16 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 [![Maintainability](https://img.shields.io/codeclimate/maintainability/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py/maintainability)
 [![Test Coverage](https://img.shields.io/codeclimate/coverage/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py)
 
+## LGTM
+
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/openimis/openimis-be-core_py.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openimis/openimis-be-core_py/alerts/)
+
 ## ORM mapping:
 * UUIDModel: abstract model for new entities (and later on migrated entities), enforcing the use of UUID is identifier
 * VersionedModel: abstract model implementing the legacy 'in table archiving' mechanism
 * core_ModuleConfiguration > ModuleConfiguration: a generic entity each module should use to let (admin)users provide the expected configuration (via a central management console).
 * core_FieldControl > FieldControl: allow to hide or mark readonly fields in UI (tables, forms,...)
-* tblLanguages > Language: in openIMIS, UI lanbguage defined, by user from database (i.e. not the browser settings, request parameter,...)
+* tblLanguages > Language: in openIMIS, UI language defined, by user from database (i.e. not the browser settings, request parameter,...)
 * tblUsers > InteractiveUser: the openIMIS legacy users, with access to frontend (see openimis-fe_js project)
 * tblRole > Role: the openIMIS legacy roles (apply only on InteractiveUser)
 * tblRoleRight > RoleRight: the openIMIS legacy rights (apply only on InteractiveUser)

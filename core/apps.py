@@ -1,7 +1,6 @@
 import sys
 import os
 import importlib
-import json
 import logging
 from django.apps import AppConfig
 
@@ -42,7 +41,7 @@ class CoreConfig(AppConfig):
         try:
             this.calendar = self._import_module(cfg, "calendar")
             this.datetime = self._import_module(cfg, "datetime")
-        except:
+        except Exception:
             logger.error('Failed to configure calendar, using default!\n%s: %s' % (
                 sys.exc_info()[0].__name__, sys.exc_info()[1]))
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")

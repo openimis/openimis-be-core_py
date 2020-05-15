@@ -123,7 +123,7 @@ class ModuleConfiguration(UUIDModel):
         except ModuleConfiguration.DoesNotExist:
             logger.info('No %s configuration, using default!' % module)
             return default
-        except:
+        except Exception:
             logger.error('Failed to load %s configuration, using default!\n%s: %s' % (
                 module, sys.exc_info()[0].__name__, sys.exc_info()[1]))
             return default

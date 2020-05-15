@@ -1,7 +1,22 @@
+import core
 import graphene
 from django.db.models import Q
-import core
 from django.utils.translation import gettext as _
+
+__all__ = [
+    "TimeUtils",
+    "full_class_name",
+    "comparable",
+    "filter_validity",
+    "prefix_filterset",
+    "assert_string_length",
+    "PATIENT_CATEGORY_MASK_MALE",
+    "PATIENT_CATEGORY_MASK_FEMALE",
+    "PATIENT_CATEGORY_MASK_ADULT",
+    "PATIENT_CATEGORY_MASK_MINOR",
+    "patient_category_mask",
+    "ExtendedConnection",
+]
 
 
 class TimeUtils(object):
@@ -103,8 +118,8 @@ class ExtendedConnection(graphene.Connection):
     total_count = graphene.Int()
     edge_count = graphene.Int()
 
-    def resolve_total_count(root, info, **kwargs):
-        return root.length
+    def resolve_total_count(self, info, **kwargs):
+        return self.length
 
-    def resolve_edge_count(root, info, **kwargs):
-        return len(root.edges)
+    def resolve_edge_count(self, info, **kwargs):
+        return len(self.edges)
