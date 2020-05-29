@@ -18,6 +18,9 @@ class ObjectPermissions(permissions.DjangoObjectPermissions):
 
 class RemoteUserBackend(dj_RemoteUserBackend):
     def __init__(self, *args, **kwargs):
+        # auto-provisioning will only work for 'interactive' users (these registered in tblUsers)
+        # there is no auto-provisioning of 'technical' users
+        # (cfr. models.UserManager)
         self.create_unknown_user = True
 
 

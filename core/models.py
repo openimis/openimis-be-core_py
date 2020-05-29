@@ -8,7 +8,7 @@ from copy import copy
 import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
 from cached_property import cached_property
@@ -187,27 +187,31 @@ class UserManager(BaseUserManager):
         self._create_tech_user(
             username, email, password, **extra_fields)
 
+    def auto_provision_user(self, **kwargs):
+        # only auto-provision django user if registered as interactive user
+        try:
+            i_user = InteractiveUser.objects.get(
+                login_name=kwargs['username'],
+                *filter_validity())
+        except InteractiveUser.DoesNotExist:
+            raise PermissionDenied
+        user = self._create_core_user(**kwargs)
+        user.i_user = i_user
+        user.save()
+        if core.auto_provisioning_user_group:
+            group = Group.objects.get(
+                name=core.auto_provisioning_user_group)
+            user_group = UserGroup(user=user, group=group)
+            user_group.save()
+        return user, True
+
     def get_or_create(self, **kwargs):
-        created = False
         try:
             user = User.objects.get(**kwargs)
+            return user, False
         except User.DoesNotExist:
-            created = True
-            user = self._create_core_user(**kwargs)
-        if user._u is None:
-            try:
-                user.i_user = InteractiveUser.objects.get(
-                    login_name=user.username,
-                    *filter_validity())
-            except InteractiveUser.DoesNotExist:
-                raise Exception("Unauthorized")
-            user.save()
-            if core.auto_provisioning_user_group:
-                group = Group.objects.get(
-                    name=core.auto_provisioning_user_group)
-                user_group = UserGroup(user=user, group=group)
-                user_group.save()
-        return user, created
+            return self.auto_provision_user(**kwargs)
+
 
 
 class TechnicalUser(AbstractBaseUser):
