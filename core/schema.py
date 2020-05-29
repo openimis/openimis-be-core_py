@@ -1,9 +1,8 @@
+import decimal
 import json
+import logging
 import re
 import sys
-import traceback
-import logging
-import decimal
 from datetime import datetime as py_datetime
 
 import graphene
@@ -219,6 +218,8 @@ class ModuleConfigurationGQLType(DjangoObjectType):
 class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     """
     Adapted from https://github.com/graphql-python/graphene/issues/251
+    And then adapted by Alok Ramteke on my (Eric Darchis)' stackoverflow question:
+    https://stackoverflow.com/questions/57478464/django-graphene-relay-order-by-orderingfilter/61543302
     Substituting:
     `mutation_logs = DjangoFilterConnectionField(MutationLogGQLType)`
     with:
@@ -228,18 +229,17 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     ```
     """
     @classmethod
-    def connection_resolver(cls, resolver, connection, default_manager, max_limit,
-                            enforce_first_or_last, filterset_class, filtering_args,
-                            root, info, **args):
+    def resolve_queryset(
+            cls, connection, iterable, info, args, filtering_args, filterset_class
+    ):
+        qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
+            connection, iterable, info, args
+        )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(
-            data=filter_kwargs,
-            queryset=default_manager.get_queryset(),
-            request=info.context
-        ).qs
+        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
         order = args.get('orderBy', None)
         if order:
-            # Django supports "?" as random ordering but uses RAND() instead of NEWID(), will patch on the fly
             if type(order) is str:
                 if order == "?":
                     snake_order = RawSQL("NEWID()", params=[])
@@ -252,16 +252,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
-        return super(DjangoFilterConnectionField, cls).connection_resolver(
-            resolver,
-            connection,
-            qs,
-            max_limit,
-            enforce_first_or_last,
-            root,
-            info,
-            **args
-        )
+        return qs
 
 
 class MutationLogGQLType(DjangoObjectType):
