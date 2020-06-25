@@ -15,6 +15,7 @@ from cached_property import cached_property
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
 from .utils import filter_validity
+from jsonfallback.fields import FallbackJSONField
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,15 @@ class UUIDVersionedModel(BaseVersionedModel):
 
     class Meta:
         abstract = True
+
+
+class ExtendableModel(models.Model):
+    json_ext = FallbackJSONField(
+        db_column='JsonExt', blank=True, null=True)
+
+    class Meta:
+        abstract = True
+
 
 class ModuleConfiguration(UUIDModel):
     """
