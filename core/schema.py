@@ -20,6 +20,8 @@ from graphene_django.filter import DjangoFilterConnectionField
 
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language
 
+from .gql_queries import *
+
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
 
