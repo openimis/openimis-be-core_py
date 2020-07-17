@@ -4,17 +4,21 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-## Code climat (develop branch)
+## Code climate (develop branch)
 
 [![Maintainability](https://img.shields.io/codeclimate/maintainability/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py/maintainability)
 [![Test Coverage](https://img.shields.io/codeclimate/coverage/openimis/openimis-be-core_py.svg)](https://codeclimate.com/github/openimis/openimis-be-core_py)
+
+## LGTM
+
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/openimis/openimis-be-core_py.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openimis/openimis-be-core_py/alerts/)
 
 ## ORM mapping:
 * UUIDModel: abstract model for new entities (and later on migrated entities), enforcing the use of UUID is identifier
 * VersionedModel: abstract model implementing the legacy 'in table archiving' mechanism
 * core_ModuleConfiguration > ModuleConfiguration: a generic entity each module should use to let (admin)users provide the expected configuration (via a central management console).
 * core_FieldControl > FieldControl: allow to hide or mark readonly fields in UI (tables, forms,...)
-* tblLanguages > Language: in openIMIS, UI lanbguage defined, by user from database (i.e. not the browser settings, request parameter,...)
+* tblLanguages > Language: in openIMIS, UI language defined, by user from database (i.e. not the browser settings, request parameter,...)
 * tblUsers > InteractiveUser: the openIMIS legacy users, with access to frontend (see openimis-fe_js project)
 * tblRole > Role: the openIMIS legacy roles (apply only on InteractiveUser)
 * tblRoleRight > RoleRight: the openIMIS legacy rights (apply only on InteractiveUser)
@@ -33,7 +37,7 @@ None
 * module_configurations
 * mutation_logs
 
-## GraphQL Mutations 
+## GraphQL Mutations
 N.A.
 
 ## Generic features
@@ -142,7 +146,7 @@ class Query(graphene.ObjectType):
 It also provides the admin console forms (UI), including the TechnicalUserForm (ability to add technical users from the console)
 
 ## Additional endpoints
-* core/users/current_user: privides information on the logged (in session) user: login, rights, attached health facility,...
+* core/users/current_user: provides information on the logged (in session) user: login, rights, attached health facility,...
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER user is auto-provisioned(default: "user")

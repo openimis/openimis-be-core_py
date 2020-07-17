@@ -1,4 +1,3 @@
-import sys
 from django.db import models
 import datetime as py_datetime
 

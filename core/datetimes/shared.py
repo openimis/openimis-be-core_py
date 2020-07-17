@@ -1,5 +1,6 @@
 from datetime import timedelta
-from datetime import time as py_time
+
+__all__ = ["is_midnight", "datetimedelta"]
 
 
 def _cmperror(x, y):
