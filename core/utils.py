@@ -16,6 +16,7 @@ __all__ = [
     "PATIENT_CATEGORY_MASK_MINOR",
     "patient_category_mask",
     "ExtendedConnection",
+    "ExtendedRelayConnection",
 ]
 
 
@@ -108,7 +109,7 @@ def patient_category_mask(insuree, target_date):
 
 class ExtendedConnection(graphene.Connection):
     """
-    Adds total_count and edge_count to Graphene Relay connections. To use, simply add to the
+    Adds total_count and edge_count to Graphene connections. To use, simply add to the
     Graphene object definition Meta:
     `connection_class = ExtendedConnection`
     """
@@ -120,6 +121,23 @@ class ExtendedConnection(graphene.Connection):
 
     def resolve_total_count(self, info, **kwargs):
         return self.length
+
+    def resolve_edge_count(self, info, **kwargs):
+        return len(self.edges)
+
+
+class ExtendedRelayConnection(graphene.relay.Connection):
+    """
+    Adds total_count and edge_count to Graphene Relay connections.
+    """
+    class Meta:
+        abstract = True
+
+    total_count = graphene.Int()
+    edge_count = graphene.Int()
+
+    def resolve_total_count(self, info, **kwargs):
+        return len(self.iterable)
 
     def resolve_edge_count(self, info, **kwargs):
         return len(self.edges)
