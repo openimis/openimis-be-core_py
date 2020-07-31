@@ -16,6 +16,7 @@ __all__ = [
     "PATIENT_CATEGORY_MASK_MINOR",
     "patient_category_mask",
     "ExtendedConnection",
+    "get_scheduler_method_ref",
 ]
 
 
@@ -123,3 +124,17 @@ class ExtendedConnection(graphene.Connection):
 
     def resolve_edge_count(self, info, **kwargs):
         return len(self.edges)
+
+
+def get_scheduler_method_ref(name):
+    """
+    Use to retrieve the method reference from a str name. This is necessary when the module cannot be imported from
+    that location.
+    :param name: claim.module.submodule.method or similar name
+    :return: reference to the method
+    """
+    split_name = name.split(".")
+    module = __import__(".".join(split_name[:-1]))
+    for subitem in split_name[1:]:
+        module = getattr(module, subitem)
+    return module
