@@ -21,6 +21,7 @@ DEFAULT_CFG = {
     "iso_raw_date": "False",
     "age_of_majority": "18",
     "async_mutations": "False",
+    "currency": "$",
 }
 
 
@@ -49,6 +50,9 @@ class CoreConfig(AppConfig):
 
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
+
+    def _configure_currency(self, cfg):
+        this.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
         if bool(os.environ.get('NO_DATABASE', False)):
@@ -79,3 +83,4 @@ class CoreConfig(AppConfig):
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)
+        self._configure_currency(cfg)
