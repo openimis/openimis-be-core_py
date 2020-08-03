@@ -2,7 +2,7 @@ from __future__ import absolute_import, unicode_literals
 import json
 import logging
 
-from celery import shared_task
+from celery import shared_task, task
 from core.models import MutationLog, Language
 from django.utils import translation
 
@@ -44,3 +44,15 @@ def openimis_mutation_async(mutation_id, module, class_name):
             mutation.mark_as_failed(str(exc))
         logger.warning(f"Exception while processing mutation id {mutation_id}", exc_info=True)
         raise exc
+
+
+@shared_task(name='sample_batch')
+def openimis_test_batch():
+    logger.info("sample batch")
+
+
+@shared_task(name='sample_scheduling_method')
+def sample_method(scheduler, sample_param, sample_named=0):
+    logger.info("Scheduling our own tasks from here")
+    # scheduler.add_job(foo.bar, id="name", minutes=10)
+
