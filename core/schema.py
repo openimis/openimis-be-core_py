@@ -20,6 +20,8 @@ from graphene_django.filter import DjangoFilterConnectionField
 
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language
 
+from .gql_queries import *
+
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
 
@@ -228,16 +230,9 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         orderBy=graphene.List(of_type=graphene.String))
     ```
     """
-    @classmethod
-    def resolve_queryset(
-            cls, connection, iterable, info, args, filtering_args, filterset_class
-    ):
-        qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
-            connection, iterable, info, args
-        )
-        filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
 
+    @classmethod
+    def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
             if type(order) is str:
@@ -253,6 +248,18 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                 ]
             qs = qs.order_by(*snake_order)
         return qs
+
+    @classmethod
+    def resolve_queryset(
+            cls, connection, iterable, info, args, filtering_args, filterset_class
+    ):
+        qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
+            connection, iterable, info, args
+        )
+        filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
+        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
+        return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
 
 class MutationLogGQLType(DjangoObjectType):

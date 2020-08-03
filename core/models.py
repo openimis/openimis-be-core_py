@@ -188,14 +188,12 @@ class UserManager(BaseUserManager):
     def create_user(self, username, password, email=None, **extra_fields):
         extra_fields.setdefault('is_staff', False)
         extra_fields['is_superuser'] = False
-        self._create_tech_user(
-            username, email, password, **extra_fields)
+        self._create_tech_user(username, email, password, **extra_fields)
 
-    def create_superuser(self, username, password, email=None, **extra_fields):
+    def create_superuser(self, username, password=None, email=None, **extra_fields):
         extra_fields['is_staff'] = True
         extra_fields['is_superuser'] = True
-        self._create_tech_user(
-            username, email, password, **extra_fields)
+        self._create_tech_user(username, email, password, **extra_fields)
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user
@@ -223,7 +221,6 @@ class UserManager(BaseUserManager):
             return self.auto_provision_user(**kwargs)
 
 
-
 class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
@@ -239,6 +236,7 @@ class TechnicalUser(AbstractBaseUser):
         return -1
 
     USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['password']
 
     def _bind_User(self):
         save_required = False
@@ -267,7 +265,7 @@ class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
     uuid = models.CharField(db_column='RoleUUID', max_length=36)
     name = models.CharField(db_column='RoleName', max_length=50)
-    altlanguage = models.CharField(
+    alt_language = models.CharField(
         db_column='AltLanguage', max_length=50, blank=True, null=True)
     is_system = models.IntegerField(db_column='IsSystem')
     is_blocked = models.BooleanField(db_column='IsBlocked')
@@ -451,6 +449,11 @@ class User(UUIDModel, PermissionsMixin):
     def __str__(self):
         return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
 
+    def save(self, *args, **kwargs):
+        if self._u and self._u.id:
+            self._u.save()
+        super().save(*args, **kwargs)
+
     class Meta:
         managed = True
         db_table = 'core_User'
@@ -489,6 +492,9 @@ class Officer(VersionedModel):
     phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
     # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
     # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+
+    def name(self):
+        return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
 
     class Meta:
         managed = False

@@ -17,6 +17,7 @@ __all__ = [
     "patient_category_mask",
     "ExtendedConnection",
     "get_scheduler_method_ref",
+    "ExtendedRelayConnection",
 ]
 
 
@@ -109,7 +110,7 @@ def patient_category_mask(insuree, target_date):
 
 class ExtendedConnection(graphene.Connection):
     """
-    Adds total_count and edge_count to Graphene Relay connections. To use, simply add to the
+    Adds total_count and edge_count to Graphene connections. To use, simply add to the
     Graphene object definition Meta:
     `connection_class = ExtendedConnection`
     """
@@ -138,3 +139,20 @@ def get_scheduler_method_ref(name):
     for subitem in split_name[1:]:
         module = getattr(module, subitem)
     return module
+
+
+class ExtendedRelayConnection(graphene.relay.Connection):
+    """
+    Adds total_count and edge_count to Graphene Relay connections.
+    """
+    class Meta:
+        abstract = True
+
+    total_count = graphene.Int()
+    edge_count = graphene.Int()
+
+    def resolve_total_count(self, info, **kwargs):
+        return len(self.iterable)
+
+    def resolve_edge_count(self, info, **kwargs):
+        return len(self.edges)
