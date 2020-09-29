@@ -29,6 +29,7 @@ core = sys.modules["core"]
 
 logger = logging.getLogger(__name__)
 
+
 class SmallInt(graphene.Int):
     """
     This represents a small Integer, with values ranging from -32768 to +32767

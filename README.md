@@ -63,10 +63,23 @@ The auto-provisioning assigns a default Group (name can be parameterized) from w
 Note: if not existing, the default group is created at startup.
 
 ### Mutations & Signals
-The OpenIMISMutation class of this module provides the template code for all openIMIS mutations. Based on "async_mutations" it detaches (or not) the processing to a workers process (via queuing). It also automatically triggers 2 signals per mutation: one at module and one at mutation level.
-To register a module on a (mutation) signal, one can register a callback via bind_signals() in his module's schema.py file.
+The OpenIMISMutation class of this module provides the template code for
+all openIMIS mutations. Based on "async_mutations" it detaches (or not)
+the processing to a workers process (via queuing). It also automatically
+triggers 4 signals per mutation: one at a global level (should you want
+to listen to all mutations, regardless of module) and 3 at module level:
+* **signal_mutation_module_validate**: this is called when validating the
+  requested mutation. Returning errors here will reject the mutation
+  (see below)
+* **signal_mutation_module_before_mutating**: sent after the validation and
+  before performing the actual mutation
+* **signal_mutation_module_after_mutating**: sent when the mutation has
+  finished
+
+To register a module on a (mutation) signal, one can register a callback
+via bind_signals() in his module's schema.py file.
 ```
-from core.schema import signal_mutation_module
+from core.schema import signal_mutation_module_validate, signal_mutation_module_before_mutating, signal_mutation_module_after_mutating
 
 
 def on_claim_mutation(sender, **kwargs):
@@ -76,9 +89,12 @@ def on_claim_mutation(sender, **kwargs):
 
 
 def bind_signals():
-    signal_mutation_module["claim"].connect(on_claim_mutation)
+    signal_mutation_module_validate["claim"].connect(on_claim_mutation)
 ```
-If the callback raises and exception, the mutation is marked as failed, with a generic error message.
+
+If the callback raises an exception, the mutation is marked as failed,
+with a generic error message.
+
 If the callback returns an array of error message:
 ```
 [{'message': 'message to the user', 'code': 'optional error code', 'detail': 'optional error detail'}]
@@ -88,7 +104,7 @@ If the callback returns None (or an empty array), the mutation is marked as succ
 __Important Note__: by default the callback is executed __in transaction__ and, as a consequence, will (in case of exception/errors) cancel the complete mutation. If this is not the desired behaviour, the callback must explicitely detach to separate transaction (process).
 
 
-### Graphene Custom Types & Helper Classes/Methos
+### Graphene Custom Types & Helper Classes/Methods
 * schema.SmallInt: Integer, with values ranging from -32768 to +32767
 * schema.TinyInt: Integer (8 bit), with values ranging from 0 to 255
 * utils.filter_validity: many openIMIS entities have a validity_from/validity_to, this filters provides a helper implementing the vality logic based on date (today if None)
@@ -143,22 +159,35 @@ class Query(graphene.ObjectType):
 * ExtendedConnection: extension of the `graphene.Connection` class, implementing the `totalCount` and `edgesCount` GraphQL Pagination values.
 
 ### Django Admin
-It also provides the admin console forms (UI), including the TechnicalUserForm (ability to add technical users from the console)
+It also provides the admin console forms (UI), including the
+TechnicalUserForm (ability to add technical users from the console)
 
 ## Additional endpoints
-* core/users/current_user: provides information on the logged (in session) user: login, rights, attached health facility,...
+* core/users/current_user: provides information on the logged (in
+  session) user: login, rights, attached health facility,...
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
-* auto_provisioning_user_group: assigned user group when REMOTE_USER user is auto-provisioned(default: "user")
+* auto_provisioning_user_group: assigned user group when REMOTE_USER
+  user is auto-provisioned(default: "user")
 * calendar_package: the package from which to mount the calendar (default: "core")
-* calendar_module: the module mounted as calendar (default: ".calendars.ad_calendar", pre-canned alternative: ".calendars.ne_calendar")
+* calendar_module: the module mounted as calendar (default:
+  ".calendars.ad_calendar", pre-canned alternative:
+  ".calendars.ne_calendar")
 * datetime_package: the package from which to mount the datetime (default: "core")
-* datetime_module: the module mounted as datetime (default: ".datetimes.ad_datetime", pre-canned alternative: ".datetimes.ne_datetime")
-* shortstrfdate: short format date when printing to screen, in logs,... (default: "%d/%m/%Y")
-* longstrfdate: short format date when printing to screen, in logs,... (default: "%a %d %B %Y")
-* iso_raw_date: wherever iso date format is (true=)in 'local' calendar or (false=)gregorian calendar (default: "False", to keep valid iso dates for 30/02/2076 and the like)
+* datetime_module: the module mounted as datetime (default:
+  ".datetimes.ad_datetime", pre-canned alternative:
+  ".datetimes.ne_datetime")
+* shortstrfdate: short format date when printing to screen, in logs,...
+  (default: "%d/%m/%Y")
+* longstrfdate: short format date when printing to screen, in logs,...
+  (default: "%a %d %B %Y")
+* iso_raw_date: wherever iso date format is (true=)in 'local' calendar
+  or (false=)gregorian calendar (default: "False", to keep valid iso
+  dates for 30/02/2076 and the like)
 * age_of_majority: (default: "18")
-* async_mutations: wherever mutations are (true=) processed via message queuing or (false=) in interactive server process (default: "False")
+* async_mutations: wherever mutations are (true=) processed via message
+  queuing or (false=) in interactive server process (default: "False")
+* currency: Country currency (default: "$")
 
 
 ## openIMIS Modules Dependencies
