@@ -265,7 +265,7 @@ class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
     uuid = models.CharField(db_column='RoleUUID', max_length=36)
     name = models.CharField(db_column='RoleName', max_length=50)
-    altlanguage = models.CharField(
+    alt_language = models.CharField(
         db_column='AltLanguage', max_length=50, blank=True, null=True)
     is_system = models.IntegerField(db_column='IsSystem')
     is_blocked = models.BooleanField(db_column='IsBlocked')
@@ -492,6 +492,9 @@ class Officer(VersionedModel):
     phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
     # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
     # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+
+    def name(self):
+        return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
 
     class Meta:
         managed = False
