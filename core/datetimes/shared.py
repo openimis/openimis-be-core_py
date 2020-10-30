@@ -79,14 +79,11 @@ class datetimedelta(object):
         return datetimedelta(years=0, months=0, days=td.days, seconds=td.seconds, microseconds=td.microseconds)
 
     def _add_years(self, dt):
-        from core import calendar
-        for i in range(abs(self._years)):
-            for j in range(calendar.yearmonthscount(dt.year)):
-                if self._years > 0:
-                    dt = _add_month(dt)
-                else:
-                    dt = _sub_month(dt)
-        return dt
+        while True:  # there are many '29/02' in nepali calendar
+            try:
+                return dt.replace(year=dt.year + self._years)
+            except ValueError:
+                return self - datetimedelta(days=1)
 
     def _add_months(self, dt):
         for i in range(abs(self._months)):
