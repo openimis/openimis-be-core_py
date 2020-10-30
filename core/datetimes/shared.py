@@ -83,7 +83,7 @@ class datetimedelta(object):
             try:
                 return dt.replace(year=dt.year + self._years)
             except ValueError:
-                return self - datetimedelta(days=1)
+                return (dt - datetimedelta(days=1)) + self
 
     def _add_months(self, dt):
         for i in range(abs(self._months)):
