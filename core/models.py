@@ -554,7 +554,7 @@ class MutationLog(UUIDModel):
         self.refresh_from_db()
 
 
-class HistoryModel(DirtyFieldsMixin, BaseVersionedModel):
+class HistoryModel(DirtyFieldsMixin, models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, unique=True)
     is_active = models.BooleanField(default=True)
     json_ext = FallbackJSONField(blank=True, null=True)
@@ -577,8 +577,6 @@ class HistoryModel(DirtyFieldsMixin, BaseVersionedModel):
            #save the new object
            self.user_created = user
            self.user_updated = user
-           if hasattr(self, "uuid"):
-              setattr(self, "uuid", uuid.uuid4())
            return super(HistoryModel, self).save()
         if self.is_dirty():
            from core import datetime
