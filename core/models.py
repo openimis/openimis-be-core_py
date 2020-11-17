@@ -555,11 +555,12 @@ class MutationLog(UUIDModel):
 
 
 class HistoryModel(DirtyFieldsMixin, models.Model):
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uuid = models.UUIDField(unique=True)
     is_active = models.BooleanField(default=True)
     json_ext = FallbackJSONField(blank=True, null=True)
-    date_created = DateTimeField(default=py_datetime.now, null=True)
-    date_updated = DateTimeField(default=py_datetime.now, null=True)
+    date_created = DateTimeField(null=True)
+    date_updated = DateTimeField(null=True)
     user_created = models.ForeignKey(User, related_name='user_created', on_delete=models.deletion.DO_NOTHING)
     user_updated = models.ForeignKey(User, related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
     version = models.IntegerField(default=1)
@@ -573,14 +574,18 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def save(self, *args, **kwargs):
         #get the user data so as to assign later his uuid id in fields user_updated etc
         user = User.objects.get(**kwargs)
-        if not self.id:
+        from core import datetime
+        now = datetime.datetime.now()
+        if not self.uuid:
            #save the new object
+           self.uuid = self.pk
            self.user_created = user
            self.user_updated = user
+           self.date_created = now
+           self.date_updated = now
            return super(HistoryModel, self).save()
         if self.is_dirty():
-           from core import datetime
-           self.date_updated = datetime.datetime.now()
+           self.date_updated = now
            self.user_updated = user
            self.version = self.version + 1
            return super(HistoryModel, self).save()
@@ -592,7 +597,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     def delete(self, *args, **kwargs):
         user = User.objects.get(**kwargs)
-        if self.is_active:
+        if not self.is_dirty() and self.is_active:
            from core import datetime
            self.date_updated = datetime.datetime.now()
            self.user_updated = user
@@ -600,7 +605,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
            self.is_active = False
            return super(HistoryModel, self).save()
         else:
-           raise ValidationError('Record has not be updated - there are no changes in fields or object has been deleting yet')
+           raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
 
     class Meta:
         abstract = True
