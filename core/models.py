@@ -557,7 +557,7 @@ class MutationLog(UUIDModel):
 class HistoryModel(DirtyFieldsMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     uuid = models.UUIDField(unique=True)
-    is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
     json_ext = FallbackJSONField(blank=True, null=True)
     date_created = DateTimeField(null=True)
     date_updated = DateTimeField(null=True)
@@ -597,15 +597,19 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     def delete(self, *args, **kwargs):
         user = User.objects.get(**kwargs)
-        if not self.is_dirty() and self.is_active:
+        if not self.is_dirty() and not self.is_deleted:
            from core import datetime
            self.date_updated = datetime.datetime.now()
            self.user_updated = user
            self.version = self.version + 1
-           self.is_active = False
+           self.is_deleted = True
            return super(HistoryModel, self).save()
         else:
            raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
 
     class Meta:
         abstract = True
+
+
+class TH(HistoryModel):
+    name = models.CharField(max_length=40)
