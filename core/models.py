@@ -8,7 +8,7 @@ from copy import copy
 import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
 from cached_property import cached_property
@@ -16,6 +16,8 @@ from .fields import DateTimeField
 from datetime import datetime as py_datetime
 from .utils import filter_validity
 from jsonfallback.fields import FallbackJSONField
+from simple_history.models import HistoricalRecords
+from dirtyfields import DirtyFieldsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -550,3 +552,60 @@ class MutationLog(UUIDModel):
         MutationLog.objects.filter(id=self.id)\
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
+
+
+class HistoryModel(DirtyFieldsMixin, models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uuid = models.UUIDField(unique=True)
+    is_deleted = models.BooleanField(default=False)
+    json_ext = FallbackJSONField(blank=True, null=True)
+    date_created = DateTimeField(null=True)
+    date_updated = DateTimeField(null=True)
+    user_created = models.ForeignKey(User, related_name='user_created', on_delete=models.deletion.DO_NOTHING)
+    user_updated = models.ForeignKey(User, related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
+    version = models.IntegerField(default=1)
+    history = HistoricalRecords(
+        inherit=True,
+    )
+
+    def save_history(self):
+        pass
+
+    def save(self, *args, **kwargs):
+        #get the user data so as to assign later his uuid id in fields user_updated etc
+        user = User.objects.get(**kwargs)
+        from core import datetime
+        now = datetime.datetime.now()
+        if not self.uuid:
+           #save the new object
+           self.uuid = self.pk
+           self.user_created = user
+           self.user_updated = user
+           self.date_created = now
+           self.date_updated = now
+           return super(HistoryModel, self).save()
+        if self.is_dirty():
+           self.date_updated = now
+           self.user_updated = user
+           self.version = self.version + 1
+           return super(HistoryModel, self).save()
+        else:
+           raise ValidationError('Record has not be updated - there are no changes in fields')
+
+    def delete_history(self):
+        pass
+
+    def delete(self, *args, **kwargs):
+        user = User.objects.get(**kwargs)
+        if not self.is_dirty() and not self.is_deleted:
+           from core import datetime
+           self.date_updated = datetime.datetime.now()
+           self.user_updated = user
+           self.version = self.version + 1
+           self.is_deleted = True
+           return super(HistoryModel, self).save()
+        else:
+           raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
+
+    class Meta:
+        abstract = True

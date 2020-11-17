@@ -24,6 +24,8 @@ setup(
         'djangorestframework',
         'cached-property',
         'nepalicalendar',
+        'django-simple-history',
+        'django-dirtyfields',
     ],   
     classifiers=[
         'Environment :: Web Environment',
