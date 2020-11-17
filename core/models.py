@@ -609,7 +609,3 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     class Meta:
         abstract = True
-
-
-class TH(HistoryModel):
-    name = models.CharField(max_length=40)
