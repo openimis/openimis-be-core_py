@@ -628,11 +628,13 @@ class HistoryBusinessModel(HistoryModel):
 
     def _create_new_entity(self, user, datetime):
         """1 step - create new entity"""
+        now = datetime.datetime.now()
         new_entity = copy(self)
         new_entity.id = None
+        new_entity.uuid = None
         if hasattr(new_entity, "id"):
             setattr(new_entity, "id", uuid.uuid4())
-        new_entity.uuid = new_entity.id
+        new_entity.version = 1
         if self.date_valid_from is None:
             raise ValidationError('Field date_valid_from should not be empty')
         new_entity.save(username=user.username)
