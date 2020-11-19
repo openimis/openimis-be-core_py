@@ -559,8 +559,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     uuid = models.UUIDField(unique=True)
     is_deleted = models.BooleanField(default=False)
     json_ext = FallbackJSONField(blank=True, null=True)
-    date_created = DateTimeField(null=True)
-    date_updated = DateTimeField(null=True)
+    date_created = models.DateTimeField(null=True)
+    date_updated = models.DateTimeField(null=True)
     user_created = models.ForeignKey(User, related_name='user_created', on_delete=models.deletion.DO_NOTHING)
     user_updated = models.ForeignKey(User, related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
     version = models.IntegerField(default=1)
@@ -574,8 +574,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def save(self, *args, **kwargs):
         #get the user data so as to assign later his uuid id in fields user_updated etc
         user = User.objects.get(**kwargs)
-        from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         if not self.uuid:
            #save the new object
            self.uuid = self.pk
@@ -598,8 +597,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def delete(self, *args, **kwargs):
         user = User.objects.get(**kwargs)
         if not self.is_dirty() and not self.is_deleted:
-           from core import datetime
-           self.date_updated = datetime.datetime.now()
+           self.date_updated = py_datetime.now()
            self.user_updated = user
            self.version = self.version + 1
            self.is_deleted = True
@@ -612,29 +610,30 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
 
 class HistoryBusinessModel(HistoryModel):
-    date_valid_from = DateTimeField(default=py_datetime.now)
-    date_valid_to = DateTimeField(blank=True, null=True)
+    date_valid_from = models.DateTimeField(default=py_datetime.now)
+    date_valid_to = models.DateTimeField(blank=True, null=True)
     replacement_uuid = models.UUIDField(null=True)
 
     def replace_object(self, **kwargs):
         if not self.id:
             return None
-        from core import datetime
         user = User.objects.get(**kwargs)
         #1 step - create new entity
-        new_entity = self._create_new_entity(user=user, datetime=datetime)
+        new_entity = self._create_new_entity(user=user)
         #2 step - update the fields for the entity to be replaced
         self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.uuid, date_valid_from_new_entity=new_entity.date_valid_from)
 
-    def _create_new_entity(self, user, datetime):
+    def _create_new_entity(self, user):
         """1 step - create new entity"""
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         new_entity = copy(self)
         new_entity.id = None
         new_entity.uuid = None
         if hasattr(new_entity, "id"):
             setattr(new_entity, "id", uuid.uuid4())
         new_entity.version = 1
+        new_entity.date_valid_from = now
+        new_entity.date_valid_to = None
         if self.date_valid_from is None:
             raise ValidationError('Field date_valid_from should not be empty')
         new_entity.save(username=user.username)
@@ -644,7 +643,8 @@ class HistoryBusinessModel(HistoryModel):
         """2 step - update the fields for the entity to be replaced"""
         if not self.is_dirty():
             if self.date_valid_to is not None:
-                self.date_valid_to = date_valid_from_new_entity if date_valid_from_new_entity < self.date_valid_to else None
+                if date_valid_from_new_entity < self.date_valid_to:
+                    self.date_valid_to = date_valid_from_new_entity
             else:
                 self.date_valid_to = date_valid_from_new_entity
             self.replacement_uuid = uuid_from_new_entity
