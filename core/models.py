@@ -555,8 +555,7 @@ class MutationLog(UUIDModel):
 
 
 class HistoryModel(DirtyFieldsMixin, models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    uuid = models.UUIDField(unique=True)
+    id = models.UUIDField(primary_key=True, default=None, editable=False)
     is_deleted = models.BooleanField(default=False)
     json_ext = FallbackJSONField(blank=True, null=True)
     date_created = models.DateTimeField(null=True)
@@ -568,6 +567,9 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         inherit=True,
     )
 
+    def set_pk(self):
+        self.pk = uuid.uuid4()
+
     def save_history(self):
         pass
 
@@ -575,9 +577,10 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         #get the user data so as to assign later his uuid id in fields user_updated etc
         user = User.objects.get(**kwargs)
         now = py_datetime.now()
-        if not self.uuid:
+        #check if object has been newly created
+        if self.id is None:
            #save the new object
-           self.uuid = self.pk
+           self.set_pk()
            self.user_created = user
            self.user_updated = user
            self.date_created = now
@@ -615,22 +618,20 @@ class HistoryBusinessModel(HistoryModel):
     replacement_uuid = models.UUIDField(null=True)
 
     def replace_object(self, **kwargs):
-        if not self.id:
+        #check if object was created and saved in database (having date_created field)
+        if self.id is None:
             return None
         user = User.objects.get(**kwargs)
         #1 step - create new entity
         new_entity = self._create_new_entity(user=user)
         #2 step - update the fields for the entity to be replaced
-        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.uuid, date_valid_from_new_entity=new_entity.date_valid_from)
+        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id, date_valid_from_new_entity=new_entity.date_valid_from)
 
     def _create_new_entity(self, user):
         """1 step - create new entity"""
         now = py_datetime.now()
         new_entity = copy(self)
         new_entity.id = None
-        new_entity.uuid = None
-        if hasattr(new_entity, "id"):
-            setattr(new_entity, "id", uuid.uuid4())
         new_entity.version = 1
         new_entity.date_valid_from = now
         new_entity.date_valid_to = None
