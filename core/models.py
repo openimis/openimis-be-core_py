@@ -555,17 +555,22 @@ class MutationLog(UUIDModel):
 
 
 class HistoryModel(DirtyFieldsMixin, models.Model):
-    id = models.UUIDField(primary_key=True, default=None, editable=False)
-    is_deleted = models.BooleanField(default=False)
-    json_ext = FallbackJSONField(blank=True, null=True)
-    date_created = models.DateTimeField(null=True)
-    date_updated = models.DateTimeField(null=True)
-    user_created = models.ForeignKey(User, related_name='user_created', on_delete=models.deletion.DO_NOTHING)
-    user_updated = models.ForeignKey(User, related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
+    id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
+    is_deleted = models.BooleanField(db_column="isDeleted", default=False)
+    json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
+    date_created = models.DateTimeField(db_column="DateCreated", null=True)
+    date_updated = models.DateTimeField(db_column="DateUpdated", null=True)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='user_created', on_delete=models.deletion.DO_NOTHING)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
     version = models.IntegerField(default=1)
     history = HistoricalRecords(
         inherit=True,
     )
+
+    def _get_id(self):
+        return self.id
+
+    uuid = property(_get_id)
 
     def set_pk(self):
         self.pk = uuid.uuid4()
@@ -613,9 +618,9 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
 
 class HistoryBusinessModel(HistoryModel):
-    date_valid_from = models.DateTimeField(default=py_datetime.now)
-    date_valid_to = models.DateTimeField(blank=True, null=True)
-    replacement_uuid = models.UUIDField(null=True)
+    date_valid_from = models.DateTimeField(db_column="DateValidFrom", default=py_datetime.now)
+    date_valid_to = models.DateTimeField(db_column="DateValidTo", blank=True, null=True)
+    replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
 
     def replace_object(self, **kwargs):
         #check if object was created and saved in database (having date_created field)
