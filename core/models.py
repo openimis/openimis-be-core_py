@@ -555,18 +555,25 @@ class MutationLog(UUIDModel):
 
 
 class HistoryModel(DirtyFieldsMixin, models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    uuid = models.UUIDField(unique=True)
-    is_deleted = models.BooleanField(default=False)
-    json_ext = FallbackJSONField(blank=True, null=True)
-    date_created = DateTimeField(null=True)
-    date_updated = DateTimeField(null=True)
-    user_created = models.ForeignKey(User, related_name='user_created', on_delete=models.deletion.DO_NOTHING)
-    user_updated = models.ForeignKey(User, related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
+    id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
+    is_deleted = models.BooleanField(db_column="isDeleted", default=False)
+    json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
+    date_created = models.DateTimeField(db_column="DateCreated", null=True)
+    date_updated = models.DateTimeField(db_column="DateUpdated", null=True)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='user_created', on_delete=models.deletion.DO_NOTHING)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
     version = models.IntegerField(default=1)
     history = HistoricalRecords(
         inherit=True,
     )
+
+    def _get_id(self):
+        return self.id
+
+    uuid = property(_get_id)
+
+    def set_pk(self):
+        self.pk = uuid.uuid4()
 
     def save_history(self):
         pass
@@ -574,11 +581,11 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def save(self, *args, **kwargs):
         #get the user data so as to assign later his uuid id in fields user_updated etc
         user = User.objects.get(**kwargs)
-        from core import datetime
-        now = datetime.datetime.now()
-        if not self.uuid:
+        now = py_datetime.now()
+        #check if object has been newly created
+        if self.id is None:
            #save the new object
-           self.uuid = self.pk
+           self.set_pk()
            self.user_created = user
            self.user_updated = user
            self.date_created = now
@@ -598,14 +605,59 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def delete(self, *args, **kwargs):
         user = User.objects.get(**kwargs)
         if not self.is_dirty() and not self.is_deleted:
-           from core import datetime
-           self.date_updated = datetime.datetime.now()
+           self.date_updated = py_datetime.now()
            self.user_updated = user
            self.version = self.version + 1
            self.is_deleted = True
            return super(HistoryModel, self).save()
         else:
            raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
+
+    class Meta:
+        abstract = True
+
+
+class HistoryBusinessModel(HistoryModel):
+    date_valid_from = models.DateTimeField(db_column="DateValidFrom", default=py_datetime.now)
+    date_valid_to = models.DateTimeField(db_column="DateValidTo", blank=True, null=True)
+    replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
+
+    def replace_object(self, **kwargs):
+        #check if object was created and saved in database (having date_created field)
+        if self.id is None:
+            return None
+        user = User.objects.get(**kwargs)
+        #1 step - create new entity
+        new_entity = self._create_new_entity(user=user)
+        #2 step - update the fields for the entity to be replaced
+        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id, date_valid_from_new_entity=new_entity.date_valid_from)
+
+    def _create_new_entity(self, user):
+        """1 step - create new entity"""
+        now = py_datetime.now()
+        new_entity = copy(self)
+        new_entity.id = None
+        new_entity.version = 1
+        new_entity.date_valid_from = now
+        new_entity.date_valid_to = None
+        if self.date_valid_from is None:
+            raise ValidationError('Field date_valid_from should not be empty')
+        new_entity.save(username=user.username)
+        return new_entity
+
+    def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
+        """2 step - update the fields for the entity to be replaced"""
+        if not self.is_dirty():
+            if self.date_valid_to is not None:
+                if date_valid_from_new_entity < self.date_valid_to:
+                    self.date_valid_to = date_valid_from_new_entity
+            else:
+                self.date_valid_to = date_valid_from_new_entity
+            self.replacement_uuid = uuid_from_new_entity
+            self.save(username=user.username)
+            return self
+        else:
+            raise ValidationError("Object is changed - it must be updated before being replaced")
 
     class Meta:
         abstract = True
