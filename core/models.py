@@ -560,8 +560,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
     date_created = models.DateTimeField(db_column="DateCreated", null=True)
     date_updated = models.DateTimeField(db_column="DateUpdated", null=True)
-    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created', on_delete=models.deletion.DO_NOTHING)
-    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated', on_delete=models.deletion.DO_NOTHING)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created', on_delete=models.deletion.DO_NOTHING, null=True)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated', on_delete=models.deletion.DO_NOTHING, null=True)
     version = models.IntegerField(default=1)
     history = HistoricalRecords(
         inherit=True,
