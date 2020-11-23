@@ -78,6 +78,12 @@ class AdDateTestCase(TestCase):
                           (dt - datetimedelta(years=-2)))
         self.assertEquals(core.datetime.date(2018, 10, 22),
                           (dt - datetimedelta(years=2)))
+        dt = core.datetime.date(2020, 10, 29)
+        self.assertEquals(core.datetime.date(2021, 10, 29),
+                          (dt + datetimedelta(years=1)))
+        dt = core.datetime.date(2024, 2, 29)
+        self.assertEquals(core.datetime.date(2023, 2, 28),
+                          (dt + datetimedelta(years=1)))
 
     def test_add_sub_months(self):
         dt = core.datetime.date(2020, 10, 22)

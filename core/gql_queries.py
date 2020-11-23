@@ -9,6 +9,7 @@ class OfficerGQLType(DjangoObjectType):
         model = Officer
         interfaces = (graphene.relay.Node,)
         filter_fields = {
+            "id": ["exact"],
             "uuid": ["exact"],
             "code": ["exact", "icontains"],
             "last_name": ["exact", "icontains"],
