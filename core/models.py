@@ -14,7 +14,7 @@ from django.utils.crypto import salted_hmac
 from cached_property import cached_property
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
-from .utils import filter_validity
+from .utils import filter_validity, filter_is_deleted
 from jsonfallback.fields import FallbackJSONField
 from simple_history.models import HistoricalRecords
 from dirtyfields import DirtyFieldsMixin
@@ -560,8 +560,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
     date_created = models.DateTimeField(db_column="DateCreated", null=True)
     date_updated = models.DateTimeField(db_column="DateUpdated", null=True)
-    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='user_created', on_delete=models.deletion.DO_NOTHING)
-    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='user_updated', on_delete=models.deletion.DO_NOTHING)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created', on_delete=models.deletion.DO_NOTHING)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated', on_delete=models.deletion.DO_NOTHING)
     version = models.IntegerField(default=1)
     history = HistoricalRecords(
         inherit=True,
@@ -612,6 +612,13 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
            return super(HistoryModel, self).save()
         else:
            raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
+
+    @classmethod
+    def filter_queryset(cls, queryset=None):
+        if queryset is None:
+            queryset = cls.objects.all()
+        queryset = queryset.filter(filter_is_deleted())
+        return queryset
 
     class Meta:
         abstract = True
