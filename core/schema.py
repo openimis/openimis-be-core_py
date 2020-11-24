@@ -4,7 +4,6 @@ import logging
 import re
 import sys
 from datetime import datetime as py_datetime
-from functools import wraps
 
 import graphene
 from core import ExtendedConnection
@@ -18,7 +17,6 @@ from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
-from graphql import ResolveInfo
 
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language
 
@@ -208,27 +206,6 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             mutation_log.mark_as_failed(exc)
 
         return cls(internal_id=mutation_log.id)
-
-
-def translate_query(func):
-    """Decorator for resolve_xxxx functions to have the gettext translated into the user's language."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        for arg in args:
-            if isinstance(arg, ResolveInfo):
-                info = arg
-                break
-        else:
-            info = None
-        if info and info.context and info.context.user and info.context.user.language:
-            lang = info.context.user.language
-            if isinstance(lang, Language):
-                translation.activate(lang.code)
-            else:
-                translation.activate(lang)
-        return func(*args, **kwargs)
-
-    return wrapper
 
 
 class FieldControlGQLType(DjangoObjectType):
