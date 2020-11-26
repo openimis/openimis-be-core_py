@@ -63,6 +63,15 @@ def filter_validity(arg='validity', **kwargs):
     )
 
 
+def filter_is_deleted(arg='is_deleted', **kwargs):
+    is_deleted = kwargs.get(arg)
+    if is_deleted is None:
+        is_deleted = False
+    return (
+        Q(is_deleted=is_deleted)
+    )
+
+
 def prefix_filterset(prefix, filterset):
     if type(filterset) is dict:
         return {(prefix + k): v for k, v in filterset.items()}
