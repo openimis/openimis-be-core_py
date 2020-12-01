@@ -4,7 +4,7 @@ from core import TimeUtils
 from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
-from core.qgl.gql_mutations import ObjectNotExistException
+from core.gql.gql_mutations import ObjectNotExistException
 
 
 class BaseMutation(OpenIMISMutation):
