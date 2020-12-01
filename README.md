@@ -16,6 +16,8 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 ## ORM mapping:
 * UUIDModel: abstract model for new entities (and later on migrated entities), enforcing the use of UUID is identifier
 * VersionedModel: abstract model implementing the legacy 'in table archiving' mechanism
+* HistoryModel: abstract model implementing the django-simple-history archiving mechanism with standard mutaitons 
+* HistoryBusinessModel: abstract model implementing the django-simple-history archiving mechanism with ValidFrom and ValidTo date and with standard and replace mutations
 * core_ModuleConfiguration > ModuleConfiguration: a generic entity each module should use to let (admin)users provide the expected configuration (via a central management console).
 * core_FieldControl > FieldControl: allow to hide or mark readonly fields in UI (tables, forms,...)
 * tblLanguages > Language: in openIMIS, UI language defined, by user from database (i.e. not the browser settings, request parameter,...)
