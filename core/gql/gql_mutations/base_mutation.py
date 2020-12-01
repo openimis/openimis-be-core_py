@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 from core import TimeUtils
 from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
