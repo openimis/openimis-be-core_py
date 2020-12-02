@@ -617,7 +617,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def filter_queryset(cls, queryset=None):
         if queryset is None:
             queryset = cls.objects.all()
-        queryset = queryset.filter(filter_is_deleted())
+        queryset = queryset.filter()
         return queryset
 
     class Meta:
