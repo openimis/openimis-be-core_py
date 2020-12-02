@@ -591,7 +591,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
            self.date_created = now
            self.date_updated = now
            return super(HistoryModel, self).save()
-        if self.is_dirty():
+        if self.is_dirty(check_relationship=True):
            self.date_updated = now
            self.user_updated = user
            self.version = self.version + 1
@@ -604,7 +604,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     def delete(self, *args, **kwargs):
         user = User.objects.get(**kwargs)
-        if not self.is_dirty() and not self.is_deleted:
+        if not self.is_dirty(check_relationship=True) and not self.is_deleted:
            self.date_updated = py_datetime.now()
            self.user_updated = user
            self.version = self.version + 1
@@ -654,7 +654,7 @@ class HistoryBusinessModel(HistoryModel):
 
     def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
         """2 step - update the fields for the entity to be replaced"""
-        if not self.is_dirty():
+        if not self.is_dirty(check_relationship=True):
             if self.date_valid_to is not None:
                 if date_valid_from_new_entity < self.date_valid_to:
                     self.date_valid_to = date_valid_from_new_entity
