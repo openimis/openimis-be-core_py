@@ -47,10 +47,9 @@ class BaseDeleteMutation(BaseMutation):
            for uuid in data["uuids"]:
                deletion_result = super(BaseDeleteMutation, cls)\
                    .async_mutate(user, uuid=uuid)
-               if deletion_result is None:
-                  deletion_result = [f'{uuid} is deleted']
+               deletion_result = [None] if deletion_result is None else ["error"]
                output += deletion_result
-           return output
+           return None if output == [None] * len(output) else output
 
 
 class BaseReplaceMutation(BaseMutation):
