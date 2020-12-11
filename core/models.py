@@ -629,17 +629,17 @@ class HistoryBusinessModel(HistoryModel):
     date_valid_to = models.DateTimeField(db_column="DateValidTo", blank=True, null=True)
     replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
 
-    def replace_object(self, **kwargs):
+    def replace_object(self, data, **kwargs):
         #check if object was created and saved in database (having date_created field)
         if self.id is None:
             return None
         user = User.objects.get(**kwargs)
         #1 step - create new entity
-        new_entity = self._create_new_entity(user=user)
+        new_entity = self._create_new_entity(user=user, data=data)
         #2 step - update the fields for the entity to be replaced
         self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id, date_valid_from_new_entity=new_entity.date_valid_from)
 
-    def _create_new_entity(self, user):
+    def _create_new_entity(self, user, data):
         """1 step - create new entity"""
         now = py_datetime.now()
         new_entity = copy(self)
@@ -647,6 +647,11 @@ class HistoryBusinessModel(HistoryModel):
         new_entity.version = 1
         new_entity.date_valid_from = now
         new_entity.date_valid_to = None
+        # replace the fiedls if there are any to update in new entity
+        if "uuid" in data:
+            data.pop('uuid')
+        if len(data) > 0:
+            [setattr(new_entity, key, data[key]) for key in data]
         if self.date_valid_from is None:
             raise ValidationError('Field date_valid_from should not be empty')
         new_entity.save(username=user.username)
