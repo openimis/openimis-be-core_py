@@ -59,15 +59,14 @@ class BaseReplaceMutation(BaseMutation):
 
     @classmethod
     def async_mutate(cls, user, **data):
-        if "uuid" in data:
-          try:
-              cls._validate_mutation(user, **data)
-              mutation_result = cls._mutate(user, uuid=data["uuid"])
-              return mutation_result
-          except Exception as exc:
-              return [{
-                  'message': "Failed to process {} mutation".format(cls._mutation_class),
-                  'detail': str(exc)}]
+        try:
+            cls._validate_mutation(user, **data)
+            mutation_result = cls._mutate(user, **data)
+            return mutation_result
+        except Exception as exc:
+            return [{
+                'message': "Failed to process {} mutation".format(cls._mutation_class),
+                'detail': str(exc)}]
 
 
 class BaseCreateMutationMixin:
@@ -273,9 +272,13 @@ class BaseHistoryModelReplaceMutationMixin:
             raise ValidationError("mutation.authentication_required")
 
     @classmethod
-    def _mutate(cls, user, uuid):
-        object_to_replace = cls._model.objects.filter(id=uuid).first()
+    def _mutate(cls, user, **data):
+        if "client_mutation_id" in data:
+            data.pop('client_mutation_id')
+        if "client_mutation_label" in data:
+            data.pop('client_mutation_label')
+        object_to_replace = cls._model.objects.filter(id=data['uuid']).first()
         if object_to_replace is None:
-            cls._object_not_exist_exception(uuid)
+            cls._object_not_exist_exception(data['uuid'])
         else:
-            object_to_replace.replace_object(username=user.username)
+            object_to_replace.replace_object(data=data, username=user.username)
