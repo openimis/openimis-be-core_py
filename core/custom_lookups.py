@@ -1,10 +1,6 @@
-import json
-from django.db import NotSupportedError
-from django.db.models import Lookup, Transform
-from django.db.models import Field, lookups, CharField
-import collections
+from django.db.models import Lookup
 
-from jsonfallback.fields import FallbackJSONField, FallbackLookup, JsonAdapter
+from jsonfallback.fields import FallbackJSONField
 
 
 @FallbackJSONField.register_lookup
