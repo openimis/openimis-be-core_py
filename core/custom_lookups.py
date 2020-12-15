@@ -22,8 +22,6 @@ class JsonContains(Lookup):
         rhs_params[0].prepare(connection)
         params = self._build_sql_params(lhs, rhs_params[0].adapted)
         sql_statement = ' AND '.join([self.BASE_SQL.format(lhs) for _ in range(0, len(rhs_params[0].adapted))])
-        print(sql_statement)
-        print(params)
         return sql_statement, params
 
     def _prepare_dict_value(self, json_ext):
