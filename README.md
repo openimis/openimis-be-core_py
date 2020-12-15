@@ -162,6 +162,14 @@ class Query(graphene.ObjectType):
 It also provides the admin console forms (UI), including the
 TechnicalUserForm (ability to add technical users from the console)
 
+### Django Lookup
+* jsoncontains - the module introduces an additional `jsoncontains` filtering parameter to the django query, 
+  which allows filtering by json field attributes in the SQL Server database. Filtering by simple data types and nested 
+  arguments. The use is as follows:
+  ```
+  claim.objects.filter(json_ext__jsoncontains={'amount': 10.00, 'adress': { 'country': 'X', 'city': 'Y'}})
+  ```
+
 ## Additional endpoints
 * core/users/current_user: provides information on the logged (in
   session) user: login, rights, attached health facility,...
