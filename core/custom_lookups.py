@@ -27,12 +27,12 @@ class JsonContains(Lookup):
         return sql_statement, params
 
     def _prepare_dict_value(self, json_ext):
-        def flatten(dd, separator, prefix):
+        def flatten(dictionary, separator, prefix):
             return {
-                prefix + separator + k if prefix else k: v
-                for kk, vv in dd.items()
-                for k, v in flatten(vv, separator, kk).items()
-            } if isinstance(dd, dict) else {prefix: str(dd)}
+                prefix + separator + key if prefix else key: value
+                for nested_key, nested_value in dictionary.items()
+                for key, value in flatten(nested_value, separator, nested_key).items()
+            } if isinstance(dictionary, dict) else {prefix: str(dictionary)}
 
         base_prefix = self.sql_server_json_key_prefix
         base_separator = self.sql_server_nested_json_separator
