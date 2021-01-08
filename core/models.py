@@ -647,6 +647,7 @@ class HistoryBusinessModel(HistoryModel):
         new_entity.version = 1
         new_entity.date_valid_from = now
         new_entity.date_valid_to = None
+        new_entity.replacement_uuid = None
         # replace the fiedls if there are any to update in new entity
         if "uuid" in data:
             data.pop('uuid')
@@ -659,6 +660,12 @@ class HistoryBusinessModel(HistoryModel):
 
     def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
         """2 step - update the fields for the entity to be replaced"""
+        # convert to datetime if the date_valid_from from new entity is date
+        if not isinstance(date_valid_from_new_entity, py_datetime):
+            date_valid_from_new_entity = py_datetime.combine(
+                date_valid_from_new_entity,
+                py_datetime.min.time()
+            )
         if not self.is_dirty(check_relationship=True):
             if self.date_valid_to is not None:
                 if date_valid_from_new_entity < self.date_valid_to:
