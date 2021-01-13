@@ -75,7 +75,7 @@ def filter_validity_business_model(arg='validity', **kwargs):
 
 def filter_is_deleted(arg='is_deleted', **kwargs):
     is_deleted = kwargs.get(arg)
-    if is_deleted == None:
+    if is_deleted is None:
         is_deleted = False
     return (
         Q(is_deleted=is_deleted)
