@@ -6,7 +6,7 @@ from core.websocket.abstract_websocket_client import AbstractWebSocketClient
 class BaseWebSocketClient(AbstractWebSocketClient):
     def receive(self):
         """
-        If no receive actions were determined, this method yields messages received from socket.
+        If no receive actions were determined, this method returns all messages received from socket.
         """
         return self.__messages
 

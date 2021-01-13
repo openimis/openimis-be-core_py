@@ -46,7 +46,7 @@ class AbstractWebSocketClient(ABC):
     def send(self, payload):
         """
         Transforms payload and sends it to the websocket.
-        After calling transformation on payload it has to be bytes ot str type.
+        After calling transformation on payload it has to be bytes or str type.
         Otherwise exception is raised.
 
         :param : Content of the request

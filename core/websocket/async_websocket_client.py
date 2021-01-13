@@ -45,7 +45,7 @@ class AsyncWebSocketClient(BaseWebSocketClient):
         """
         Allows to use asynchronous context manager.
         Example:
-            with client_instance.connect() as connection:
+            async with client_instance.connect() as connection:
                 connection.send("Hello world")
 
         """
