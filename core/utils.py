@@ -63,9 +63,19 @@ def filter_validity(arg='validity', **kwargs):
     )
 
 
+def filter_validity_business_model(arg='validity', **kwargs):
+    validity = kwargs.get(arg)
+    if validity is None:
+        validity = core.datetime.datetime.now()
+    return (
+        Q(date_valid_from=None) | Q(date_valid_from__lte=validity),
+        Q(date_valid_to=None) | Q(date_valid_to__gte=validity)
+    )
+
+
 def filter_is_deleted(arg='is_deleted', **kwargs):
     is_deleted = kwargs.get(arg)
-    if is_deleted is None:
+    if is_deleted == None:
         is_deleted = False
     return (
         Q(is_deleted=is_deleted)
