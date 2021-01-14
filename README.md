@@ -171,7 +171,26 @@ TechnicalUserForm (ability to add technical users from the console)
   ```
   claim.objects.filter(json_ext__jsoncontains={'amount': 10.00, 'adress': { 'country': 'X', 'city': 'Y'}})
   ```
+  
+### WebSocket client
+The module gives access to WebSocket clients allowing external socket communication. 
+Two types of clients are available: 
+* `BaseWebSocketClient` - for sending synchronous requests.
+* `AsyncWebSocketClient` - for asynchronous communication.
 
+Content of `send` can be string or bytes.
+The `add_action_on_receive(callable)` method allows defining custom action to be performed 
+when message is received from the server. If no action is set the client returns received messages in `receive()` method. 
+Client require opening connection before sending and receiving messages. 
+It is also possible to open connection temporally in with context:
+
+```
+socket = BaseWebSocketClient('ws://socket_url')
+with websocket_instance.connect() as connection: # keeps connection open
+  socket_instance.send("message") # sends message
+```
+
+    
 ## Additional endpoints
 * core/users/current_user: provides information on the logged (in
   session) user: login, rights, attached health facility,...
