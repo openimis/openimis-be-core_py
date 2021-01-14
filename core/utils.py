@@ -63,14 +63,34 @@ def filter_validity(arg='validity', **kwargs):
     )
 
 
-def filter_validity_business_model(arg='validity', **kwargs):
-    validity = kwargs.get(arg)
-    if validity is None:
+def filter_validity_business_model(arg='dateValidFrom__Gte', arg2='dateValidTo__Lte', **kwargs):
+    date_valid_from = kwargs.get(arg)
+    date_valid_to = kwargs.get(arg2)
+    if not date_valid_from and not date_valid_to:
         validity = core.datetime.datetime.now()
-    return (
-        Q(date_valid_from=None) | Q(date_valid_from__lte=validity),
-        Q(date_valid_to=None) | Q(date_valid_to__gte=validity)
-    )
+        return (
+            Q(date_valid_from=None) | Q(date_valid_from__lte=validity),
+            Q(date_valid_to=None) | Q(date_valid_to__gte=validity)
+        )
+
+    if date_valid_from and not date_valid_to:
+        return (
+            Q(date_valid_from__gte=date_valid_from),
+            Q(date_valid_to__gte=date_valid_from) | Q(date_valid_to=None),
+        )
+
+    if not date_valid_from and date_valid_to:
+        validity = core.datetime.datetime.now()
+        return (
+            Q(date_valid_from__lte=validity),
+            Q(date_valid_to__lte=date_valid_to) | Q(date_valid_to=None)
+        )
+
+    if date_valid_from and date_valid_to:
+        return (
+            Q(date_valid_from__lte=date_valid_from),
+            Q(date_valid_to__lte=date_valid_to) | Q(date_valid_to=None),
+        )
 
 
 def filter_is_deleted(arg='is_deleted', **kwargs):
