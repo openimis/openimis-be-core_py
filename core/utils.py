@@ -66,31 +66,35 @@ def filter_validity(arg='validity', **kwargs):
 def filter_validity_business_model(arg='dateValidFrom__Gte', arg2='dateValidTo__Lte', **kwargs):
     date_valid_from = kwargs.get(arg)
     date_valid_to = kwargs.get(arg2)
+    #default scenario
     if not date_valid_from and not date_valid_to:
-        validity = core.datetime.datetime.now()
-        return (
-            Q(date_valid_from=None) | Q(date_valid_from__lte=validity),
-            Q(date_valid_to=None) | Q(date_valid_to__gte=validity)
-        )
+        today = core.datetime.datetime.now()
+        return __place_the_filters(date_start=today, date_end=today)
 
-    if date_valid_from and not date_valid_to:
-        return (
-            Q(date_valid_from__gte=date_valid_from),
-            Q(date_valid_to__gte=date_valid_from) | Q(date_valid_to=None),
-        )
-
+    # scenario - only date valid to set
     if not date_valid_from and date_valid_to:
-        validity = core.datetime.datetime.now()
-        return (
-            Q(date_valid_from__lte=validity),
-            Q(date_valid_to__lte=date_valid_to) | Q(date_valid_to=None)
-        )
+        today = core.datetime.datetime.now()
+        oldest = min([today, date_valid_to])
+        return __place_the_filters(date_start=oldest, date_end=oldest)
 
+    # scenario - only date valid from
+    if date_valid_from and not date_valid_to:
+        return __place_the_filters(date_start=date_valid_from, date_end=date_valid_from)
+
+    # scenario - both filters set
     if date_valid_from and date_valid_to:
-        return (
-            Q(date_valid_from__lte=date_valid_from),
-            Q(date_valid_to__lte=date_valid_to) | Q(date_valid_to=None),
-        )
+        return __place_the_filters(date_start=date_valid_from, date_end=date_valid_to)
+
+
+def __place_the_filters(date_start, date_end):
+    """funtion related to 'filter_validity_business_model'
+    function so as to set up the chosen filters
+    to filter the validity of the entity
+    """
+    return (
+        Q(date_valid_from=None) | Q(date_valid_from__lte=date_start),
+        Q(date_valid_to=None) | Q(date_valid_to__gte=date_end)
+    )
 
 
 def filter_is_deleted(arg='is_deleted', **kwargs):
