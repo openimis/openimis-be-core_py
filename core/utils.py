@@ -69,13 +69,13 @@ def filter_validity_business_model(arg='dateValidFrom__Gte', arg2='dateValidTo__
     #default scenario
     if not date_valid_from and not date_valid_to:
         today = core.datetime.datetime.now()
-        return __place_the_filters(date_start=today, date_end=today)
+        return __place_the_filters(date_start=today, date_end=None)
 
     # scenario - only date valid to set
     if not date_valid_from and date_valid_to:
         today = core.datetime.datetime.now()
         oldest = min([today, date_valid_to])
-        return __place_the_filters(date_start=oldest, date_end=oldest)
+        return __place_the_filters(date_start=oldest, date_end=date_valid_to)
 
     # scenario - only date valid from
     if date_valid_from and not date_valid_to:
