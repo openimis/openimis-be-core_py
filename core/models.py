@@ -612,6 +612,14 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.user_updated = user
             self.version = self.version + 1
             self.is_deleted = True
+            #check if we have business model
+            if hasattr(self, "replacement_uuid"):
+                # When a replacement entity is deleted, the link should be removed
+                # from replaced entity so a new replacement could be generated
+                replaced_entity = self.__class__.objects.get(replacement_uuid=self.id)
+                if replaced_entity:
+                    replaced_entity.replacement_uuid = None
+                    replaced_entity.save(username="admin")
             return super(HistoryModel, self).save()
         else:
             raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
