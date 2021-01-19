@@ -598,8 +598,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.version = self.version + 1
             # check if we have business model
             if hasattr(self, "replacement_uuid"):
-                print(HistoryBusinessModel(self).replacement_uuid)
-                if HistoryBusinessModel(self).replacement_uuid is not None:
+                if self.replacement_uuid is not None and 'replacement_uuid' not in self.get_dirty_fields():
                     raise ValidationError('Update error! You cannot update replaced entity')
             return super(HistoryModel, self).save()
         else:
