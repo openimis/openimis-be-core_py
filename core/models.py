@@ -620,7 +620,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             if hasattr(self, "replacement_uuid"):
                 # When a replacement entity is deleted, the link should be removed
                 # from replaced entity so a new replacement could be generated
-                replaced_entity = self.__class__.objects.get(replacement_uuid=self.id)
+                replaced_entity = self.__class__.objects.filter(replacement_uuid=self.id).first()
                 if replaced_entity:
                     replaced_entity.replacement_uuid = None
                     replaced_entity.save(username="admin")
