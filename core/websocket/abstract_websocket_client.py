@@ -66,7 +66,11 @@ class AbstractWebSocketClient(ABC):
 
         :return: True if connection is opened.
         """
-        return self.websocket is not None
+        if not self.websocket:
+            return False
+        else:
+            sock = self.websocket.sock
+            return sock and sock.connected
 
     def add_action_on_receive(self, on_receive_func: Callable[[object], None]):
         """
