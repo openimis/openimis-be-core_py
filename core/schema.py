@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 from datetime import datetime as py_datetime
+from typing import Optional
 
 import graphene
 from core import ExtendedConnection
@@ -125,7 +126,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         client_mutation_details = graphene.List(graphene.String)
 
     @classmethod
-    def async_mutate(cls, user, **data) -> str:
+    def async_mutate(cls, user, **data) -> Optional[str]:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB

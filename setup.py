@@ -9,7 +9,7 @@ os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
 setup(
     name='openimis-be-core',
-    version='1.2.0rc4',
+    version='1.2.1rc1',
     packages=find_packages(),
     include_package_data=True,
     license='GNU AGPL v3',
@@ -27,11 +27,11 @@ setup(
         'django-simple-history',
         'django-dirtyfields',
         'websocket-client'
-    ],   
+    ],
     classifiers=[
         'Environment :: Web Environment',
         'Framework :: Django',
-        'Framework :: Django :: 2.1',
+        'Framework :: Django :: 3.0',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: GNU Affero General Public License v3',
         'Operating System :: OS Independent',
