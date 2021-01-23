@@ -554,6 +554,63 @@ class MutationLog(UUIDModel):
         self.refresh_from_db()
 
 
+class ObjectMutation:
+    """
+    This object is used for link tables between the business objects and the MutationLog like ClaimMutation.
+    The object_mutated() method allows the creation of an object to update the xxxMutation easily.
+
+    Declare the Mutation model as:
+        class PaymentMutation(core_models.UUIDModel, core_models.ObjectMutation):
+        payment = models.ForeignKey(Payment, models.DO_NOTHING, related_name='mutations')
+        mutation = models.ForeignKey(core_models.MutationLog, models.DO_NOTHING, related_name='payments')
+
+        class Meta:
+            managed = True
+            db_table = "contribution_PaymentMutation"
+
+    Call it like:
+        client_mutation_id = data.get("client_mutation_id")
+        payment = update_or_create_payment(data, user)
+        PaymentMutation.object_mutated(user, client_mutation_id=client_mutation_id, payment=payment)
+        return None
+
+    Note that payment=payment, the name of the parameter gives the field name of the xxxMutation object to use
+    and the value is the instance itself.
+    """
+    @classmethod
+    def object_mutated(cls, user, mutation_log_id=None, client_mutation_id=None, *args, **kwargs):
+        # This method should fail silently to not disrupt the actual mutation
+        # noinspection PyBroadException
+        try:
+            args_models = {k: v for k, v in kwargs.items() if isinstance(v, models.Model)}
+            if len(args_models) == 0 or len(args_models) > 1:
+                logger.error("Trying to update ObjectMutationLink with several models in params: %s",
+                             ", ".join(args_models.keys()))
+                return
+            if mutation_log_id:
+                cls.objects.get_or_create(mutation_id=mutation_log_id, **args_models)
+            elif client_mutation_id:
+                mutations = MutationLog.objects \
+                                .filter(client_mutation_id=client_mutation_id) \
+                                .filter(user=user) \
+                                .values_list("id", flat=True) \
+                                .order_by("-request_date_time")[:2]  # Only ask for 2 for the warning, we'll only use 1
+                if len(mutations) == 2:
+                    # Warning because if done too often, this would cause performance issues in this query
+                    logger.warning("Two or more mutations found for id %s, using the most recent one",
+                                   client_mutation_id)
+                if len(mutations) == 0:
+                    logger.debug("No mutation found for client_mutation_id %s, ignoring", client_mutation_id)
+                    return
+                cls.objects.get_or_create(mutation_id=mutations[0], **args_models)
+            else:
+                logger.warning(
+                    "Trying to update a %s without either mutation id or client_mutation_id, ignoring", cls.__name__)
+        except Exception as exc:
+            # The mutation shouldn't fail because we couldn't store the UUID
+            logger.error("Error updating the %s object", cls.__name__, exc_info=True)
+
+
 class HistoryModel(DirtyFieldsMixin, models.Model):
     id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)
