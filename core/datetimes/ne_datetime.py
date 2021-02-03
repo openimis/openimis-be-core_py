@@ -76,6 +76,16 @@ class NeDate(NepDate):
     def to_datetime(self):
         return self.to_ne_datetime()
 
+    def replace(self, year=None, month=None, day=None):
+        """Return a new date with new values for the specified fields."""
+        if year is None:
+            year = self.year
+        if month is None:
+            month = self.month
+        if day is None:
+            day = self.day
+        return type(self)(year, month, day)
+
     @classmethod
     def today(cls):
         nep_today = NepDate.today()
@@ -248,6 +258,8 @@ class NeDatetime(object):
         return self.hour > 0 or self.minute > 0 or self.second > 0 or self.microsecond > 0
 
     def __gt__(self, other):
+        if isinstance(other, py_datetime.datetime):
+            other = NeDatetime.from_ad_datetime(other)
         if isinstance(other, NeDatetime):
             return self._gt_ne_datetime(other)
         if isinstance(other, NeDate):
@@ -262,6 +274,27 @@ class NeDatetime(object):
 
     def __le__(self, other):
         return not self > other
+
+    def replace(self, year=None, month=None, day=None, hour=None, minute=None, second=None, microsecond=None,
+                tzinfo=None):
+        """Return a new date with new values for the specified fields."""
+        if year is None:
+            year = self.year
+        if month is None:
+            month = self.month
+        if day is None:
+            day = self.day
+        if hour is None:
+            hour = self.hour
+        if minute is None:
+            minute = self.minute
+        if second is None:
+            second = self.second
+        if microsecond is None:
+            microsecond = self.microsecond
+        if tzinfo is None:
+            tzinfo = self.tzinfo
+        return type(self)(year, month, day, hour, minute, second, microsecond, tzinfo)
 
     @classmethod
     def _convert_op_res(cls, res):
