@@ -3,9 +3,6 @@ import abc
 
 class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
-    #def __init__(self, status):
-    #    self.status = status
-
     @classmethod
     def get_version(cls):
         return type(cls)._version
