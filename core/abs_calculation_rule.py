@@ -79,9 +79,10 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
         return
 
     @classmethod
-    def get_rule_name(cls, class_name):
-        if cls.__class__ == class_name:
-            return cls
+    def get_rule_name(cls, sender, class_name, **kwargs):
+        for object_class in cls.impacted_class_parameter:
+            if object_class["class"] == class_name:
+                return cls
 
     @classmethod
     def get_rule_details(cls, sender, class_name, **kwargs):
