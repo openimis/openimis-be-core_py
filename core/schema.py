@@ -307,6 +307,14 @@ class Query(graphene.ObjectType):
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
+    role = OrderedDjangoFilterConnectionField(
+        RoleGQLType, orderBy=graphene.List(of_type=graphene.String)
+    )
+
+    role_right = OrderedDjangoFilterConnectionField(
+        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String)
+    )
+
     def resolve_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
         # configuration is loaded before even the core module
