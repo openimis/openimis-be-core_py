@@ -69,3 +69,17 @@ class RoleRightGQLType(DjangoObjectType):
         else:
             queryset = queryset.filter(user=info.context.user)
         return queryset
+
+
+class PermissionOpenImisGQLType(graphene.ObjectType):
+    perms_name = graphene.String()
+    perms_value = graphene.String()
+
+
+class ModulePermissionGQLType(graphene.ObjectType):
+    module_name = graphene.String()
+    permissions = graphene.List(PermissionOpenImisGQLType)
+
+
+class ModulePermissionsListGQLType(graphene.ObjectType):
+    module_perms_list = graphene.List(ModulePermissionGQLType)
