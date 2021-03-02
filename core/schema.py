@@ -346,7 +346,7 @@ class Query(graphene.ObjectType):
         for app in all_apps:
             apps = __import__(f"{app}.apps")
             if hasattr(apps.apps, 'DEFAULT_CFG'):
-                config_dict = apps.apps.DEFAULT_CFG
+                config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
                 for key, value in config_dict.items():
                     if "gql_query" in key or "gql_mutation" in key:
