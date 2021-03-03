@@ -45,7 +45,7 @@ class RoleGQLType(DjangoObjectType):
         elif info.context.user.is_superuser:
             return queryset
         else:
-            queryset = queryset.filter(user=info.context.user).filter(*filter_validity())
+            queryset = queryset.filter(*filter_validity())
         return queryset
 
 
@@ -67,7 +67,7 @@ class RoleRightGQLType(DjangoObjectType):
         elif info.context.user.is_superuser:
             return queryset
         else:
-            queryset = queryset.filter(user=info.context.user).filter(*filter_validity())
+            queryset = queryset.filter(*filter_validity())
         return queryset
 
 
