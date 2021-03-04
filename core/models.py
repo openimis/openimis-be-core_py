@@ -265,7 +265,7 @@ class TechnicalUser(AbstractBaseUser):
 
 class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
-    uuid = models.CharField(db_column='RoleUUID', max_length=36)
+    uuid = models.CharField(db_column='RoleUUID', max_length=36, default=uuid.uuid4, unique=True)
     name = models.CharField(db_column='RoleName', max_length=50)
     alt_language = models.CharField(
         db_column='AltLanguage', max_length=50, blank=True, null=True)
