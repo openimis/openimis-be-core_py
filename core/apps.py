@@ -23,12 +23,14 @@ DEFAULT_CFG = {
     "age_of_majority": "18",
     "async_mutations": "False",
     "currency": "$",
+    "gql_query_roles_perms": ["122001"],
 }
 
 
 class CoreConfig(AppConfig):
     name = MODULE_NAME
     age_of_majority = 18
+    gql_query_roles_perms = []
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -78,6 +80,10 @@ class CoreConfig(AppConfig):
     def _configure_graphql(self, cfg):
         this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
 
+    def _configure_permissions(self, cfg):
+        CoreConfig.gql_query_roles_perms = cfg[
+            "gql_query_roles_perms"]
+
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
@@ -86,6 +92,7 @@ class CoreConfig(AppConfig):
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)
         self._configure_currency(cfg)
+        self._configure_permissions(cfg)
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler

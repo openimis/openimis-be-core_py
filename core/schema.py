@@ -7,10 +7,12 @@ from datetime import datetime as py_datetime
 from typing import Optional
 
 import graphene
+import graphene_django_optimizer as gql_optimizer
 from core import ExtendedConnection
 from core.tasks import openimis_mutation_async
 from django import dispatch
 from django.core.serializers.json import DjangoJSONEncoder
+from django.conf import settings
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -19,6 +21,7 @@ from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
+from .apps import CoreConfig
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language
 
 from .gql_queries import *
@@ -306,6 +309,57 @@ class Query(graphene.ObjectType):
 
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
+
+    role = OrderedDjangoFilterConnectionField(
+        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+    )
+
+    role_right = OrderedDjangoFilterConnectionField(
+        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+    )
+
+    modules_permissions = graphene.Field(
+        ModulePermissionsListGQLType,
+    )
+
+    def resolve_role(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        return gql_optimizer.query(Role.objects.filter(*filter_validity(**kwargs)), info)
+
+    def resolve_role_right(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        return gql_optimizer.query(RoleRight.objects.filter(*filter_validity(**kwargs)), info)
+
+    def resolve_modules_permissions(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        excluded_app = [
+            "health_check.cache", "health_check", "health_check.db",
+            "test_without_migrations", "test_without_migrations",
+            "rules", "graphene_django", "rest_framework", "rest_framework_rules",
+            "health_check.storage", "channels"
+        ]
+        all_apps = [app for app in settings.INSTALLED_APPS if not app.startswith("django") and app not in excluded_app]
+        config = []
+        for app in all_apps:
+            apps = __import__(f"{app}.apps")
+            if hasattr(apps.apps, 'DEFAULT_CFG'):
+                config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
+                permission = []
+                for key, value in config_dict.items():
+                    if "gql_query" in key or "gql_mutation" in key:
+                        permission.append(PermissionOpenImisGQLType(
+                            perms_name=key,
+                            perms_value=value,
+                        ))
+
+                config.append(ModulePermissionGQLType(
+                    module_name=app,
+                    permissions=permission,
+                ))
+        return ModulePermissionsListGQLType(list(config))
 
     def resolve_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
