@@ -421,7 +421,7 @@ def update_or_create_role(data, user):
                 **{
                     "role_id": role.id,
                     "right_id": int(right_id),
-                    "audit_user_id": role.audit_user_id if role.audit_user_id else None,
+                    "audit_user_id": role.audit_user_id,
                     "validity_from": now,
                 }
             ) for right_id in rights_id]
@@ -433,7 +433,7 @@ def update_or_create_role(data, user):
                 **{
                     "role_id": role.id,
                     "right_id": int(right_id),
-                    "audit_user_id": role.audit_user_id if role.audit_user_id else None,
+                    "audit_user_id": role.audit_user_id,
                     "validity_from": now,
                    }
             ) for right_id in rights_id]
