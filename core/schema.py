@@ -465,8 +465,6 @@ class CreateRoleMutation(OpenIMISMutation):
                 raise ValidationError("mutation.authentication_required")
             if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
                 raise PermissionDenied("unauthorized")
-            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
-                raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
