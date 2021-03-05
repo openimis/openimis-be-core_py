@@ -121,6 +121,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     This class is the generic Mutation for openIMIS. It will save the mutation content into the MutationLog,
     submit it to validation, perform the potentially asynchronous mutation itself and update the MutationLog status.
     """
+
     class Meta:
         abstract = True
 
@@ -442,7 +443,7 @@ def update_or_create_role(data, user):
                     "right_id": right_id,
                     "audit_user_id": role.audit_user_id,
                     "validity_from": data['validity_from'],
-                   }
+                }
             ) for right_id in rights_id]
         return role
     return role
@@ -508,6 +509,52 @@ class UpdateRoleMutation(OpenIMISMutation):
                 }]
 
 
+def set_role_deleted(role):
+    try:
+        role.delete_history()
+        return []
+    except Exception as exc:
+        return {
+            'title': role.uuid,
+            'list': [{
+                'message': "role.mutation.failed_to_change_status_of_role" % {'role': str(role)},
+                'detail': role.uuid}]
+        }
+
+
+class DeleteRoleMutation(OpenIMISMutation):
+    """
+        Delete a chosen role
+    """
+    _mutation_module = "core"
+    _mutation_class = "DeleteRoleMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        if not user.has_perms(CoreConfig.gql_mutation_delete_roles_perms):
+            raise PermissionDenied("unauthorized")
+        errors = []
+        for role_uuid in data["uuids"]:
+            role = Role.objects \
+                .filter(uuid=role_uuid) \
+                .first()
+            if role is None:
+                errors.append({
+                    'title': role,
+                    'list': [{'message':
+                        "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                })
+                continue
+            errors += set_role_deleted(role)
+        if len(errors) == 1:
+            errors = errors[0]['list']
+        return errors
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
+    delete_role = DeleteRoleMutation.Field()
