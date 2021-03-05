@@ -11,6 +11,8 @@ import graphene_django_optimizer as gql_optimizer
 from core import ExtendedConnection
 from core.tasks import openimis_mutation_async
 from django import dispatch
+from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.conf import settings
 from django.db.models import Q
@@ -382,3 +384,130 @@ class Query(graphene.ObjectType):
         if layer is not None:
             crits = (*crits, Q(layer=layer))
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
+
+
+class RoleBase:
+    id = graphene.Int(required=False, read_only=True)
+    uuid = graphene.String(required=False)
+    name = graphene.String(required=True, max_length=50)
+    alt_language = graphene.String(required=False, max_length=50)
+    is_system = graphene.Int(required=True)
+    is_blocked = graphene.Boolean(required=True)
+    # field to save all chosen rights to the role
+    rights_id = graphene.List(graphene.Int, required=False)
+
+
+def update_or_create_role(data, user):
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    role_uuid = data.pop('uuid') if 'uuid' in data else None
+    rights_id = data.pop('rights_id') if "rights_id" in data else None
+    if role_uuid:
+        role = Role.objects.get(uuid=role_uuid)
+        role.save_history()
+        [setattr(role, k, v) for k, v in data.items()]
+        role.save()
+        if rights_id is not None:
+            # reset all role rights assigned to the chosen role
+            from core import datetime
+            now = datetime.datetime.now()
+            role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+            role_rights_currently_assigned.update(validity_to=now)
+            role_rights_currently_assigned = role_rights_currently_assigned.values_list('right_id', flat=True)
+            for right_id in rights_id:
+                if right_id not in role_rights_currently_assigned:
+                    # create role right because it is a new role right
+                    RoleRight.objects.create(
+                        **{
+                            "role_id": role.id,
+                            "right_id": right_id,
+                            "audit_user_id": role.audit_user_id,
+                            "validity_from": now,
+                        }
+                    )
+                else:
+                    # set date valid to - None
+                    role_right = RoleRight.objects.get(Q(role_id=role.id, right_id=right_id))
+                    role_right.validity_to = None
+                    role_right.save()
+    else:
+        role = Role.objects.create(**data)
+        # create role rights for that role if they were passed to mutation
+        if rights_id:
+            [RoleRight.objects.create(
+                **{
+                    "role_id": role.id,
+                    "right_id": right_id,
+                    "audit_user_id": role.audit_user_id,
+                    "validity_from": data['validity_from'],
+                   }
+            ) for right_id in rights_id]
+        return role
+    return role
+
+
+class CreateRoleMutation(OpenIMISMutation):
+    """
+    Create a new role, with its chosen role right
+    """
+    _mutation_module = "core"
+    _mutation_class = "CreateRoleMutation"
+
+    class Input(RoleBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_create_role",
+                    'detail': str(exc)
+                }]
+
+
+class UpdateRoleMutation(OpenIMISMutation):
+    """
+    Update a chosen role, with its chosen role right
+    """
+    _mutation_module = "core"
+    _mutation_class = "UpdateRoleMutation"
+
+    class Input(RoleBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+                raise PermissionDenied("unauthorized")
+            if 'uuid' not in data:
+                raise ValidationError("There is no uuid in updateMutation input!")
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_update_role",
+                    'detail': str(exc)
+                }]
+
+
+class Mutation(graphene.ObjectType):
+    create_role = CreateRoleMutation.Field()
+    update_role = UpdateRoleMutation.Field()
