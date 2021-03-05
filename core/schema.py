@@ -409,7 +409,7 @@ def update_or_create_role(data, user):
         role.save_history()
         [setattr(role, k, v) for k, v in data.items()]
         role.save()
-        if rights_id:
+        if rights_id is not None:
             # reset all role rights assigned to the chosen role
             from core import datetime
             now = datetime.datetime.now()
