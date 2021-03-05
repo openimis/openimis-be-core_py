@@ -480,7 +480,7 @@ class CreateRoleMutation(OpenIMISMutation):
 
 class UpdateRoleMutation(OpenIMISMutation):
     """
-    Update a new role, with its chosen role right
+    Update a chosen role, with its chosen role right
     """
     _mutation_module = "core"
     _mutation_class = "UpdateRoleMutation"
@@ -503,7 +503,7 @@ class UpdateRoleMutation(OpenIMISMutation):
         except Exception as exc:
             return [
                 {
-                    'message': "core.mutation.failed_to_create_role",
+                    'message': "core.mutation.failed_to_update_role",
                     'detail': str(exc)
                 }]
 
