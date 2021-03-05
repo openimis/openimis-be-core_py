@@ -495,7 +495,7 @@ class UpdateRoleMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
                 raise PermissionDenied("unauthorized")
             if 'uuid' not in data:
                 raise ValidationError("There is no uuid in updateMutation input!")
