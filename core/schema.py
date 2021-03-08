@@ -520,7 +520,7 @@ class CreateRoleMutation(OpenIMISMutation):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
-            #data['audit_user_id'] = user.id_for_audit
+            data['audit_user_id'] = user.id_for_audit
             update_or_create_role(data, user)
             return None
         except Exception as exc:
@@ -550,7 +550,7 @@ class UpdateRoleMutation(OpenIMISMutation):
                 raise PermissionDenied("unauthorized")
             if 'uuid' not in data:
                 raise ValidationError("There is no uuid in updateMutation input!")
-            #data['audit_user_id'] = user.id_for_audit
+            data['audit_user_id'] = user.id_for_audit
             update_or_create_role(data, user)
             return None
         except Exception as exc:
@@ -629,7 +629,7 @@ class DuplicateRoleMutation(OpenIMISMutation):
                 raise ValidationError("mutation.authentication_required")
             if not user.has_perms(CoreConfig.gql_mutation_duplicate_roles_perms):
                 raise PermissionDenied("unauthorized")
-            # data['audit_user_id'] = user.id_for_audit
+            data['audit_user_id'] = user.id_for_audit
             duplicate_role(data, user)
             return None
         except Exception as exc:
