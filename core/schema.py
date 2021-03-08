@@ -3,6 +3,9 @@ import json
 import logging
 import re
 import sys
+import uuid
+
+from copy import copy
 from datetime import datetime as py_datetime
 from typing import Optional
 
@@ -449,6 +452,55 @@ def update_or_create_role(data, user):
     return role
 
 
+def duplicate_role(data, user):
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    role_uuid = data.pop('uuid') if 'uuid' in data else None
+    rights_id = data.pop('rights_id') if "rights_id" in data else None
+    # get the current Role object to be duplicated
+    role = Role.objects.get(uuid=role_uuid)
+    # copy Role to be dupliacated
+    from core import datetime
+    now = datetime.datetime.now()
+    duplicated_role = copy(role)
+    duplicated_role.id = None
+    duplicated_role.uuid = uuid.uuid4()
+    duplicated_role.validity_from = now
+    [setattr(duplicated_role, k, v) for k, v in data.items()]
+    duplicated_role.save()
+    if rights_id:
+        # reset all role rights assigned to the chosen role
+        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+        role_rights_currently_assigned = role_rights_currently_assigned.values_list('right_id', flat=True)
+        for right_id in rights_id:
+            validity_from = now
+            if right_id in role_rights_currently_assigned:
+                # role right exist - we can assign validity_from from old entity
+                validity_from = role.validity_from
+            # create role right for duplicate role
+            RoleRight.objects.create(
+                **{
+                    "role_id": duplicated_role.id,
+                    "right_id": right_id,
+                    "audit_user_id": duplicated_role.audit_user_id,
+                    "validity_from": validity_from,
+                }
+            )
+    else:
+        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+        [RoleRight.objects.create(
+            **{
+                "role_id": duplicated_role.id,
+                "right_id": role_right.right_id,
+                "audit_user_id": duplicated_role.audit_user_id,
+                "validity_from": now,
+            }
+        ) for role_right in role_rights_currently_assigned]
+    return duplicated_role
+
+
 class CreateRoleMutation(OpenIMISMutation):
     """
     Create a new role, with its chosen role right
@@ -468,7 +520,7 @@ class CreateRoleMutation(OpenIMISMutation):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
-            data['audit_user_id'] = user.id_for_audit
+            #data['audit_user_id'] = user.id_for_audit
             update_or_create_role(data, user)
             return None
         except Exception as exc:
@@ -498,7 +550,7 @@ class UpdateRoleMutation(OpenIMISMutation):
                 raise PermissionDenied("unauthorized")
             if 'uuid' not in data:
                 raise ValidationError("There is no uuid in updateMutation input!")
-            data['audit_user_id'] = user.id_for_audit
+            #data['audit_user_id'] = user.id_for_audit
             update_or_create_role(data, user)
             return None
         except Exception as exc:
@@ -554,7 +606,42 @@ class DeleteRoleMutation(OpenIMISMutation):
         return errors
 
 
+class DuplicateRoleMutation(OpenIMISMutation):
+    """
+        Duplicate a chosen role
+    """
+    _mutation_module = "core"
+    _mutation_class = "DuplicateRoleMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuid = graphene.String(required=True)
+        name = graphene.String(required=True, max_length=50)
+        alt_language = graphene.String(required=False, max_length=50)
+        is_system = graphene.Int(required=True)
+        is_blocked = graphene.Boolean(required=True)
+        # field to save all chosen rights to the role
+        rights_id = graphene.List(graphene.Int, required=False)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_duplicate_roles_perms):
+                raise PermissionDenied("unauthorized")
+            # data['audit_user_id'] = user.id_for_audit
+            duplicate_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_duplicate_role",
+                    'detail': str(exc)
+                }]
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
     delete_role = DeleteRoleMutation.Field()
+    duplicate_role = DuplicateRoleMutation.Field()

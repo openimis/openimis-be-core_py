@@ -46,6 +46,7 @@ None
 * createRole
 * updateRole
 * deleteRole
+* duplicateRole
 
 ## Generic features
 
