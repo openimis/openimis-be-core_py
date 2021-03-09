@@ -38,9 +38,15 @@ None
 ## GraphQL Queries
 * module_configurations
 * mutation_logs
+* role
+* role_right
+* modules_permissions
 
 ## GraphQL Mutations
-N.A.
+* createRole
+* updateRole
+* deleteRole
+* duplicateRole
 
 ## Generic features
 
@@ -217,7 +223,11 @@ with websocket_instance.connect() as connection: # keeps connection open
 * async_mutations: wherever mutations are (true=) processed via message
   queuing or (false=) in interactive server process (default: "False")
 * currency: Country currency (default: "$")
-
+* gql_query_roles_perms: required rights to call role, roleRight and modulesPermissions GraphQL Queries (default: ["152101"])
+* gql_mutation_create_roles_perms: required rights to call createRole GraphQL Mutation (default: ["122002"])
+* gql_mutation_update_roles_perms: required rights to call updateRole  GraphQL Mutation (default: ["122003"])
+* gql_mutation_delete_roles_perms: required rights to call deleteRole GraphQL Mutation (default: ["152104"])
+* gql_mutation_duplicate_roles_perms: required rights to call duplicateRole GraphQL Mutation (default: ["152105"])
 
 ## openIMIS Modules Dependencies
 N.A.
