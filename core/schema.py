@@ -400,7 +400,7 @@ class RoleBase:
     uuid = graphene.String(required=False)
     name = graphene.String(required=True, max_length=50)
     alt_language = graphene.String(required=False, max_length=50)
-    is_system = graphene.Int(required=True)
+    is_system = graphene.Boolean(required=True)
     is_blocked = graphene.Boolean(required=True)
     # field to save all chosen rights to the role
     rights_id = graphene.List(graphene.Int, required=False)
@@ -622,7 +622,7 @@ class DuplicateRoleMutation(OpenIMISMutation):
         uuid = graphene.String(required=True)
         name = graphene.String(required=True, max_length=50)
         alt_language = graphene.String(required=False, max_length=50)
-        is_system = graphene.Int(required=True)
+        is_system = graphene.Boolean(required=True)
         is_blocked = graphene.Boolean(required=True)
         # field to save all chosen rights to the role
         rights_id = graphene.List(graphene.Int, required=False)
