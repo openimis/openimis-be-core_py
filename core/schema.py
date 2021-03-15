@@ -317,7 +317,7 @@ class Query(graphene.ObjectType):
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
     role = OrderedDjangoFilterConnectionField(
-        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), show_history=graphene.Boolean(),
     )
 
     role_right = OrderedDjangoFilterConnectionField(
@@ -331,12 +331,16 @@ class Query(graphene.ObjectType):
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(Role.objects.filter(*filter_validity(**kwargs)), info)
+        filters = []
+        show_history = kwargs.get('show_history', False)
+        if not show_history and not kwargs.get('uuid', None):
+            filters += filter_validity(**kwargs)
+        return gql_optimizer.query(Role.objects.filter(*filters), info)
 
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(RoleRight.objects.filter(*filter_validity(**kwargs)), info)
+        return gql_optimizer.query(RoleRight.objects.all(), info)
 
     def resolve_modules_permissions(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
