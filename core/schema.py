@@ -317,7 +317,7 @@ class Query(graphene.ObjectType):
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
     role = OrderedDjangoFilterConnectionField(
-        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), show_history=graphene.Boolean(),
     )
 
     role_right = OrderedDjangoFilterConnectionField(
@@ -331,12 +331,16 @@ class Query(graphene.ObjectType):
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(Role.objects.filter(*filter_validity(**kwargs)), info)
+        filters = []
+        show_history = kwargs.get('show_history', False)
+        if not show_history and not kwargs.get('uuid', None):
+            filters += filter_validity(**kwargs)
+        return gql_optimizer.query(Role.objects.filter(*filters), info)
 
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(RoleRight.objects.filter(*filter_validity(**kwargs)), info)
+        return gql_optimizer.query(RoleRight.objects.all(), info)
 
     def resolve_modules_permissions(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -356,11 +360,12 @@ class Query(graphene.ObjectType):
                 permission = []
                 for key, value in config_dict.items():
                     if "gql_query" in key or "gql_mutation" in key:
-                        permission.append(PermissionOpenImisGQLType(
-                            perms_name=key,
-                            perms_value=value,
-                        ))
-
+                        if isinstance(value, list):
+                            for val in value:
+                                permission.append(PermissionOpenImisGQLType(
+                                    perms_name=key,
+                                    perms_value=val,
+                                ))
                 config.append(ModulePermissionGQLType(
                     module_name=app,
                     permissions=permission,
@@ -395,7 +400,7 @@ class RoleBase:
     uuid = graphene.String(required=False)
     name = graphene.String(required=True, max_length=50)
     alt_language = graphene.String(required=False, max_length=50)
-    is_system = graphene.Int(required=True)
+    is_system = graphene.Boolean(required=True)
     is_blocked = graphene.Boolean(required=True)
     # field to save all chosen rights to the role
     rights_id = graphene.List(graphene.Int, required=False)
@@ -617,7 +622,7 @@ class DuplicateRoleMutation(OpenIMISMutation):
         uuid = graphene.String(required=True)
         name = graphene.String(required=True, max_length=50)
         alt_language = graphene.String(required=False, max_length=50)
-        is_system = graphene.Int(required=True)
+        is_system = graphene.Boolean(required=True)
         is_blocked = graphene.Boolean(required=True)
         # field to save all chosen rights to the role
         rights_id = graphene.List(graphene.Int, required=False)
