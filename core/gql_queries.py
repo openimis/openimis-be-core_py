@@ -73,7 +73,7 @@ class RoleRightGQLType(DjangoObjectType):
 
 class PermissionOpenImisGQLType(graphene.ObjectType):
     perms_name = graphene.String()
-    perms_value = graphene.String()
+    perms_value = graphene.Int()
 
 
 class ModulePermissionGQLType(graphene.ObjectType):

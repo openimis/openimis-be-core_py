@@ -360,11 +360,12 @@ class Query(graphene.ObjectType):
                 permission = []
                 for key, value in config_dict.items():
                     if "gql_query" in key or "gql_mutation" in key:
-                        permission.append(PermissionOpenImisGQLType(
-                            perms_name=key,
-                            perms_value=value,
-                        ))
-
+                        if isinstance(value, list):
+                            for val in value:
+                                permission.append(PermissionOpenImisGQLType(
+                                    perms_name=key,
+                                    perms_value=val,
+                                ))
                 config.append(ModulePermissionGQLType(
                     module_name=app,
                     permissions=permission,
