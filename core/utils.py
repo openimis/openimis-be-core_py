@@ -103,7 +103,7 @@ def __place_the_filters(date_start, date_end):
 
 
 def append_validity_filter(**kwargs):
-    default_filter = kwargs.get('setDefaultFilter', False)
+    default_filter = kwargs.get('applyDefaultValidityFilter', False)
     date_valid_from = kwargs.get('dateValidFrom__Gte', None)
     date_valid_to = kwargs.get('dateValidTo__Lte', None)
     filters = []
