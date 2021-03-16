@@ -102,6 +102,22 @@ def __place_the_filters(date_start, date_end):
     )
 
 
+def append_validity_filter(**kwargs):
+    default_filter = kwargs.get('applyDefaultValidityFilter', False)
+    date_valid_from = kwargs.get('dateValidFrom__Gte', None)
+    date_valid_to = kwargs.get('dateValidTo__Lte', None)
+    filters = []
+    # check if we can use default filter validity
+    if date_valid_from is None and date_valid_to is None:
+        if default_filter:
+            filters = [*filter_validity_business_model(**kwargs)]
+        else:
+            filters = []
+    else:
+        filters = [*filter_validity_business_model(**kwargs)]
+    return filters
+
+
 def filter_is_deleted(arg='is_deleted', **kwargs):
     is_deleted = kwargs.get(arg)
     if is_deleted is None:
