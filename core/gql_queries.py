@@ -33,7 +33,6 @@ class RoleGQLType(DjangoObjectType):
         filter_fields = {
             "id": ["exact"],
             "name": ["exact", "istartswith", "icontains", "iexact"],
-            "is_system": ["exact"],
             "is_blocked": ["exact"],
         }
         connection_class = ExtendedConnection
