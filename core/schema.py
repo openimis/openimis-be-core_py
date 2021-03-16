@@ -317,7 +317,10 @@ class Query(graphene.ObjectType):
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
     role = OrderedDjangoFilterConnectionField(
-        RoleGQLType, orderBy=graphene.List(of_type=graphene.String), show_history=graphene.Boolean(),
+        RoleGQLType,
+        orderBy=graphene.List(of_type=graphene.String),
+        is_system=graphene.Boolean(),
+        show_history=graphene.Boolean(),
     )
 
     role_right = OrderedDjangoFilterConnectionField(
@@ -332,10 +335,21 @@ class Query(graphene.ObjectType):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
         filters = []
+        query = Role.objects
         show_history = kwargs.get('show_history', False)
         if not show_history and not kwargs.get('uuid', None):
             filters += filter_validity(**kwargs)
-        return gql_optimizer.query(Role.objects.filter(*filters), info)
+        is_system_role = kwargs.get('is_system', False)
+        # check if we can use default filter validity
+        if is_system_role:
+            query = query.filter(
+                is_system__gte=1
+            )
+        else:
+            query = query.filter(
+                is_system=0
+            )
+        return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
