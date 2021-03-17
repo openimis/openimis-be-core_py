@@ -260,7 +260,8 @@ CLASS_RULE_PARAM_VALIDATION = [
 ]
 ```
 * abstract methods defined on rule level
-  - ready() - method to register signals so as to wait for actions. This method makes sure the calculation is registered - status "active" (if not the line should be added with "inactive status") and register the signals only if it is active
+  - ready() - method to register signals so as to wait for actions. This method makes sure the calculation is registered - status "active" 
+    (if not the line should be added with "inactive status") and register the signals only if it is active
     all rules, if active will have to register to the signal sent by “getRuleDetails”
   - check_calculation(instance) - this function will get the calculation relative the instance
   - active_for_object(object, context) - this method will contains the checks if the calculation need to be executed for the object on that context. 
@@ -281,7 +282,8 @@ CLASS_RULE_PARAM_VALIDATION = [
 * generic methods defined on abstract class level
   - get_rule_name(classname) - return an object which is representation of calculaton rule
   - get_rule_details(classname) - return the data about class and parameters
-  - get_parameters(class_name, instance) - Function to obtain the required parameter and its properties for an instance of certain model. This function is registered to the module signal via the ready function if the rule is active
+  - get_parameters(class_name, instance) - Function to obtain the required parameter and its properties for an instance of certain model. 
+      This function is registered to the module signal via the ready function if the rule is active
   - run_calculation_rules(instance, context) - trigger the calculations. This function is registered to the module signal via the ready function if the rule is active 
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
