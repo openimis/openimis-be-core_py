@@ -262,7 +262,7 @@ CLASS_RULE_PARAM_VALIDATION = [
 * abstract methods defined on rule level
   - ready() - method to register signals so as to wait for actions. This method makes sure the calculation is registered - status "active" 
     (if not the line should be added with "inactive status") and register the signals only if it is active
-    all rules, if active will have to register to the signal sent by “getRuleDetails”
+    all rules, if active will have to register to the signal sent by "getRuleDetails"
   - check_calculation(instance) - this function will get the calculation relative the instance
   - active_for_object(object, context) - this method will contains the checks if the calculation need to be executed for the object on that context. 
       The default context will be:
@@ -275,7 +275,7 @@ CLASS_RULE_PARAM_VALIDATION = [
       - check
       - validate
      
-    This function is required because the same class can have different calculation based on the object members values (like product ….)
+    This function is required because the same class can have different calculation based on the object members values (like product etc)
  
   - calculate(instance, *args) - Function that will do the calculation based on the parameters
   - get_linked_class(List[classname]) - that function will return the possible instance that can have a link to the calculation
