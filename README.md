@@ -200,6 +200,88 @@ with websocket_instance.connect() as connection: # keeps connection open
 ## Additional endpoints
 * core/users/current_user: provides information on the logged (in
   session) user: login, rights, attached health facility,...
+  
+## Abstract calculation rule class
+* core/abs_calculation_rule: here is defined the abstract calculation rule class that might be used
+    for defining some calculation rules.
+* class is a representation of calculation rule. Here are defined some informations about rule and how some actions 
+    are implemented. 
+* members
+  - version (static) - the version is used to keep track of the changes in the version of the calculation rule,
+  - status - integer, {inactive, future, active, archived}
+  - uuid (static) -  to follow the version of the calculation
+  - calculation_rule_name (static) - short name of the calculation rule
+  - description (static) - text about the calculation rule how works, for what purpose is defined etc
+  - list of impacted class and parameters - the representation of available parameters and their values/properties for chosen model. Example:
+ ```
+CLASS_RULE_PARAM_VALIDATION = [
+    {
+        "class": "ContributionPlan",
+        "parameters": [
+            {
+                "type": "select",
+                "name": "rate",
+                "label": {
+                    "en": "Percentage of income",
+                    "fr": "Pourcentage du salaire"
+                },
+                "rights": {
+                    "read": "151201",
+                    "write": "151202",
+                    "update": "151203",
+                    "replace": "151206",
+                },
+                'optionSet': [
+                    {
+                        "value": "5",
+                        "label": {
+                            "en": "5%",
+                            "fr": "5%"
+                        }
+                    },
+                    {
+                        "value": "10",
+                        "label": {
+                            "en": "10%",
+                            "fr": "10%"
+                        }
+                    },
+                    {
+                        "value": "15",
+                        "label": {
+                            "en": "15%",
+                            "fr": "15%"
+                        }
+                    },
+                ],
+                "default": "5"
+            },
+   },
+]
+```
+* abstract methods defined on rule level
+  - ready - method to register signals so as to wait for actions. This method makes sure the calculation is registered - status "active" (if not the line should be added with "inactive status") and register the signals only if it is active
+    all rules, if active will have to register to the signal sent by “getRuleDetails”
+  - check_calculation(instance) - this function will get the calculation relative the instance
+  - active_for_object(object, context) - this method will contains the checks if the calculation need to be executed for the object on that context. the default context will be:
+      - create
+      - update 
+      - delete
+      - submit
+      - amend
+      - replace
+      - check
+      - validate
+     
+    This function is required because the same class can have different calculation based on the object members values (like product ….)
+ 
+  - calculate(instance, *args) - Function that will do the calculation based on the parameters
+  - get_linked_class(List[classname]) - that function will return the possible instance that can have a link to the calculation
+* generic methods defined on abstract class level
+  - get_rule_name(classname) - return an object which is representation of calculaton rule
+  - get_rule_details(classname) - return the data about class and parameters
+  - get_parameters(class_name, instance) - Function to obtain the required parameter and its properties for an instance of certain model. This function is registered to the module signal via the ready function if the rule is active
+  - run_calculation_rules(instance, context) - trigger the calculations. This function is registered to the module signal via the ready function if the rule is active 
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
