@@ -263,7 +263,8 @@ CLASS_RULE_PARAM_VALIDATION = [
   - ready - method to register signals so as to wait for actions. This method makes sure the calculation is registered - status "active" (if not the line should be added with "inactive status") and register the signals only if it is active
     all rules, if active will have to register to the signal sent by “getRuleDetails”
   - check_calculation(instance) - this function will get the calculation relative the instance
-  - active_for_object(object, context) - this method will contains the checks if the calculation need to be executed for the object on that context. the default context will be:
+  - active_for_object(object, context) - this method will contains the checks if the calculation need to be executed for the object on that context. 
+      The default context will be:
       - create
       - update 
       - delete
