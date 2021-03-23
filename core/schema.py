@@ -27,7 +27,7 @@ from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
 from .apps import CoreConfig
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language
+from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation
 
 from .gql_queries import *
 
@@ -321,6 +321,7 @@ class Query(graphene.ObjectType):
         orderBy=graphene.List(of_type=graphene.String),
         is_system=graphene.Boolean(),
         show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
     )
 
     role_right = OrderedDjangoFilterConnectionField(
@@ -336,6 +337,11 @@ class Query(graphene.ObjectType):
             raise PermissionError("Unauthorized")
         filters = []
         query = Role.objects
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
         show_history = kwargs.get('show_history', False)
         if not show_history and not kwargs.get('uuid', None):
             filters += filter_validity(**kwargs)
@@ -664,3 +670,20 @@ class Mutation(graphene.ObjectType):
     update_role = UpdateRoleMutation.Field()
     delete_role = DeleteRoleMutation.Field()
     duplicate_role = DuplicateRoleMutation.Field()
+
+
+def on_role_mutation(sender, **kwargs):
+    uuid = kwargs['data'].get('uuid', None)
+    if not uuid:
+        return []
+    if "Role" in str(sender._mutation_class):
+        impacted = Role.objects.get(uuid=uuid)
+        RoleMutation.objects.create(
+            role=impacted, mutation_id=kwargs['mutation_log_id']
+        )
+
+    return []
+
+
+def bind_signals():
+    signal_mutation_module_validate["core"].connect(on_role_mutation)
