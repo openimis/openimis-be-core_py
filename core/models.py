@@ -755,3 +755,14 @@ class HistoryBusinessModel(HistoryModel):
 
     class Meta:
         abstract = True
+
+
+class RoleMutation(VersionedModel):
+    role = models.ForeignKey(Role, models.DO_NOTHING,
+                             related_name='mutations')
+    mutation = models.ForeignKey(
+        MutationLog, models.DO_NOTHING, related_name='roles')
+
+    class Meta:
+        managed = True
+        db_table = "core_RoleMutation"
