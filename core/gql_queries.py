@@ -32,6 +32,7 @@ class RoleGQLType(DjangoObjectType):
         interfaces = (graphene.relay.Node,)
         filter_fields = {
             "id": ["exact"],
+            "uuid": ["exact"],
             "name": ["exact", "istartswith", "icontains", "iexact"],
             "is_blocked": ["exact"],
         }
