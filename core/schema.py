@@ -427,6 +427,9 @@ class RoleBase:
 
 
 def update_or_create_role(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    client_mutation_label = data.get("client_mutation_label", None)
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
@@ -473,11 +476,16 @@ def update_or_create_role(data, user):
                     "validity_from": data['validity_from'],
                 }
             ) for right_id in rights_id]
+        if client_mutation_id:
+            RoleMutation.object_mutated(user, role=role, client_mutation_id=client_mutation_id)
         return role
     return role
 
 
 def duplicate_role(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    client_mutation_label = data.get("client_mutation_label", None)
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
@@ -523,6 +531,10 @@ def duplicate_role(data, user):
                 "validity_from": now,
             }
         ) for role_right in role_rights_currently_assigned]
+
+    if client_mutation_id:
+        RoleMutation.object_mutated(user, role=duplicated_role, client_mutation_id=client_mutation_id)
+
     return duplicated_role
 
 
@@ -676,7 +688,9 @@ def on_role_mutation(sender, **kwargs):
     uuid = kwargs['data'].get('uuid', None)
     if not uuid:
         return []
-    if "Role" in str(sender._mutation_class):
+
+    # For duplicate log is created in the duplicate_role function, mutation log added here would reference original role
+    if "Role" in str(sender._mutation_class) and sender._mutation_class != 'DuplicateRoleMutation':
         impacted = Role.objects.get(uuid=uuid)
         RoleMutation.objects.create(
             role=impacted, mutation_id=kwargs['mutation_log_id']
