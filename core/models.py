@@ -757,7 +757,7 @@ class HistoryBusinessModel(HistoryModel):
         abstract = True
 
 
-class RoleMutation(VersionedModel):
+class RoleMutation(UUIDModel, ObjectMutation):
     role = models.ForeignKey(Role, models.DO_NOTHING,
                              related_name='mutations')
     mutation = models.ForeignKey(

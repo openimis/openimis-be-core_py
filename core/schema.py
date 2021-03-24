@@ -427,6 +427,9 @@ class RoleBase:
 
 
 def update_or_create_role(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    client_mutation_label = data.get("client_mutation_label", None)
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
@@ -473,6 +476,8 @@ def update_or_create_role(data, user):
                     "validity_from": data['validity_from'],
                 }
             ) for right_id in rights_id]
+        if client_mutation_id:
+            RoleMutation.object_mutated(user, role=role, client_mutation_id=client_mutation_id)
         return role
     return role
 
