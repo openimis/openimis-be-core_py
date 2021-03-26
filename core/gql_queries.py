@@ -40,13 +40,7 @@ class RoleGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        if info.context.user.is_anonymous:
-            return queryset.none()
-        elif info.context.user.is_superuser:
-            return queryset
-        else:
-            queryset = queryset.filter(*filter_validity())
-        return queryset
+        return Role.get_queryset(queryset, info)
 
 
 class RoleRightGQLType(DjangoObjectType):
@@ -62,13 +56,7 @@ class RoleRightGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        if info.context.user.is_anonymous:
-            return queryset.none()
-        elif info.context.user.is_superuser:
-            return queryset
-        else:
-            queryset = queryset.filter(*filter_validity())
-        return queryset
+        return RoleRight.get_queryset(queryset, info)
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

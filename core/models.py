@@ -8,10 +8,12 @@ from copy import copy
 import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
 from cached_property import cached_property
+from graphql import ResolveInfo
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
 from .utils import filter_validity, filter_is_deleted
@@ -274,6 +276,17 @@ class Role(VersionedModel):
     audit_user_id = models.IntegerField(
         db_column='AuditUserID', blank=True, null=True)
 
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        queryset = cls.filter_queryset(queryset)
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
+
     class Meta:
         managed = False
         db_table = 'tblRole'
@@ -286,6 +299,17 @@ class RoleRight(VersionedModel):
     right_id = models.IntegerField(db_column='RightID')
     audit_user_id = models.IntegerField(
         db_column='AuditUserId', blank=True, null=True)
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        queryset = cls.filter_queryset(queryset)
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
 
     class Meta:
         managed = False
