@@ -278,7 +278,6 @@ class Role(VersionedModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        queryset = cls.filter_queryset(queryset)
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
@@ -302,7 +301,6 @@ class RoleRight(VersionedModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        queryset = cls.filter_queryset(queryset)
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
