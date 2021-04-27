@@ -166,6 +166,20 @@ class Query(graphene.ObjectType):
 ```
 * ExtendedConnection: extension of the `graphene.Connection` class, implementing the `totalCount` and `edgesCount` GraphQL Pagination values.
 
+#### GQL Decorators
+* @mutation_on_uuids_from_filter: additional decorator for async_mutate allowing executing mutations by filters instead
+of list of uuids. Example usage (claim submit mutation from claim module):
+```python
+__filter_handlers = {
+        'services': 'services__service__code__in',
+        'items': 'items__item__code__in'
+    }
+...
+@classmethod
+@mutation_on_uuids_from_filter(Claim, ClaimGQLType, 'additional_filters', __filter_handlers)
+def async_mutate(cls, user, **data):
+    ...
+```
 ### Django Admin
 It also provides the admin console forms (UI), including the
 TechnicalUserForm (ability to add technical users from the console)
