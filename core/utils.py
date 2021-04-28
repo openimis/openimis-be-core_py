@@ -58,8 +58,8 @@ def filter_validity(arg='validity', **kwargs):
     if validity is None:
         validity = core.datetime.datetime.now()
     return (
-        Q(validity_from=None) | Q(validity_from__lte=validity),
-        Q(validity_to=None) | Q(validity_to__gte=validity)
+       Q(validity_from__lte=validity),
+        Q(validity_to__isnull=True) | Q(validity_to__gte=validity)
     )
 
 
@@ -93,12 +93,12 @@ def __place_the_filters(date_start, date_end):
     """
     if not date_end:
         return (
-            Q(date_valid_from=None) | Q(date_valid_from__lte=date_start),
-            Q(date_valid_to=None) | Q(date_valid_to__gte=date_start)
+            Q(date_valid_from__isnull=False),
+            Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start)
         )
     return (
-        Q(date_valid_from=None) | Q(date_valid_from__lte=date_end),
-        Q(date_valid_to=None) | Q(date_valid_to__gte=date_start)
+        Q(date_valid_from__lte=date_end),
+        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start)
     )
 
 
