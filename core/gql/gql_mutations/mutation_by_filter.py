@@ -109,14 +109,14 @@ def _build_filters_from_gql_filters(filter_fields):
     return fields
 
 
-def mutation_on_uuids_from_filter_fs(django_object: django.db.models.Model,
+def mutation_on_uuids_from_filter_business_model(django_object: django.db.models.Model,
                                   object_gql_type: DjangoObjectType,
                                   query_filters_field: str = 'extended_filters',
                                   explicit_filters_handlers: Dict[str, str] = None,
                                   return_objects: bool = False):
     """
-    dedicated extended mutaion from flter decorator dedicated for Formal Sector entities. See doc string for
-    mutation_on_uuids_from_filter to read more how this works.
+    dedicated extended mutaion from flter decorator dedicated for BusinessHistoryModel entities (used for example
+    in Formal Sector entities). See doc string for mutation_on_uuids_from_filter to read more how this works.
     """
 
     if explicit_filters_handlers is None:
@@ -137,7 +137,7 @@ def mutation_on_uuids_from_filter_fs(django_object: django.db.models.Model,
                 base_query = django_object \
                     .objects \
                     .filter(
-                        Q(date_valid_from=None) | Q(date_valid_from__lte=now),
+                        Q(date_valid_from__lte=now),
                         Q(date_valid_to=None) | Q(date_valid_to__gte=now)
                     ) \
                     .filter(q_filter) \
