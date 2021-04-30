@@ -107,3 +107,46 @@ def _build_filters_from_gql_filters(filter_fields):
                 query_filter = F"{field}__{compare_type.lower()}"
                 fields.append(query_filter)
     return fields
+
+
+def mutation_on_uuids_from_filter_fs(django_object: django.db.models.Model,
+                                  object_gql_type: DjangoObjectType,
+                                  query_filters_field: str = 'extended_filters',
+                                  explicit_filters_handlers: Dict[str, str] = None,
+                                  return_objects: bool = False):
+    """
+    dedicated extended mutaion from flter decorator dedicated for Formal Sector entities. See doc string for
+    mutation_on_uuids_from_filter to read more how this works.
+    """
+
+    if explicit_filters_handlers is None:
+        explicit_filters_handlers = {}
+
+    available_filters = _build_filters_from_gql_filters(object_gql_type._meta.filter_fields)
+
+    def inner_function(async_mutate):
+        @wraps(async_mutate)
+        def wrapper(cls, user, **data):
+            if not data.get('uuids', None):
+                args = json.loads(data[query_filters_field])
+                q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
+
+                from core import datetime
+                now = datetime.datetime.now()
+
+                base_query = django_object \
+                    .objects \
+                    .filter(
+                        Q(date_valid_from=None) | Q(date_valid_from__lte=now),
+                        Q(date_valid_to=None) | Q(date_valid_to__gte=now)
+                    ) \
+                    .filter(q_filter) \
+
+                if return_objects:
+                    data['filtered_objects'] = base_query
+                else:
+                    uuids = base_query.values_list('id', flat=True).distinct()
+                    data['uuids'] = uuids
+            async_mutate(cls, user, **data)
+        return wrapper
+    return inner_function
