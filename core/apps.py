@@ -23,6 +23,10 @@ DEFAULT_CFG = {
     "age_of_majority": "18",
     "async_mutations": "False",
     "currency": "$",
+    "gql_query_users_perms": ["121701"],
+    "gql_mutation_create_users_perms": ["121702"],
+    "gql_mutation_update_users_perms": ["121703"],
+    "gql_mutation_delete_users_perms": ["121704"],
     "gql_query_roles_perms": ["122001"],
     "gql_mutation_create_roles_perms": ["122002"],
     "gql_mutation_update_roles_perms": ["122003"],
@@ -41,6 +45,10 @@ class CoreConfig(AppConfig):
     gql_mutation_replace_roles_perms = []
     gql_mutation_duplicate_roles_perms = []
     gql_mutation_delete_roles_perms = []
+    gql_query_users_perms = []
+    gql_mutation_create_users_perms = []
+    gql_mutation_update_users_perms = []
+    gql_mutation_delete_users_perms = []
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -91,18 +99,16 @@ class CoreConfig(AppConfig):
         this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
 
     def _configure_permissions(self, cfg):
-        CoreConfig.gql_query_roles_perms = cfg[
-            "gql_query_roles_perms"]
-        CoreConfig.gql_mutation_create_roles_perms = cfg[
-            "gql_mutation_create_roles_perms"]
-        CoreConfig.gql_mutation_update_roles_perms = cfg[
-            "gql_mutation_update_roles_perms"]
-        CoreConfig.gql_mutation_replace_roles_perms = cfg[
-            "gql_mutation_replace_roles_perms"]
-        CoreConfig.gql_mutation_duplicate_roles_perms = cfg[
-            "gql_mutation_duplicate_roles_perms"]
-        CoreConfig.gql_mutation_delete_roles_perms = cfg[
-            "gql_mutation_delete_roles_perms"]
+        CoreConfig.gql_query_roles_perms = cfg["gql_query_roles_perms"]
+        CoreConfig.gql_mutation_create_roles_perms = cfg["gql_mutation_create_roles_perms"]
+        CoreConfig.gql_mutation_update_roles_perms = cfg["gql_mutation_update_roles_perms"]
+        CoreConfig.gql_mutation_replace_roles_perms = cfg["gql_mutation_replace_roles_perms"]
+        CoreConfig.gql_mutation_duplicate_roles_perms = cfg["gql_mutation_duplicate_roles_perms"]
+        CoreConfig.gql_mutation_delete_roles_perms = cfg["gql_mutation_delete_roles_perms"]
+        CoreConfig.gql_query_users_perms = cfg["gql_query_users_perms"]
+        CoreConfig.gql_mutation_create_users_perms = cfg["gql_mutation_create_users_perms"]
+        CoreConfig.gql_mutation_update_users_perms = cfg["gql_mutation_update_users_perms"]
+        CoreConfig.gql_mutation_delete_users_perms = cfg["gql_mutation_delete_users_perms"]
 
     def ready(self):
         from .models import ModuleConfiguration

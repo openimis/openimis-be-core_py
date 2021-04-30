@@ -2,12 +2,15 @@ import graphene
 from core import ExtendedConnection, filter_validity
 from graphene_django import DjangoObjectType
 
-from core.models import Officer, Role, RoleRight, UserRole
+from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser
 
 from .utils import prefix_filterset
 
 
 class OfficerGQLType(DjangoObjectType):
+    """
+    This type corresponds to the Enrolment Officer but is a bit more generic than just Enrolment.
+    """
     class Meta:
         model = Officer
         interfaces = (graphene.relay.Node,)
@@ -57,6 +60,53 @@ class RoleRightGQLType(DjangoObjectType):
     @classmethod
     def get_queryset(cls, queryset, info):
         return RoleRight.get_queryset(queryset, info)
+
+
+class InteractiveUserGQLType(DjangoObjectType):
+    """
+    The InteractiveUser represents the regular openIMIS allowed to connect to the web interface. Enrolment Officers
+    and Claim Administrators can exist without having web access but when they do, they have a corresponding
+    InteractiveUser, linked by their "code" aka "login_name"
+    """
+    class Meta:
+        model = InteractiveUser
+        interfaces = (graphene.relay.Node,)
+        exclude = ("stored_password", "private_key")
+        filter_fields = {
+            "id": ["exact"],
+            "uuid": ["exact"],
+            "last_name": ["icontains"],
+            "other_names": ["icontains"],
+            "phone": ["iexact"],
+            "login_name": ["iexact"],
+            "email": ["iexact"],
+            "is_associated": ["exact"],
+        }
+        connection_class = ExtendedConnection
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return InteractiveUser.get_queryset(queryset, info)
+
+
+class UserGQLType(DjangoObjectType):
+    """
+    This type provides an abstraction of the various user types, TechnicalUser and InteractiveUser. It corresponds
+    to the core_User table added in the modular version. The TechnicalUser is for now not exposed here as it is not
+    managed through this API.
+    """
+    class Meta:
+        model = User
+        filter_fields = {
+            "id": ["exact"],
+            "username": ["exact"],
+            **prefix_filterset("i_user__", InteractiveUserGQLType._meta.filter_fields),
+        }
+        interfaces = (graphene.relay.Node,)
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return User.objects.all()
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

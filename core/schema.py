@@ -25,6 +25,7 @@ from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
+from django.utils.translation import gettext_lazy
 
 from .apps import CoreConfig
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation
@@ -328,9 +329,48 @@ class Query(graphene.ObjectType):
         RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
     )
 
+    interactiveUsers = OrderedDjangoFilterConnectionField(
+        InteractiveUserGQLType, order_by=graphene.List(of_type=graphene.String), validity=graphene.Date(),
+        show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
+    )
+
+    users = OrderedDjangoFilterConnectionField(
+        UserGQLType, order_by=graphene.List(of_type=graphene.String), validity=graphene.Date(),
+        show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
+        description="This interface provides access to the various types of users in openIMIS. The main resource"
+                    "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
+                    "is exposed in GraphQL. There are also optional links to ClaimAdministrator and Officer depending"
+                    "on the setup. BEWARE, fetching these links is costly as there is no direct database link between"
+                    "these entities and there are retrieved one by one. Do not fetch them for large lists if you can"
+                    "avoid it. The showHistory is acting on the InteractiveUser, avoid mixing with Officer or "
+                    "ClaimAdmin."
+    )
+
+    user = OrderedDjangoFilterConnectionField(
+        UserGQLType, order_by=graphene.List(of_type=graphene.String)
+    )
+
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
+
+    def resolve_interactive_users(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionError("Unauthorized")
+        filters = []
+        query = InteractiveUser.objects
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
+        show_history = kwargs.get('show_history', False)
+        if not show_history and not kwargs.get('uuid', None):
+            filters += filter_validity(**kwargs)
+
+        return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):

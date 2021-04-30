@@ -315,28 +315,28 @@ class RoleRight(VersionedModel):
 
 
 class InteractiveUser(VersionedModel):
-    id = models.AutoField(db_column='UserID', primary_key=True)
-    uuid = models.CharField(db_column='UserUUID',
-                            max_length=36, default=uuid.uuid4, unique=True)
-    language = models.ForeignKey(
-        Language, models.DO_NOTHING, db_column='LanguageID')
-    last_name = models.CharField(db_column='LastName', max_length=100)
-    other_names = models.CharField(db_column='OtherNames', max_length=100)
-    phone = models.CharField(
-        db_column='Phone', max_length=50, blank=True, null=True)
-    login_name = models.CharField(db_column='LoginName', max_length=25)
-    health_facility_id = models.IntegerField(
-        db_column='HFID', blank=True, null=True)
+    id = models.AutoField(db_column="UserID", primary_key=True)
+    uuid = models.CharField(db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True)
+    language = models.ForeignKey(Language, models.DO_NOTHING, db_column="LanguageID")
+    last_name = models.CharField(db_column="LastName", max_length=100)
+    other_names = models.CharField(db_column="OtherNames", max_length=100)
+    phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
+    login_name = models.CharField(db_column="LoginName", max_length=25)
+    health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
-    audit_user_id = models.IntegerField(db_column='AuditUserID')
+    audit_user_id = models.IntegerField(db_column="AuditUserID")
     # password = models.BinaryField(blank=True, null=True)
+    # dummy_pwd is always blank. It is actually a transient field used in the Legacy to pass the clear text password in
+    # a User object from the ASPX to the DAL where it is processed into/against password and private key/salt)
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
-    email = models.CharField(
-        db_column='EmailId', max_length=200, blank=True, null=True)
-    # private_key = models.CharField(db_column='PrivateKey', max_length=256, blank=True, null=True)
-    # stored_password = models.CharField(db_column='StoredPassword', max_length=256, blank=True, null=True)
-    # password_validity = models.DateTimeField(db_column='PasswordValidity', blank=True, null=True)
-    # is_associated = models.BooleanField(db_column='IsAssociated', blank=True, null=True)
+    email = models.CharField(db_column="EmailId", max_length=200, blank=True, null=True)
+    private_key = models.CharField(db_column="PrivateKey", max_length=256, blank=True, null=True,
+                                   help_text="The private key is actually a password salt")
+    stored_password = models.CharField(db_column="StoredPassword", max_length=256, blank=True, null=True,
+                                       help_text="By default a SHA256 of the private key (salt) and password")
+    password_validity = models.DateTimeField(db_column="PasswordValidity", blank=True, null=True)
+    is_associated = models.BooleanField(db_column="IsAssociated", blank=True, null=True,
+                                        help_text="has a claim admin or enrolment officer account")
 
     @property
     def id_for_audit(self):
@@ -372,12 +372,29 @@ class InteractiveUser(VersionedModel):
         return [str(r) for r in self.rights]
 
     def set_password(self, raw_password):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
+        from hashlib import sha256
+        from secrets import token_hex
+        self.private_key = token_hex(256)
+        pwd_hash = sha256()
+        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
+        self.stored_password = pwd_hash.hexdigest()
 
     def check_password(self, raw_password):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
+        from hashlib import sha256
+        pwd_hash = sha256()
+        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
+        pwd_hash = pwd_hash.hexdigest()
+        #logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
+        # hashlib gives a lowercase digest while the legacy gives an uppercase one
+        return pwd_hash == self.stored_password.lower()
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        return queryset
 
     class Meta:
         managed = False
@@ -478,6 +495,16 @@ class User(UUIDModel, PermissionsMixin):
             self._u.save()
         super().save(*args, **kwargs)
 
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
+
     class Meta:
         managed = True
         db_table = 'core_User'
@@ -505,11 +532,11 @@ class Officer(VersionedModel):
     location = models.ForeignKey('location.Location', models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
     substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
     works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
-    # veocode = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
-    # veolastname = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
-    # veoothernames = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
-    # veodob = models.DateField(db_column='VEODOB', blank=True, null=True)
-    # veophone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
+    veo_code = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
+    veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
+    veo_other_names = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
+    veo_dob = models.DateField(db_column='VEODOB', blank=True, null=True)
+    veo_phone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
     # emailid = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
