@@ -1,5 +1,4 @@
 from __future__ import absolute_import, unicode_literals
-import sys, traceback
 import json
 import logging
 
@@ -24,8 +23,7 @@ def openimis_mutation_async(mutation_id, module, class_name):
     try:
         mutation = MutationLog.objects.get(id=mutation_id)
         # __import__ needs to import the module with .schema to force .schema to load, then .schema.TheRealMutation
-        mutation_class = getattr(__import__(
-            f"{module}.schema").schema, class_name)
+        mutation_class = getattr(__import__(f"{module}.schema").schema, class_name)
 
         if mutation.user and mutation.user.language:
             lang = mutation.user.language
@@ -33,8 +31,7 @@ def openimis_mutation_async(mutation_id, module, class_name):
                 translation.activate(lang.code)
             else:
                 translation.activate(lang)
-        error_messages = mutation_class.async_mutate(
-            mutation.user, **json.loads(mutation.json_content))
+        error_messages = mutation_class.async_mutate(mutation.user, **json.loads(mutation.json_content))
         if not error_messages:
             mutation.mark_as_successful()
         else:
@@ -45,3 +42,15 @@ def openimis_mutation_async(mutation_id, module, class_name):
             mutation.mark_as_failed(str(exc))
         logger.warning(f"Exception while processing mutation id {mutation_id}", exc_info=True)
         raise exc
+
+
+@shared_task(name='sample_batch')
+def openimis_test_batch():
+    logger.info("sample batch")
+
+
+@shared_task(name='sample_scheduling_method')
+def sample_method(scheduler, sample_param, sample_named=0):
+    logger.info("Scheduling our own tasks from here")
+    # scheduler.add_job(foo.bar, id="name", minutes=10)
+

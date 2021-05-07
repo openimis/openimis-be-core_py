@@ -1,9 +1,9 @@
 import sys
 import os
 import importlib
-import json
 import logging
 from django.apps import AppConfig
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +22,25 @@ DEFAULT_CFG = {
     "iso_raw_date": "False",
     "age_of_majority": "18",
     "async_mutations": "False",
+    "currency": "$",
+    "gql_query_roles_perms": ["122001"],
+    "gql_mutation_create_roles_perms": ["122002"],
+    "gql_mutation_update_roles_perms": ["122003"],
+    "gql_mutation_replace_roles_perms": ["122006"],
+    "gql_mutation_duplicate_roles_perms": ["122005"],
+    "gql_mutation_delete_roles_perms": ["122004"],
 }
 
 
 class CoreConfig(AppConfig):
     name = MODULE_NAME
+    age_of_majority = 18
+    gql_query_roles_perms = []
+    gql_mutation_create_roles_perms = []
+    gql_mutation_update_roles_perms = []
+    gql_mutation_replace_roles_perms = []
+    gql_mutation_duplicate_roles_perms = []
+    gql_mutation_delete_roles_perms = []
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -42,7 +56,7 @@ class CoreConfig(AppConfig):
         try:
             this.calendar = self._import_module(cfg, "calendar")
             this.datetime = self._import_module(cfg, "datetime")
-        except:
+        except Exception:
             logger.error('Failed to configure calendar, using default!\n%s: %s' % (
                 sys.exc_info()[0].__name__, sys.exc_info()[1]))
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
@@ -50,6 +64,9 @@ class CoreConfig(AppConfig):
 
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
+
+    def _configure_currency(self, cfg):
+        this.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
         if bool(os.environ.get('NO_DATABASE', False)):
@@ -73,6 +90,20 @@ class CoreConfig(AppConfig):
     def _configure_graphql(self, cfg):
         this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
 
+    def _configure_permissions(self, cfg):
+        CoreConfig.gql_query_roles_perms = cfg[
+            "gql_query_roles_perms"]
+        CoreConfig.gql_mutation_create_roles_perms = cfg[
+            "gql_mutation_create_roles_perms"]
+        CoreConfig.gql_mutation_update_roles_perms = cfg[
+            "gql_mutation_update_roles_perms"]
+        CoreConfig.gql_mutation_replace_roles_perms = cfg[
+            "gql_mutation_replace_roles_perms"]
+        CoreConfig.gql_mutation_duplicate_roles_perms = cfg[
+            "gql_mutation_duplicate_roles_perms"]
+        CoreConfig.gql_mutation_delete_roles_perms = cfg[
+            "gql_mutation_delete_roles_perms"]
+
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
@@ -80,3 +111,10 @@ class CoreConfig(AppConfig):
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)
+        self._configure_currency(cfg)
+        self._configure_permissions(cfg)
+
+        # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
+        from core import scheduler
+        if settings.SCHEDULER_AUTOSTART:
+            scheduler.start()

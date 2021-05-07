@@ -8,14 +8,18 @@ from copy import copy
 import core
 from django.db import models
 from django.db.models import Q, DO_NOTHING
-from django.core.exceptions import ObjectDoesNotExist
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
 from cached_property import cached_property
+from graphql import ResolveInfo
 from .fields import DateTimeField
 from datetime import datetime as py_datetime
-from .utils import filter_validity
+from .utils import filter_validity, filter_is_deleted
 from jsonfallback.fields import FallbackJSONField
+from simple_history.models import HistoricalRecords
+from dirtyfields import DirtyFieldsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +137,7 @@ class ModuleConfiguration(UUIDModel):
         except ModuleConfiguration.DoesNotExist:
             logger.info('No %s configuration, using default!' % module)
             return default
-        except:
+        except Exception:
             logger.error('Failed to load %s configuration, using default!\n%s: %s' % (
                 module, sys.exc_info()[0].__name__, sys.exc_info()[1]))
             return default
@@ -188,36 +192,37 @@ class UserManager(BaseUserManager):
     def create_user(self, username, password, email=None, **extra_fields):
         extra_fields.setdefault('is_staff', False)
         extra_fields['is_superuser'] = False
-        self._create_tech_user(
-            username, email, password, **extra_fields)
+        self._create_tech_user(username, email, password, **extra_fields)
 
-    def create_superuser(self, username, password, email=None, **extra_fields):
+    def create_superuser(self, username, password=None, email=None, **extra_fields):
         extra_fields['is_staff'] = True
         extra_fields['is_superuser'] = True
-        self._create_tech_user(
-            username, email, password, **extra_fields)
+        self._create_tech_user(username, email, password, **extra_fields)
+
+    def auto_provision_user(self, **kwargs):
+        # only auto-provision django user if registered as interactive user
+        try:
+            i_user = InteractiveUser.objects.get(
+                login_name=kwargs['username'],
+                *filter_validity())
+        except InteractiveUser.DoesNotExist:
+            raise PermissionDenied
+        user = self._create_core_user(**kwargs)
+        user.i_user = i_user
+        user.save()
+        if core.auto_provisioning_user_group:
+            group = Group.objects.get(
+                name=core.auto_provisioning_user_group)
+            user_group = UserGroup(user=user, group=group)
+            user_group.save()
+        return user, True
 
     def get_or_create(self, **kwargs):
-        created = False
         try:
             user = User.objects.get(**kwargs)
+            return user, False
         except User.DoesNotExist:
-            created = True
-            user = self._create_core_user(**kwargs)
-        if user._u is None:
-            try:
-                user.i_user = InteractiveUser.objects.get(
-                    login_name=user.username,
-                    *filter_validity())
-            except InteractiveUser.DoesNotExist:
-                raise Exception("Unauthorized")
-            user.save()
-            if core.auto_provisioning_user_group:
-                group = Group.objects.get(
-                    name=core.auto_provisioning_user_group)
-                user_group = UserGroup(user=user, group=group)
-                user_group.save()
-        return user, created
+            return self.auto_provision_user(**kwargs)
 
 
 class TechnicalUser(AbstractBaseUser):
@@ -235,6 +240,7 @@ class TechnicalUser(AbstractBaseUser):
         return -1
 
     USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['password']
 
     def _bind_User(self):
         save_required = False
@@ -261,14 +267,24 @@ class TechnicalUser(AbstractBaseUser):
 
 class Role(VersionedModel):
     id = models.AutoField(db_column='RoleID', primary_key=True)
-    uuid = models.CharField(db_column='RoleUUID', max_length=36)
+    uuid = models.CharField(db_column='RoleUUID', max_length=36, default=uuid.uuid4, unique=True)
     name = models.CharField(db_column='RoleName', max_length=50)
-    altlanguage = models.CharField(
+    alt_language = models.CharField(
         db_column='AltLanguage', max_length=50, blank=True, null=True)
     is_system = models.IntegerField(db_column='IsSystem')
     is_blocked = models.BooleanField(db_column='IsBlocked')
     audit_user_id = models.IntegerField(
         db_column='AuditUserID', blank=True, null=True)
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
 
     class Meta:
         managed = False
@@ -282,6 +298,16 @@ class RoleRight(VersionedModel):
     right_id = models.IntegerField(db_column='RightID')
     audit_user_id = models.IntegerField(
         db_column='AuditUserId', blank=True, null=True)
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
 
     class Meta:
         managed = False
@@ -447,6 +473,11 @@ class User(UUIDModel, PermissionsMixin):
     def __str__(self):
         return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
 
+    def save(self, *args, **kwargs):
+        if self._u and self._u.id:
+            self._u.save()
+        super().save(*args, **kwargs)
+
     class Meta:
         managed = True
         db_table = 'core_User'
@@ -469,22 +500,25 @@ class Officer(VersionedModel):
     code = models.CharField(db_column='Code', max_length=8)
     last_name = models.CharField(db_column='LastName', max_length=100)
     other_names = models.CharField(db_column='OtherNames', max_length=100)
-    # dob = models.DateField(db_column='DOB', blank=True, null=True)
-    # phone = models.CharField(db_column='Phone', max_length=50, blank=True, null=True)
-    # location = models.ForeignKey(Tbllocations, models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
-    # officeridsubst = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
-    # worksto = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
+    dob = models.DateField(db_column='DOB', blank=True, null=True)
+    phone = models.CharField(db_column='Phone', max_length=50, blank=True, null=True)
+    location = models.ForeignKey('location.Location', models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
+    substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
+    works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
     # veocode = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
     # veolastname = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
     # veoothernames = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
     # veodob = models.DateField(db_column='VEODOB', blank=True, null=True)
     # veophone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
-    # audituserid = models.IntegerField(db_column='AuditUserID')
+    audit_user_id = models.IntegerField(db_column='AuditUserID')
     # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
     # emailid = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
-    # phonecommunication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
+    phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
     # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
     # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+
+    def name(self):
+        return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
 
     class Meta:
         managed = False
@@ -540,3 +574,217 @@ class MutationLog(UUIDModel):
         MutationLog.objects.filter(id=self.id)\
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
+
+
+class ObjectMutation:
+    """
+    This object is used for link tables between the business objects and the MutationLog like ClaimMutation.
+    The object_mutated() method allows the creation of an object to update the xxxMutation easily.
+
+    Declare the Mutation model as:
+        class PaymentMutation(core_models.UUIDModel, core_models.ObjectMutation):
+        payment = models.ForeignKey(Payment, models.DO_NOTHING, related_name='mutations')
+        mutation = models.ForeignKey(core_models.MutationLog, models.DO_NOTHING, related_name='payments')
+
+        class Meta:
+            managed = True
+            db_table = "contribution_PaymentMutation"
+
+    Call it like:
+        client_mutation_id = data.get("client_mutation_id")
+        payment = update_or_create_payment(data, user)
+        PaymentMutation.object_mutated(user, client_mutation_id=client_mutation_id, payment=payment)
+        return None
+
+    Note that payment=payment, the name of the parameter gives the field name of the xxxMutation object to use
+    and the value is the instance itself.
+    """
+    @classmethod
+    def object_mutated(cls, user, mutation_log_id=None, client_mutation_id=None, *args, **kwargs):
+        # This method should fail silently to not disrupt the actual mutation
+        # noinspection PyBroadException
+        try:
+            args_models = {k: v for k, v in kwargs.items() if isinstance(v, models.Model)}
+            if len(args_models) == 0 or len(args_models) > 1:
+                logger.error("Trying to update ObjectMutationLink with several models in params: %s",
+                             ", ".join(args_models.keys()))
+                return
+            if mutation_log_id:
+                cls.objects.get_or_create(mutation_id=mutation_log_id, **args_models)
+            elif client_mutation_id:
+                mutations = MutationLog.objects \
+                                .filter(client_mutation_id=client_mutation_id) \
+                                .filter(user=user) \
+                                .values_list("id", flat=True) \
+                                .order_by("-request_date_time")[:2]  # Only ask for 2 for the warning, we'll only use 1
+                if len(mutations) == 2:
+                    # Warning because if done too often, this would cause performance issues in this query
+                    logger.warning("Two or more mutations found for id %s, using the most recent one",
+                                   client_mutation_id)
+                if len(mutations) == 0:
+                    logger.debug("No mutation found for client_mutation_id %s, ignoring", client_mutation_id)
+                    return
+                cls.objects.get_or_create(mutation_id=mutations[0], **args_models)
+            else:
+                logger.warning(
+                    "Trying to update a %s without either mutation id or client_mutation_id, ignoring", cls.__name__)
+        except Exception as exc:
+            # The mutation shouldn't fail because we couldn't store the UUID
+            logger.error("Error updating the %s object", cls.__name__, exc_info=True)
+
+
+class HistoryModel(DirtyFieldsMixin, models.Model):
+    id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
+    is_deleted = models.BooleanField(db_column="isDeleted", default=False)
+    json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
+    date_created = DateTimeField(db_column="DateCreated", null=True)
+    date_updated = DateTimeField(db_column="DateUpdated", null=True)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created', on_delete=models.deletion.DO_NOTHING, null=False)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated', on_delete=models.deletion.DO_NOTHING, null=False)
+    version = models.IntegerField(default=1)
+    history = HistoricalRecords(
+        inherit=True,
+    )
+
+    def _get_id(self):
+        return self.id
+
+    uuid = property(_get_id)
+
+    def set_pk(self):
+        self.pk = uuid.uuid4()
+
+    def save_history(self):
+        pass
+
+    def save(self, *args, **kwargs):
+        #get the user data so as to assign later his uuid id in fields user_updated etc
+        user = User.objects.get(**kwargs)
+        from core import datetime
+        now = datetime.datetime.now()
+        #check if object has been newly created
+        if self.id is None:
+            #save the new object
+            self.set_pk()
+            self.user_created = user
+            self.user_updated = user
+            self.date_created = now
+            self.date_updated = now
+            return super(HistoryModel, self).save()
+        if self.is_dirty(check_relationship=True):
+            self.date_updated = now
+            self.user_updated = user
+            self.version = self.version + 1
+            # check if we have business model
+            if hasattr(self, "replacement_uuid"):
+                if self.replacement_uuid is not None and 'replacement_uuid' not in self.get_dirty_fields():
+                    raise ValidationError('Update error! You cannot update replaced entity')
+            return super(HistoryModel, self).save()
+        else:
+            raise ValidationError('Record has not be updated - there are no changes in fields')
+
+    def delete_history(self):
+        pass
+
+    def delete(self, *args, **kwargs):
+        user = User.objects.get(**kwargs)
+        if not self.is_dirty(check_relationship=True) and not self.is_deleted:
+            from core import datetime
+            now = datetime.datetime.now()
+            self.date_updated = now
+            self.user_updated = user
+            self.version = self.version + 1
+            self.is_deleted = True
+            #check if we have business model
+            if hasattr(self, "replacement_uuid"):
+                # When a replacement entity is deleted, the link should be removed
+                # from replaced entity so a new replacement could be generated
+                replaced_entity = self.__class__.objects.filter(replacement_uuid=self.id).first()
+                if replaced_entity:
+                    replaced_entity.replacement_uuid = None
+                    replaced_entity.save(username="admin")
+            return super(HistoryModel, self).save()
+        else:
+            raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
+
+    @classmethod
+    def filter_queryset(cls, queryset=None):
+        if queryset is None:
+            queryset = cls.objects.all()
+        queryset = queryset.filter()
+        return queryset
+
+    class Meta:
+        abstract = True
+
+
+class HistoryBusinessModel(HistoryModel):
+    date_valid_from = DateTimeField(db_column="DateValidFrom", default=py_datetime.now)
+    date_valid_to = DateTimeField(db_column="DateValidTo", blank=True, null=True)
+    replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
+
+    def replace_object(self, data, **kwargs):
+        #check if object was created and saved in database (having date_created field)
+        if self.id is None:
+            return None
+        user = User.objects.get(**kwargs)
+        #1 step - create new entity
+        new_entity = self._create_new_entity(user=user, data=data)
+        #2 step - update the fields for the entity to be replaced
+        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id, date_valid_from_new_entity=new_entity.date_valid_from)
+
+    def _create_new_entity(self, user, data):
+        """1 step - create new entity"""
+        from core import datetime
+        now = datetime.datetime.now()
+        new_entity = copy(self)
+        new_entity.id = None
+        new_entity.version = 1
+        new_entity.date_valid_from = now
+        new_entity.date_valid_to = None
+        new_entity.replacement_uuid = None
+        # replace the fiedls if there are any to update in new entity
+        if "uuid" in data:
+            data.pop('uuid')
+        if len(data) > 0:
+            [setattr(new_entity, key, data[key]) for key in data]
+        if self.date_valid_from is None:
+            raise ValidationError('Field date_valid_from should not be empty')
+        new_entity.save(username=user.username)
+        return new_entity
+
+    def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
+        """2 step - update the fields for the entity to be replaced"""
+        # convert to datetime if the date_valid_from from new entity is date
+        from core import datetime
+        now = datetime.datetime.now()
+        if not isinstance(date_valid_from_new_entity, datetime.datetime):
+            date_valid_from_new_entity = datetime.datetime.combine(
+                date_valid_from_new_entity,
+                datetime.datetime.min.time()
+            )
+        if not self.is_dirty(check_relationship=True):
+            if self.date_valid_to is not None:
+                if date_valid_from_new_entity < self.date_valid_to:
+                    self.date_valid_to = date_valid_from_new_entity
+            else:
+                self.date_valid_to = date_valid_from_new_entity
+            self.replacement_uuid = uuid_from_new_entity
+            self.save(username=user.username)
+            return self
+        else:
+            raise ValidationError("Object is changed - it must be updated before being replaced")
+
+    class Meta:
+        abstract = True
+
+
+class RoleMutation(UUIDModel, ObjectMutation):
+    role = models.ForeignKey(Role, models.DO_NOTHING,
+                             related_name='mutations')
+    mutation = models.ForeignKey(
+        MutationLog, models.DO_NOTHING, related_name='roles')
+
+    class Meta:
+        managed = True
+        db_table = "core_RoleMutation"

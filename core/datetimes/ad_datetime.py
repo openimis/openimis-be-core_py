@@ -1,7 +1,8 @@
 import sys
 import datetime as py_datetime
-import graphene
 from .shared import datetimedelta
+
+__all__ = ["tzinfo", "timezone", "AdDate", "date", "AdDatetime", "datetime"]
 
 """
 Standard Gregorian date,
@@ -113,6 +114,8 @@ class AdDatetime(py_datetime.datetime):
         return self
 
     def __eq__(self, other):
+        if other is None:
+            return super(AdDatetime, self).__eq__(other)
         if isinstance(other, py_datetime.datetime):
             return super(AdDatetime, self).__eq__(other)
         if isinstance(other, py_datetime.date):

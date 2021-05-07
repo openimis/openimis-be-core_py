@@ -1,16 +1,23 @@
+import decimal
 import json
+import logging
 import re
 import sys
-import traceback
-import logging
-import decimal
+import uuid
+
+from copy import copy
 from datetime import datetime as py_datetime
+from typing import Optional
 
 import graphene
+import graphene_django_optimizer as gql_optimizer
 from core import ExtendedConnection
 from core.tasks import openimis_mutation_async
 from django import dispatch
+from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
+from django.conf import settings
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -19,7 +26,10 @@ from graphene.utils.str_converters import to_snake_case
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language
+from .apps import CoreConfig
+from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation
+
+from .gql_queries import *
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -27,6 +37,7 @@ MIN_SMALLINT = -32768
 core = sys.modules["core"]
 
 logger = logging.getLogger(__name__)
+
 
 class SmallInt(graphene.Int):
     """
@@ -113,6 +124,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     This class is the generic Mutation for openIMIS. It will save the mutation content into the MutationLog,
     submit it to validation, perform the potentially asynchronous mutation itself and update the MutationLog status.
     """
+
     class Meta:
         abstract = True
 
@@ -123,7 +135,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         client_mutation_details = graphene.List(graphene.String)
 
     @classmethod
-    def async_mutate(cls, user, **data) -> str:
+    def async_mutate(cls, user, **data) -> Optional[str]:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB
@@ -219,6 +231,8 @@ class ModuleConfigurationGQLType(DjangoObjectType):
 class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     """
     Adapted from https://github.com/graphql-python/graphene/issues/251
+    And then adapted by Alok Ramteke on my (Eric Darchis)' stackoverflow question:
+    https://stackoverflow.com/questions/57478464/django-graphene-relay-order-by-orderingfilter/61543302
     Substituting:
     `mutation_logs = DjangoFilterConnectionField(MutationLogGQLType)`
     with:
@@ -227,19 +241,11 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         orderBy=graphene.List(of_type=graphene.String))
     ```
     """
+
     @classmethod
-    def connection_resolver(cls, resolver, connection, default_manager, max_limit,
-                            enforce_first_or_last, filterset_class, filtering_args,
-                            root, info, **args):
-        filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(
-            data=filter_kwargs,
-            queryset=default_manager.get_queryset(),
-            request=info.context
-        ).qs
+    def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
-            # Django supports "?" as random ordering but uses RAND() instead of NEWID(), will patch on the fly
             if type(order) is str:
                 if order == "?":
                     snake_order = RawSQL("NEWID()", params=[])
@@ -252,16 +258,19 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
-        return super(DjangoFilterConnectionField, cls).connection_resolver(
-            resolver,
-            connection,
-            qs,
-            max_limit,
-            enforce_first_or_last,
-            root,
-            info,
-            **args
+        return qs
+
+    @classmethod
+    def resolve_queryset(
+            cls, connection, iterable, info, args, filtering_args, filterset_class
+    ):
+        qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
+            connection, iterable, info, args
         )
+        filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
+        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
+        return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
 
 class MutationLogGQLType(DjangoObjectType):
@@ -307,6 +316,84 @@ class Query(graphene.ObjectType):
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
+    role = OrderedDjangoFilterConnectionField(
+        RoleGQLType,
+        orderBy=graphene.List(of_type=graphene.String),
+        is_system=graphene.Boolean(),
+        show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
+    )
+
+    role_right = OrderedDjangoFilterConnectionField(
+        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+    )
+
+    modules_permissions = graphene.Field(
+        ModulePermissionsListGQLType,
+    )
+
+    def resolve_role(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        filters = []
+        query = Role.objects
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
+        show_history = kwargs.get('show_history', False)
+        if not show_history and not kwargs.get('uuid', None):
+            filters += filter_validity(**kwargs)
+
+        is_system_role = kwargs.get('is_system', None)
+        # check if we can use default filter validity
+        if is_system_role is not None:
+            if is_system_role:
+                query = query.filter(
+                    is_system__gte=1
+                )
+            else:
+                query = query.filter(
+                    is_system=0
+                )
+        return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_role_right(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        return gql_optimizer.query(RoleRight.objects.all(), info)
+
+    def resolve_modules_permissions(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        excluded_app = [
+            "health_check.cache", "health_check", "health_check.db",
+            "test_without_migrations", "test_without_migrations",
+            "rules", "graphene_django", "rest_framework", "rest_framework_rules",
+            "health_check.storage", "channels"
+        ]
+        all_apps = [app for app in settings.INSTALLED_APPS if not app.startswith("django") and app not in excluded_app]
+        config = []
+        for app in all_apps:
+            apps = __import__(f"{app}.apps")
+            if hasattr(apps.apps, 'DEFAULT_CFG'):
+                config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
+                permission = []
+                for key, value in config_dict.items():
+                    if "gql_query" in key or "gql_mutation" in key:
+                        if isinstance(value, list):
+                            for val in value:
+                                permission.append(PermissionOpenImisGQLType(
+                                    perms_name=key,
+                                    perms_value=val,
+                                ))
+                config.append(ModulePermissionGQLType(
+                    module_name=app,
+                    permissions=permission,
+                ))
+        return ModulePermissionsListGQLType(list(config))
+
     def resolve_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
         # configuration is loaded before even the core module
@@ -328,3 +415,291 @@ class Query(graphene.ObjectType):
         if layer is not None:
             crits = (*crits, Q(layer=layer))
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
+
+
+class RoleBase:
+    id = graphene.Int(required=False, read_only=True)
+    uuid = graphene.String(required=False)
+    name = graphene.String(required=True, max_length=50)
+    alt_language = graphene.String(required=False, max_length=50)
+    is_system = graphene.Boolean(required=True)
+    is_blocked = graphene.Boolean(required=True)
+    # field to save all chosen rights to the role
+    rights_id = graphene.List(graphene.Int, required=False)
+
+
+def update_or_create_role(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    client_mutation_label = data.get("client_mutation_label", None)
+
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    role_uuid = data.pop('uuid') if 'uuid' in data else None
+    rights_id = data.pop('rights_id') if "rights_id" in data else None
+    if role_uuid:
+        role = Role.objects.get(uuid=role_uuid)
+        role.save_history()
+        [setattr(role, k, v) for k, v in data.items()]
+        role.save()
+        if rights_id is not None:
+            # reset all role rights assigned to the chosen role
+            from core import datetime
+            now = datetime.datetime.now()
+            role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+            role_rights_currently_assigned.update(validity_to=now)
+            role_rights_currently_assigned = role_rights_currently_assigned.values_list('right_id', flat=True)
+            for right_id in rights_id:
+                if right_id not in role_rights_currently_assigned:
+                    # create role right because it is a new role right
+                    RoleRight.objects.create(
+                        **{
+                            "role_id": role.id,
+                            "right_id": right_id,
+                            "audit_user_id": role.audit_user_id,
+                            "validity_from": now,
+                        }
+                    )
+                else:
+                    # set date valid to - None
+                    role_right = RoleRight.objects.get(Q(role_id=role.id, right_id=right_id))
+                    role_right.validity_to = None
+                    role_right.save()
+    else:
+        role = Role.objects.create(**data)
+        # create role rights for that role if they were passed to mutation
+        if rights_id:
+            [RoleRight.objects.create(
+                **{
+                    "role_id": role.id,
+                    "right_id": right_id,
+                    "audit_user_id": role.audit_user_id,
+                    "validity_from": data['validity_from'],
+                }
+            ) for right_id in rights_id]
+        if client_mutation_id:
+            RoleMutation.object_mutated(user, role=role, client_mutation_id=client_mutation_id)
+        return role
+    return role
+
+
+def duplicate_role(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    client_mutation_label = data.get("client_mutation_label", None)
+
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    role_uuid = data.pop('uuid') if 'uuid' in data else None
+    rights_id = data.pop('rights_id') if "rights_id" in data else None
+    # get the current Role object to be duplicated
+    role = Role.objects.get(uuid=role_uuid)
+    # copy Role to be dupliacated
+    from core import datetime
+    now = datetime.datetime.now()
+    duplicated_role = copy(role)
+    duplicated_role.id = None
+    duplicated_role.uuid = uuid.uuid4()
+    duplicated_role.validity_from = now
+    [setattr(duplicated_role, k, v) for k, v in data.items()]
+    duplicated_role.save()
+    if rights_id:
+        # reset all role rights assigned to the chosen role
+        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+        role_rights_currently_assigned = role_rights_currently_assigned.values_list('right_id', flat=True)
+        for right_id in rights_id:
+            validity_from = now
+            if right_id in role_rights_currently_assigned:
+                # role right exist - we can assign validity_from from old entity
+                validity_from = role.validity_from
+            # create role right for duplicate role
+            RoleRight.objects.create(
+                **{
+                    "role_id": duplicated_role.id,
+                    "right_id": right_id,
+                    "audit_user_id": duplicated_role.audit_user_id,
+                    "validity_from": validity_from,
+                }
+            )
+    else:
+        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
+        [RoleRight.objects.create(
+            **{
+                "role_id": duplicated_role.id,
+                "right_id": role_right.right_id,
+                "audit_user_id": duplicated_role.audit_user_id,
+                "validity_from": now,
+            }
+        ) for role_right in role_rights_currently_assigned]
+
+    if client_mutation_id:
+        RoleMutation.object_mutated(user, role=duplicated_role, client_mutation_id=client_mutation_id)
+
+    return duplicated_role
+
+
+class CreateRoleMutation(OpenIMISMutation):
+    """
+    Create a new role, with its chosen role right
+    """
+    _mutation_module = "core"
+    _mutation_class = "CreateRoleMutation"
+
+    class Input(RoleBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_create_role",
+                    'detail': str(exc)
+                }]
+
+
+class UpdateRoleMutation(OpenIMISMutation):
+    """
+    Update a chosen role, with its chosen role right
+    """
+    _mutation_module = "core"
+    _mutation_class = "UpdateRoleMutation"
+
+    class Input(RoleBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+                raise PermissionDenied("unauthorized")
+            if 'uuid' not in data:
+                raise ValidationError("There is no uuid in updateMutation input!")
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_update_role",
+                    'detail': str(exc)
+                }]
+
+
+def set_role_deleted(role):
+    try:
+        role.delete_history()
+        return []
+    except Exception as exc:
+        return {
+            'title': role.uuid,
+            'list': [{
+                'message': "role.mutation.failed_to_change_status_of_role" % {'role': str(role)},
+                'detail': role.uuid}]
+        }
+
+
+class DeleteRoleMutation(OpenIMISMutation):
+    """
+        Delete a chosen role
+    """
+    _mutation_module = "core"
+    _mutation_class = "DeleteRoleMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        if not user.has_perms(CoreConfig.gql_mutation_delete_roles_perms):
+            raise PermissionDenied("unauthorized")
+        errors = []
+        for role_uuid in data["uuids"]:
+            role = Role.objects \
+                .filter(uuid=role_uuid) \
+                .first()
+            if role is None:
+                errors.append({
+                    'title': role,
+                    'list': [{'message':
+                        "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                })
+                continue
+            errors += set_role_deleted(role)
+        if len(errors) == 1:
+            errors = errors[0]['list']
+        return errors
+
+
+class DuplicateRoleMutation(OpenIMISMutation):
+    """
+        Duplicate a chosen role
+    """
+    _mutation_module = "core"
+    _mutation_class = "DuplicateRoleMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuid = graphene.String(required=True)
+        name = graphene.String(required=True, max_length=50)
+        alt_language = graphene.String(required=False, max_length=50)
+        is_system = graphene.Boolean(required=True)
+        is_blocked = graphene.Boolean(required=True)
+        # field to save all chosen rights to the role
+        rights_id = graphene.List(graphene.Int, required=False)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_duplicate_roles_perms):
+                raise PermissionDenied("unauthorized")
+            data['audit_user_id'] = user.id_for_audit
+            duplicate_role(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_duplicate_role",
+                    'detail': str(exc)
+                }]
+
+
+class Mutation(graphene.ObjectType):
+    create_role = CreateRoleMutation.Field()
+    update_role = UpdateRoleMutation.Field()
+    delete_role = DeleteRoleMutation.Field()
+    duplicate_role = DuplicateRoleMutation.Field()
+
+
+def on_role_mutation(sender, **kwargs):
+    uuid = kwargs['data'].get('uuid', None)
+    if not uuid:
+        return []
+
+    # For duplicate log is created in the duplicate_role function, mutation log added here would reference original role
+    if "Role" in str(sender._mutation_class) and sender._mutation_class != 'DuplicateRoleMutation':
+        impacted = Role.objects.get(uuid=uuid)
+        RoleMutation.objects.create(
+            role=impacted, mutation_id=kwargs['mutation_log_id']
+        )
+
+    return []
+
+
+def bind_signals():
+    signal_mutation_module_validate["core"].connect(on_role_mutation)
