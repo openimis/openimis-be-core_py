@@ -99,14 +99,14 @@ class UserGQLType(DjangoObjectType):
         model = User
         filter_fields = {
             "id": ["exact"],
-            "username": ["exact"],
+            "username": ["exact", "icontains"],
             **prefix_filterset("i_user__", InteractiveUserGQLType._meta.filter_fields),
         }
         interfaces = (graphene.relay.Node,)
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        return User.objects.all()
+        return User.get_queryset(queryset, info)
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

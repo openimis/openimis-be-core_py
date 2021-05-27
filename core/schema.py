@@ -4,33 +4,27 @@ import logging
 import re
 import sys
 import uuid
-
 from copy import copy
 from datetime import datetime as py_datetime
-from typing import Optional
 
-import graphene
 import graphene_django_optimizer as gql_optimizer
-from core import ExtendedConnection
 from core.tasks import openimis_mutation_async
 from django import dispatch
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
-from django.conf import settings
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
-from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
-from django.utils.translation import gettext_lazy
+from typing import Optional
 
 from .apps import CoreConfig
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation
-
 from .gql_queries import *
+from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -336,9 +330,23 @@ class Query(graphene.ObjectType):
     )
 
     users = OrderedDjangoFilterConnectionField(
-        UserGQLType, order_by=graphene.List(of_type=graphene.String), validity=graphene.Date(),
+        UserGQLType,
+        order_by=graphene.List(of_type=graphene.String),
+        validity=graphene.Date(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
+        last_name=graphene.String(description="partial match, case insensitive"),
+        other_names=graphene.String(description="partial match, case insensitive"),
+        phone=graphene.String(description="exact match on phone number"),
+        email=graphene.String(description="exact match on email address"),
+        role_uuid=graphene.String(),
+        health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
+        region_uuid=graphene.String(),
+        district=graphene.String(),
+        birth_date_from=graphene.Date(),
+        birth_date_to=graphene.Date(),
+        user_types=graphene.List(of_type=graphene.String),
+        language=graphene.String(),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
                     "is exposed in GraphQL. There are also optional links to ClaimAdministrator and Officer depending"
@@ -371,6 +379,57 @@ class Query(graphene.ObjectType):
             filters += filter_validity(**kwargs)
 
         return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
+                      role_uuid=None, health_facility_id=None, region_uuid=None, district=None,
+                      birth_date_from=None, birth_date_to=None, user_types=None, language=None, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionError("Unauthorized")
+        user_filters = []
+        user_query = User.objects.exclude(t_user__isnull=False)
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            user_filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
+        # show_history = kwargs.get('show_history', False)
+        # if not show_history and not kwargs.get('uuid', None):
+        #     user_filters += filter_validity(**kwargs)
+        if email:
+            user_filters.append(Q(i_user__email=email) |
+                                Q(officer__email=email) |
+                                Q(claim_admin__email_id=email))
+        if phone:
+            user_filters.append(Q(i_user__phone=phone) |
+                                Q(officer__phone=phone) |
+                                Q(claim_admin__phone=phone))
+        if last_name:
+            user_filters.append(Q(i_user__last_name__icontains=last_name) |
+                                Q(officer__last_name__icontains=last_name) |
+                                Q(claim_admin__last_name__icontains=last_name))
+        if other_names:
+            user_filters.append(Q(i_user__other_names__icontains=other_names) |
+                                Q(officer__other_names__icontains=other_names) |
+                                Q(claim_admin__other_names__icontains=other_names))
+        if language:
+            user_filters.append(Q(i_user__language=language))
+            # Language is not applicable to Office/ClaimAdmin
+        if health_facility_id:
+            user_filters.append(Q(i_user__health_facility_id=health_facility_id) |
+                                Q(officer__location_id=health_facility_id) |
+                                Q(claim_admin__health_facility_id=health_facility_id))
+        if birth_date_from:
+            user_filters.append(Q(officer__dob__gte=birth_date_from) |
+                                Q(officer__veo_dob__gte=birth_date_from) |
+                                Q(claim_admin__dob__gte=birth_date_from))
+        if birth_date_to:
+            user_filters.append(Q(officer__dob__lte=birth_date_to) |
+                                Q(officer__veo_dob__lte=birth_date_to) |
+                                Q(claim_admin__dob__lte=birth_date_to))
+
+        # Do NOT use the query optimizer here ! It would make the t_user, officer etc as deferred fields if they are not
+        # explicitly requested in the GraphQL response. However, this prevents the dynamic remapping of the User object.
+        return user_query.filter(*user_filters)
 
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -741,5 +800,21 @@ def on_role_mutation(sender, **kwargs):
     return []
 
 
+def on_user_mutation(sender, **kwargs):
+    uuid = kwargs['data'].get('uuid', None)
+    if not uuid:
+        return []
+
+    # For duplicate log is created in the duplicate_role function, mutation log added here would reference original role
+    if "User" in str(sender._mutation_class):
+        impacted = User.objects.get(uuid=uuid)
+        UserMutation.objects.create(
+            role=impacted, mutation_id=kwargs['mutation_log_id']
+        )
+
+    return []
+
+
 def bind_signals():
     signal_mutation_module_validate["core"].connect(on_role_mutation)
+    signal_mutation_module_validate["core"].connect(on_user_mutation)

@@ -342,10 +342,6 @@ class InteractiveUser(VersionedModel):
     def id_for_audit(self):
         return id
 
-    def save(self, *args, **kwargs):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
-
     @property
     def username(self):
         return self.login_name
@@ -389,6 +385,15 @@ class InteractiveUser(VersionedModel):
         return pwd_hash == self.stored_password.lower()
 
     @classmethod
+    def is_interactive_user(cls, user):
+        if isinstance(user, InteractiveUser):
+            return user
+        elif isinstance(user, User) and user.i_user is not None:
+            return user.i_user
+        else:
+            return None
+
+    @classmethod
     def get_queryset(cls, queryset, user):
         if isinstance(user, ResolveInfo):
             user = user.context.user
@@ -417,10 +422,10 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, PermissionsMixin):
     username = models.CharField(unique=True, max_length=25)
-    t_user = models.ForeignKey(
-        TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
-    i_user = models.ForeignKey(
-        InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
+    t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
+    i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
+    officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
+    claim_admin = models.ForeignKey("claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True)
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = []
@@ -429,7 +434,14 @@ class User(UUIDModel, PermissionsMixin):
 
     def __init__(self, *args, **kwargs):
         super(User, self).__init__(*args, **kwargs)
-        self._u = self.i_user or self.t_user
+        try:
+            self._u = self.i_user or self.officer or self.claim_admin or self.t_user
+        except ValueError:
+            deferred = self.get_deferred_fields()
+            if any(x in deferred for x in ["i_user", "officer", "claim_admin", "t_user"]):
+                logger.error("Some of the user type fields are deferred, this breaks the dynamic loading of "
+                             "openIMIS User, if calling from GraphQL, remove the optimizer")
+            raise
 
     @property
     def id_for_audit(self):
@@ -478,8 +490,8 @@ class User(UUIDModel, PermissionsMixin):
             return self.username
         if name == 'get_session_auth_hash':
             return False
-        if not self._u:
-            return None
+        # if not self._u:
+        #     return None
         return getattr(self._u, name)
 
     def __call__(self, *args, **kwargs):
@@ -488,7 +500,17 @@ class User(UUIDModel, PermissionsMixin):
         return self._u(*args, **kwargs)
 
     def __str__(self):
-        return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
+        if self.i_user:
+            utype = 'i'
+        elif self.t_user:
+            utype = 't'
+        elif self.officer:
+            utype = 'o'
+        elif self.claim_admin:
+            utype = 'c'
+        else:
+            utype = '?'
+        return "(%s) %s [%s]" % (utype, self.username, self.id)
 
     def save(self, *args, **kwargs):
         if self._u and self._u.id:
@@ -546,6 +568,47 @@ class Officer(VersionedModel):
 
     def name(self):
         return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
+
+    @property
+    def id_for_audit(self):
+        return id
+
+    @property
+    def username(self):
+        return self.code
+
+    def get_username(self):
+        return self.code
+
+    @property
+    def is_staff(self):
+        return False
+
+    @property
+    def is_superuser(self):
+        return False
+
+    @cached_property
+    def rights(self):
+        return []
+
+    @cached_property
+    def rights_str(self):
+        return []
+
+    def set_password(self, raw_password):
+        raise NotImplementedError("Shouldn't set a password on an Officer")
+
+    def check_password(self, raw_password):
+        return False
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        return queryset
 
     class Meta:
         managed = False
@@ -815,3 +878,13 @@ class RoleMutation(UUIDModel, ObjectMutation):
     class Meta:
         managed = True
         db_table = "core_RoleMutation"
+
+
+class UserMutation(UUIDModel, ObjectMutation):
+    # TODO Verify that this does clash with the MutationLog user field
+    user = models.ForeignKey(User, models.DO_NOTHING, related_name='mutations')
+    mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='users')
+
+    class Meta:
+        managed = True
+        db_table = "core_UserMutation"
