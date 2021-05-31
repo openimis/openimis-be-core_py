@@ -324,14 +324,14 @@ class Query(graphene.ObjectType):
     )
 
     interactiveUsers = OrderedDjangoFilterConnectionField(
-        InteractiveUserGQLType, order_by=graphene.List(of_type=graphene.String), validity=graphene.Date(),
+        InteractiveUserGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
     )
 
     users = OrderedDjangoFilterConnectionField(
         UserGQLType,
-        order_by=graphene.List(of_type=graphene.String),
+        orderBy=graphene.List(of_type=graphene.String),
         validity=graphene.Date(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),

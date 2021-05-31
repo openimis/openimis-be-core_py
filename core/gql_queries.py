@@ -103,6 +103,7 @@ class UserGQLType(DjangoObjectType):
             **prefix_filterset("i_user__", InteractiveUserGQLType._meta.filter_fields),
         }
         interfaces = (graphene.relay.Node,)
+        connection_class = ExtendedConnection
 
     @classmethod
     def get_queryset(cls, queryset, info):
