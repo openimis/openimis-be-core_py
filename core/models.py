@@ -886,8 +886,7 @@ class RoleMutation(UUIDModel, ObjectMutation):
 
 
 class UserMutation(UUIDModel, ObjectMutation):
-    # TODO Verify that this does clash with the MutationLog user field
-    user = models.ForeignKey(User, models.DO_NOTHING, related_name='mutations')
+    core_user = models.ForeignKey(User, models.DO_NOTHING, related_name='mutations')
     mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='users')
 
     class Meta:

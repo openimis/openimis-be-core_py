@@ -110,6 +110,8 @@ class UserGQLType(DjangoObjectType):
     to the core_User table added in the modular version. The TechnicalUser is for now not exposed here as it is not
     managed through this API.
     """
+    client_mutation_id = graphene.String()
+
     class Meta:
         model = User
         filter_fields = {
@@ -123,6 +125,10 @@ class UserGQLType(DjangoObjectType):
     @classmethod
     def get_queryset(cls, queryset, info):
         return User.get_queryset(queryset, info)
+
+    def resolve_client_mutation_id(self, info):
+        user_mutation = self.mutations.select_related('mutation').filter(mutation__status=0).first()
+        return user_mutation.mutation.client_mutation_id if user_mutation else None
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):
