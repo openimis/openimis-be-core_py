@@ -337,6 +337,7 @@ class InteractiveUser(VersionedModel):
     password_validity = models.DateTimeField(db_column="PasswordValidity", blank=True, null=True)
     is_associated = models.BooleanField(db_column="IsAssociated", blank=True, null=True,
                                         help_text="has a claim admin or enrolment officer account")
+    role_id = models.IntegerField(db_column="RoleID", null=False)
 
     @property
     def id_for_audit(self):
@@ -370,7 +371,7 @@ class InteractiveUser(VersionedModel):
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
-        self.private_key = token_hex(256)
+        self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         self.stored_password = pwd_hash.hexdigest()
@@ -561,13 +562,17 @@ class Officer(VersionedModel):
     veo_phone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
-    # emailid = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
+    email = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
     phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
-    # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
-    # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+    address = models.CharField(db_column="permanentaddress", max_length=100, blank=True, null=True)
+    has_login = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+    # user = models.ForeignKey(User, db_column='UserID', blank=True, null=True, on_delete=models.CASCADE)
 
     def name(self):
         return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
+
+    def __str__(self):
+        return "[%s] %s" % (self.code, self.name())
 
     @property
     def id_for_audit(self):

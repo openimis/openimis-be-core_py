@@ -6,14 +6,18 @@ import sys
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime
+from functools import reduce
 
 import graphene_django_optimizer as gql_optimizer
+from core.services import create_or_update_interactive_user, create_or_update_core_user, create_or_update_officer, \
+    create_or_update_claim_admin
 from core.tasks import openimis_mutation_async
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db import transaction
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -302,6 +306,19 @@ class MutationLogGQLType(DjangoObjectType):
         return queryset
 
 
+UT_INTERACTIVE = "INTERACTIVE"
+UT_TECHNICAL = "TECHNICAL"
+UT_OFFICER = "OFFICER"
+UT_CLAIM_ADMIN = "CLAIM_ADMIN"
+
+UserTypeEnum = graphene.Enum("UserTypes", [
+            (UT_INTERACTIVE, UT_INTERACTIVE),
+            (UT_OFFICER, UT_OFFICER),
+            (UT_TECHNICAL, UT_TECHNICAL),
+            (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
+        ])
+
+
 class Query(graphene.ObjectType):
     module_configurations = graphene.List(
         ModuleConfigurationGQLType,
@@ -339,13 +356,14 @@ class Query(graphene.ObjectType):
         other_names=graphene.String(description="partial match, case insensitive"),
         phone=graphene.String(description="exact match on phone number"),
         email=graphene.String(description="exact match on email address"),
-        role_uuid=graphene.String(),
+        role_id=graphene.Int(),
         health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
-        region_uuid=graphene.String(),
-        district=graphene.String(),
+        region_id=graphene.Int(),
+        district_id=graphene.Int(),
+        village_id=graphene.Int(),
         birth_date_from=graphene.Date(),
         birth_date_to=graphene.Date(),
-        user_types=graphene.List(of_type=graphene.String),
+        user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -381,8 +399,9 @@ class Query(graphene.ObjectType):
         return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
-                      role_uuid=None, health_facility_id=None, region_uuid=None, district=None,
-                      birth_date_from=None, birth_date_to=None, user_types=None, language=None, **kwargs):
+                      role_id=None, health_facility_id=None, region_id=None, district_id=None,
+                      birth_date_from=None, birth_date_to=None, user_types=None, language=None,
+                      village_id=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
         user_filters = []
@@ -426,6 +445,24 @@ class Query(graphene.ObjectType):
             user_filters.append(Q(officer__dob__lte=birth_date_to) |
                                 Q(officer__veo_dob__lte=birth_date_to) |
                                 Q(claim_admin__dob__lte=birth_date_to))
+        if role_id:
+            user_filters.append(Q(i_user__user_roles__role_id=role_id) &
+                                Q(i_user__user_roles__validity_to__isnull=True))
+        if district_id:
+            user_filters.append(Q(i_user__userdistrict__location_id=district_id))
+        if region_id:
+            user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+        if village_id:
+            user_filters.append(Q(officer__officer_villages__location_id=village_id))
+
+        if user_types:
+            ut_conditions = {
+                UT_INTERACTIVE: Q(i_user__isnull=False),
+                UT_OFFICER: Q(officer__isnull=False),
+                UT_TECHNICAL: Q(t_user__isnull=False),
+                UT_CLAIM_ADMIN: Q(claim_admin__isnull=False),
+            }
+            user_filters.append(reduce(lambda a, b: a | b, [ut_conditions[x] for x in user_types]))
 
         # Do NOT use the query optimizer here ! It would make the t_user, officer etc as deferred fields if they are not
         # explicitly requested in the GraphQL response. However, this prevents the dynamic remapping of the User object.
@@ -553,12 +590,10 @@ def update_or_create_role(data, user):
                 if right_id not in role_rights_currently_assigned:
                     # create role right because it is a new role right
                     RoleRight.objects.create(
-                        **{
-                            "role_id": role.id,
-                            "right_id": right_id,
-                            "audit_user_id": role.audit_user_id,
-                            "validity_from": now,
-                        }
+                        role_id=role.id,
+                        right_id=right_id,
+                        audit_user_id=role.audit_user_id,
+                        validity_from=now,
                     )
                 else:
                     # set date valid to - None
@@ -778,11 +813,194 @@ class DuplicateRoleMutation(OpenIMISMutation):
                 }]
 
 
+class UserBase:
+    id = graphene.Int(required=False, read_only=True)
+    user_id = graphene.String(required=False)
+    other_names = graphene.String(required=True, max_length=50)
+    last_name = graphene.String(required=True, max_length=50)
+    username = graphene.String(required=True)  # Might be redundant with "code"
+    phone_number = graphene.String(required=False)
+    email = graphene.String(required=False)
+    password = graphene.String(required=False)
+    health_facility_id = graphene.String(required=False)
+    regions = graphene.List(graphene.String, required=False)
+    districts = graphene.List(graphene.Int, required=False)
+    language = graphene.String(required=True, description="Language code for the user")
+
+    # Interactive User only
+    roles = graphene.List(graphene.Int, required=False,
+                          description="List of role_ids, required for interactive users")
+
+    # Enrolment Officer / Feedback / Claim Admin specific
+    code = graphene.String(required=False)
+    birth_date = graphene.Date(required=False)
+    address = graphene.String(required=False)  # multi-line
+    works_to = graphene.Date(required=False)
+    substitution_officer_id = graphene.Int(required=False)
+    # TODO VEO_code, last_name, other names, dob, phone
+    phone_communication = graphene.Boolean(required=False)
+    village_ids = graphene.List(graphene.Int, required=False)
+
+    user_types = graphene.List(UserTypeEnum, required=True)
+
+
+class CreateUserMutation(OpenIMISMutation):
+    """
+    Create a new user, the "core" one but also Interactive, Technical, Officer or Admin
+    """
+    _mutation_module = "core"
+    _mutation_class = "CreateUserMutation"
+
+    class Input(UserBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_user(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_create_user",
+                    'detail': str(exc)
+                }]
+
+
+class UpdateUserMutation(OpenIMISMutation):
+    """
+    Update an existing User and sub-user types
+    """
+    _mutation_module = "core"
+    _mutation_class = "UpdateUserMutation"
+
+    class Input(UserBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_user(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_update_user",
+                    'detail': str(exc)
+                }]
+
+
+class DeleteUserMutation(OpenIMISMutation):
+    """
+    Delete a chosen user
+    """
+    _mutation_module = "core"
+    _mutation_class = "DeleteUserMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        if not user.has_perms(CoreConfig.gql_mutation_delete_users_perms):
+            raise PermissionDenied("unauthorized")
+        errors = []
+        for user_uuid in data["uuids"]:
+            user = User.objects \
+                .filter(id=user_uuid) \
+                .first()
+            if user is None:
+                errors.append({
+                    'title': user,
+                    'list': [{'message':
+                        "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                })
+                continue
+            errors += set_user_deleted(user)
+        if len(errors) == 1:
+            errors = errors[0]['list']
+        return errors
+
+
+@transaction.atomic
+def update_or_create_user(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
+
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    user_uuid = data.pop('uuid') if 'uuid' in data else None
+
+    if UT_INTERACTIVE in data["user_types"]:
+        i_user, i_user_created = create_or_update_interactive_user(
+            user_uuid, data, user.id_for_audit, len(data["user_types"]) > 1)
+    else:
+        i_user, i_user_created = None, False
+    if UT_OFFICER in data["user_types"]:
+        officer, officer_created = create_or_update_officer(
+            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
+    else:
+        officer, officer_created = None, False
+    if UT_CLAIM_ADMIN in data["user_types"]:
+        claim_admin, claim_admin_created = create_or_update_claim_admin(
+            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
+    else:
+        claim_admin, claim_admin_created = None, False
+    core_user, core_user_created = create_or_update_core_user(
+        user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
+
+    if client_mutation_id:
+        UserMutation.object_mutated(user, user=user, client_mutation_id=client_mutation_id)
+    return core_user
+
+
+def set_user_deleted(user):
+    try:
+        if user.i_user:
+            user.i_user.delete_history()
+        if user.t_user:
+            user.t_user.delete_history()
+        if user.officer:
+            user.officer.delete_history()
+        if user.claim_admin:
+            user.claim_admin.delete_history()
+        user.delete()  # TODO: we might consider disabling Users instead of deleting entirely.
+        return []
+    except Exception as exc:
+        logger.info("role.mutation.failed_to_change_status_of_user" % {'user': str(user)})
+        return {
+            "title": user.id,
+            "list": [{
+                "message": "role.mutation.failed_to_change_status_of_user" % {'user': str(user)},
+                "detail": user.id}]
+        }
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
     delete_role = DeleteRoleMutation.Field()
     duplicate_role = DuplicateRoleMutation.Field()
+
+    create_user = CreateUserMutation.Field()
+    update_user = UpdateUserMutation.Field()
+    delete_user = DeleteUserMutation.Field()
 
 
 def on_role_mutation(sender, **kwargs):

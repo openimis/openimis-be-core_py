@@ -46,6 +46,21 @@ class RoleGQLType(DjangoObjectType):
         return Role.get_queryset(queryset, info)
 
 
+class UserRoleGQLType(DjangoObjectType):
+    class Meta:
+        model = UserRole
+        filter_fields = {
+            "id": ["exact"],
+            "user": ["exact"],
+            "role": ["exact"],
+        }
+        connection_class = ExtendedConnection
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return Role.get_queryset(queryset, info)
+
+
 class RoleRightGQLType(DjangoObjectType):
     class Meta:
         model = RoleRight
