@@ -83,6 +83,7 @@ class InteractiveUserGQLType(DjangoObjectType):
     and Claim Administrators can exist without having web access but when they do, they have a corresponding
     InteractiveUser, linked by their "code" aka "login_name"
     """
+    language_id = graphene.String()
     class Meta:
         model = InteractiveUser
         interfaces = (graphene.relay.Node,)
@@ -96,6 +97,7 @@ class InteractiveUserGQLType(DjangoObjectType):
             "login_name": ["iexact"],
             "email": ["iexact"],
             "is_associated": ["exact"],
+            "language_id": ["exact"],
         }
         connection_class = ExtendedConnection
 

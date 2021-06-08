@@ -445,6 +445,16 @@ class User(UUIDModel, PermissionsMixin):
             raise
 
     @property
+    def email(self):
+        if self.i_user:
+            return self.i_user.email
+        if self.officer:
+            return self.officer.email
+        if self.claim_admin:
+            return self.claim_admin.email_id
+        return None
+
+    @property
     def id_for_audit(self):
         return self._u.id
 

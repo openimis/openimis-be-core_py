@@ -814,11 +814,12 @@ class DuplicateRoleMutation(OpenIMISMutation):
 
 
 class UserBase:
-    id = graphene.Int(required=False, read_only=True)
+    id = graphene.String(required=False, read_only=True,
+                         description="UUID of the core User, one can leave this blank and specify the username instead")
     user_id = graphene.String(required=False)
     other_names = graphene.String(required=True, max_length=50)
     last_name = graphene.String(required=True, max_length=50)
-    username = graphene.String(required=True)  # Might be redundant with "code"
+    username = graphene.String(required=True, max_length=8)
     phone_number = graphene.String(required=False)
     email = graphene.String(required=False)
     password = graphene.String(required=False)
@@ -832,7 +833,6 @@ class UserBase:
                           description="List of role_ids, required for interactive users")
 
     # Enrolment Officer / Feedback / Claim Admin specific
-    code = graphene.String(required=False)
     birth_date = graphene.Date(required=False)
     address = graphene.String(required=False)  # multi-line
     works_to = graphene.Date(required=False)

@@ -24,7 +24,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         i_user = InteractiveUser.objects.filter(validity_to__isnull=True, user__id=user_id).first()
     else:
-        i_user = None
+        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"]).first()
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
@@ -32,13 +32,6 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
             i_user.set_password(data["password"])
         created = False
     else:
-        # verify whether the username is already taken, as we will update it regardless
-        already_exists = InteractiveUser.objects.filter(
-            login_name=data_subset["login_name"],
-            validity_to__isnull=True
-        ).exists()
-        if already_exists:
-            raise Exception("username already exists")  # TODO improve Exception
         i_user = InteractiveUser(**data_subset)
         if "password" in data:
             i_user.set_password(data["password"])
@@ -67,7 +60,7 @@ def create_or_update_user_districts(i_user, district_ids):
     user_district_class = apps.get_model("location", "UserDistrict")
     from core import datetime
     now = datetime.datetime.now()
-    user_district_class.objects.filter(user=i_user, validity_to__isnull=True).update(validity_to=now)
+    user_district_class.objects.filter(user=i_user, validity_to__isnull=True).update(validity_to=now.to_ad_datetime())
     for district_id in district_ids:
         user_district_class.objects.update_or_create(
             user=i_user, district_id=district_id, defaults={"validity_to": None})
@@ -96,9 +89,10 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
         "birth_date": "dob",
         "address": "address",
         "works_to": "works_to",
-        "health_facility_id": "location",
+        "health_facility_id": "location_id",
         # TODO veo_code, last_name, other_names, dob, phone
         "substitution_officer_id": "substitution_officer_id",
+        "phone_communication": "phone_communication",
     }
     data_subset = {v: data.get(k) for k, v in officer_fields.items()}
     data_subset["audit_user_id"] = audit_user_id
@@ -107,24 +101,18 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         officer = Officer.objects.filter(validity_to__isnull=True, user__id=user_id).first()
     else:
-        officer = None
+        officer = Officer.objects.filter(code=data_subset["code"], validity_to__isnull=True).first()
+
     if officer:
         officer.save_history()
         [setattr(officer, k, v) for k, v in data_subset.items()]
         created = False
     else:
-        # verify whether the username is already taken, as we will update it regardless
-        already_exists = Officer.objects.filter(
-            code=data_subset["code"],
-            validity_to__isnull=True
-        ).exists()
-        if already_exists:
-            raise Exception("username/code already exists")  # TODO improve Exception
         officer = Officer(**data_subset)
         created = True
 
     officer.save()
-    if data["village_ids"]:
+    if data.get("village_ids"):
         create_or_update_officer_villages(officer, data["village_ids"])
     return officer, created
 
@@ -149,19 +137,13 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         claim_admin = claim_admin_class.objects.filter(validity_to__isnull=True, user__id=user_id).first()
     else:
-        claim_admin = None
+        claim_admin = claim_admin_class.objects.filter(code=data_subset["code"], validity_to__isnull=True).first()
+
     if claim_admin:
         claim_admin.save_history()
         [setattr(claim_admin, k, v) for k, v in data_subset.items()]
         created = False
     else:
-        # verify whether the username is already taken, as we will update it regardless
-        already_exists = claim_admin_class.objects.filter(
-            code=data_subset["code"],
-            validity_to__isnull=True
-        ).exists()
-        if already_exists:
-            raise Exception("username/code already exists")  # TODO improve Exception
         claim_admin = claim_admin_class(**data_subset)
         created = True
 
@@ -179,7 +161,13 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
             logger.warning("Ignored attempt to change the username of %s from %s to %s. This is not supported",
                            user_uuid, user.username, username)
         created = False
+    elif username:
+        user = User.objects.filter(username=username).first()
+        created = False
     else:
+        user = None
+
+    if not user:
         user = User(username=username)
         created = True
 
