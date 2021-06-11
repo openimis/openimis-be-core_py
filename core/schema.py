@@ -334,6 +334,7 @@ class Query(graphene.ObjectType):
         is_system=graphene.Boolean(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
+        str=graphene.String(description="Text search on any field")
     )
 
     role_right = OrderedDjangoFilterConnectionField(
@@ -487,6 +488,10 @@ class Query(graphene.ObjectType):
             raise PermissionError("Unauthorized")
         filters = []
         query = Role.objects
+
+        text_search = kwargs.get("str")
+        if text_search:
+            filters.append(Q(name__icontains=text_search))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
