@@ -166,6 +166,7 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
         created = False
     else:
         user = None
+        created = False
 
     if not user:
         user = User(username=username)

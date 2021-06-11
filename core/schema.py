@@ -365,6 +365,7 @@ class Query(graphene.ObjectType):
         birth_date_to=graphene.Date(),
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
+        str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
                     "is exposed in GraphQL. There are also optional links to ClaimAdministrator and Officer depending"
@@ -406,6 +407,19 @@ class Query(graphene.ObjectType):
             raise PermissionError("Unauthorized")
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
+        text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
+        if text_search:
+            user_filters.append(Q(username__icontains=text_search) |
+                                Q(i_user__last_name__icontains=text_search) |
+                                Q(officer__last_name__icontains=text_search) |
+                                Q(claim_admin__last_name__icontains=text_search) |
+                                Q(i_user__other_names__icontains=text_search) |
+                                Q(officer__other_names__icontains=text_search) |
+                                Q(claim_admin__other_names__icontains=text_search) |
+                                Q(i_user__email=text_search) |
+                                Q(officer__email=text_search) |
+                                Q(claim_admin__email_id=text_search)
+                                )
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:

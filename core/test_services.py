@@ -264,6 +264,89 @@ class UserServicesTest(TestCase):
         deleted_officers = Officer.objects.filter(code=username).delete()
         logger.info(f"Deleted {deleted_officers} officers after test")
 
+    def test_officer_update(self):
+        username = "tstsvco2"
+        officer, created = create_or_update_officer(
+            user_id=None,
+            data=dict(
+                username=username,
+                last_name="Last Name O2",
+                other_names="Other 1 2 3",
+                dob="1999-05-05",
+                phone_number="+12345678",
+                email="imis@foo.be",
+                health_facility_id=1,
+                village_ids=[22, 35, 50],
+                substitution_officer_id=1,
+                works_to="2025-01-01",
+                phone_communication=True,
+                address="Multi\nline\naddress",
+            ),
+            audit_user_id=999,
+            connected=True)
+        self.assertTrue(created)
+        self.assertIsNotNone(officer)
+        self.assertEquals(officer.username, username)
+        self.assertEquals(officer.last_name, "Last Name O2")
+        self.assertEquals(officer.other_names, "Other 1 2 3")
+        self.assertEquals(officer.audit_user_id, 999)
+        self.assertTrue(officer.has_login)
+        self.assertTrue(officer.phone_communication)
+        self.assertEquals(officer.location_id, 1)
+        self.assertEquals(officer.substitution_officer_id, 1)
+        self.assertEquals(officer.address, "Multi\nline\naddress")
+        self.assertEquals(officer.works_to, "2025-01-01")
+        self.assertEquals(list(
+            OfficerVillage.objects
+                .filter(validity_to__isnull=True, officer=officer)
+                .order_by("location_id")
+                .values_list("location_id", flat=True)),
+            [22, 35, 50])
+        self.assertEquals(officer.phone, "+12345678")
+        self.assertEquals(officer.email, "imis@foo.be")
+
+        officer2, created = create_or_update_officer(
+            user_id=None,
+            data=dict(
+                username=username,
+                last_name="Last updated",
+                other_names="Other updated",
+                dob="1999-01-01",
+                phone_number="+00000",
+                email="imis@bar.be",
+                health_facility_id=17,
+                village_ids=[22],
+                substitution_officer_id=None,
+                works_to="2025-05-05",
+                phone_communication=False,
+                address="updated address",
+            ),
+            audit_user_id=111,
+            connected=True)
+        self.assertFalse(created)
+        self.assertIsNotNone(officer2)
+        self.assertEquals(officer2.username, username)
+        self.assertEquals(officer2.last_name, "Last updated")
+        self.assertEquals(officer2.other_names, "Other updated")
+        self.assertEquals(officer2.audit_user_id, 111)
+        self.assertTrue(officer2.has_login)
+        self.assertFalse(officer2.phone_communication)
+        self.assertEquals(officer2.location_id, 17)
+        self.assertIsNone(officer2.substitution_officer_id)
+        self.assertEquals(officer2.address, "updated address")
+        self.assertEquals(officer2.works_to, "2025-05-01")
+        self.assertEquals(list(
+            OfficerVillage.objects
+                .filter(validity_to__isnull=True, officer=officer2)
+                .order_by("location_id")
+                .values_list("location_id", flat=True)),
+            [22])
+        self.assertEquals(officer2.phone, "+00000")
+        self.assertEquals(officer2.email, "imis@bar.be")
+
+        deleted_officers = Officer.objects.filter(code=username).delete()
+        logger.info(f"Deleted {deleted_officers} officers after test")
+
     def test_claim_admin_min(self):
         username = "tstsvca1"
         claim_admin, created = create_or_update_claim_admin(
