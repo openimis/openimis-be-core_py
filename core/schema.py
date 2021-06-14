@@ -842,7 +842,7 @@ class UserBase:
     phone_number = graphene.String(required=False)
     email = graphene.String(required=False)
     password = graphene.String(required=False)
-    health_facility_id = graphene.String(required=False)
+    health_facility_id = graphene.Int(required=False)
     regions = graphene.List(graphene.String, required=False)
     districts = graphene.List(graphene.Int, required=False)
     language = graphene.String(required=True, description="Language code for the user")

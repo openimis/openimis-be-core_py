@@ -1,8 +1,9 @@
 import graphene
+import location.gql_queries
 from core import ExtendedConnection, filter_validity
-from graphene_django import DjangoObjectType
-
 from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser
+from graphene_django import DjangoObjectType
+from location.models import HealthFacility
 
 from .utils import prefix_filterset
 
@@ -84,6 +85,12 @@ class InteractiveUserGQLType(DjangoObjectType):
     InteractiveUser, linked by their "code" aka "login_name"
     """
     language_id = graphene.String()
+    health_facility = graphene.Field(
+        location.gql_queries.HealthFacilityGQLType,
+        description="Health Facility is not a foreign key in the database, this field resolves it manually, use only "
+                    "if necessary.")
+    roles = graphene.List(RoleGQLType, description="Same as userRoles but a straight list, without the M-N relation")
+
     class Meta:
         model = InteractiveUser
         interfaces = (graphene.relay.Node,)
@@ -100,6 +107,18 @@ class InteractiveUserGQLType(DjangoObjectType):
             "language_id": ["exact"],
         }
         connection_class = ExtendedConnection
+
+    def resolve_health_facility(self, info, **kwargs):
+        if self.health_facility_id:
+            return HealthFacility.get_queryset(None, info).filter(pk=self.health_facility_id).first()
+        else:
+            return None
+
+    def resolve_roles(self, info, **kwargs):
+        if self.user_roles:
+            return Role.get_queryset(self.user_roles, info)
+        else:
+            return None
 
     @classmethod
     def get_queryset(cls, queryset, info):
