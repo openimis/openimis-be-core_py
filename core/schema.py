@@ -985,7 +985,7 @@ def update_or_create_user(data, user):
         user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
 
     if client_mutation_id:
-        UserMutation.object_mutated(user, core_user=user, client_mutation_id=client_mutation_id)
+        UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
 
 

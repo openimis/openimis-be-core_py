@@ -1,7 +1,7 @@
 import graphene
 import location.gql_queries
 from core import ExtendedConnection, filter_validity
-from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser
+from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility
 
@@ -166,3 +166,12 @@ class ModulePermissionGQLType(graphene.ObjectType):
 
 class ModulePermissionsListGQLType(graphene.ObjectType):
     module_perms_list = graphene.List(ModulePermissionGQLType)
+
+
+class UserMutationGQLType(DjangoObjectType):
+    """
+    This intermediate object links Mutations to Users. Beware of the confusion between the user performing the mutation
+    and the users affected by that mutation, the latter being listed in this object.
+    """
+    class Meta:
+        model = UserMutation
