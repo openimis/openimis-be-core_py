@@ -21,6 +21,7 @@ class OfficerGQLType(DjangoObjectType):
             "code": ["exact", "icontains"],
             "last_name": ["exact", "icontains"],
             "other_names": ["exact", "icontains"],
+            "dob": ["exact"],
         }
         connection_class = ExtendedConnection
 
@@ -141,6 +142,7 @@ class UserGQLType(DjangoObjectType):
             "id": ["exact"],
             "username": ["exact", "icontains"],
             **prefix_filterset("i_user__", InteractiveUserGQLType._meta.filter_fields),
+            **prefix_filterset("officer__", OfficerGQLType._meta.filter_fields),
         }
         interfaces = (graphene.relay.Node,)
         connection_class = ExtendedConnection
