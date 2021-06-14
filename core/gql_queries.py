@@ -116,7 +116,9 @@ class InteractiveUserGQLType(DjangoObjectType):
 
     def resolve_roles(self, info, **kwargs):
         if self.user_roles:
-            return Role.get_queryset(self.user_roles, info)
+            return Role.objects\
+                .filter(validity_to__isnull=True)\
+                .filter(user_roles__user_id=self.id, user_roles__validity_to__isnull=True)
         else:
             return None
 
