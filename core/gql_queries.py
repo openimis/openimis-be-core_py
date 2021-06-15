@@ -2,7 +2,7 @@ import graphene
 from core import ExtendedConnection, filter_validity
 from graphene_django import DjangoObjectType
 
-from core.models import Officer, Role, RoleRight, UserRole
+from core.models import Officer, Role, RoleRight, UserRole, Language
 
 from .utils import prefix_filterset
 
@@ -71,3 +71,17 @@ class ModulePermissionGQLType(graphene.ObjectType):
 
 class ModulePermissionsListGQLType(graphene.ObjectType):
     module_perms_list = graphene.List(ModulePermissionGQLType)
+
+
+class LanguageGQLType(DjangoObjectType):
+    class Meta:
+        model = Language
+        filter_fields = {
+            "language_code": ["exact"],
+            "name": ["exact"],
+            "sort_order": ["exact"]
+        }
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return queryset
