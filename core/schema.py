@@ -597,7 +597,7 @@ class RoleBase:
 
 def update_or_create_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -651,7 +651,7 @@ def update_or_create_role(data, user):
 
 def duplicate_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')

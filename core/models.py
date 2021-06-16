@@ -862,7 +862,6 @@ class HistoryBusinessModel(HistoryModel):
         """2 step - update the fields for the entity to be replaced"""
         # convert to datetime if the date_valid_from from new entity is date
         from core import datetime
-        now = datetime.datetime.now()
         if not isinstance(date_valid_from_new_entity, datetime.datetime):
             date_valid_from_new_entity = datetime.datetime.combine(
                 date_valid_from_new_entity,

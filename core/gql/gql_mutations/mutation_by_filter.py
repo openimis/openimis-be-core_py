@@ -3,9 +3,9 @@ import logging
 from functools import wraps
 
 import django.db.models
-from django.db.models import Q, QuerySet
+from django.db.models import Q
 from graphene_django import DjangoObjectType
-from typing import Dict, Iterator, Union, Iterable
+from typing import Dict
 
 
 def mutation_on_uuids_from_filter(django_object: django.db.models.Model,
@@ -110,12 +110,12 @@ def _build_filters_from_gql_filters(filter_fields):
 
 
 def mutation_on_uuids_from_filter_business_model(django_object: django.db.models.Model,
-                                  object_gql_type: DjangoObjectType,
-                                  query_filters_field: str = 'extended_filters',
-                                  explicit_filters_handlers: Dict[str, str] = None,
-                                  return_objects: bool = False):
+                                                 object_gql_type: DjangoObjectType,
+                                                 query_filters_field: str = 'extended_filters',
+                                                 explicit_filters_handlers: Dict[str, str] = None,
+                                                 return_objects: bool = False):
     """
-    dedicated extended mutaion from flter decorator dedicated for BusinessHistoryModel entities (used for example
+    dedicated extended mutation from filter decorator dedicated for BusinessHistoryModel entities (used for example
     in Formal Sector entities). See doc string for mutation_on_uuids_from_filter to read more how this works.
     """
 
