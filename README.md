@@ -41,6 +41,7 @@ None
 * role
 * role_right
 * modules_permissions
+* languages
 
 ## GraphQL Mutations
 * createRole
