@@ -127,7 +127,15 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
     def inner_function(async_mutate):
         @wraps(async_mutate)
         def wrapper(cls, user, **data):
-            if not data.get('uuids', None):
+            # check if uuids exists as a substring in one of the key
+            key_values_match = [key for key, value in data.items() if 'uuids' in key]
+            uuids_exists = False
+            # check also if list of uuids contains any uuids if uuids key exists
+            for key in key_values_match:
+                if key in data:
+                    if len(data[key]) > 0:
+                        uuids_exists = True
+            if not uuids_exists:
                 args = json.loads(data[query_filters_field])
                 q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
 
