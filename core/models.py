@@ -709,7 +709,7 @@ class ObjectMutation:
         # This method should fail silently to not disrupt the actual mutation
         # noinspection PyBroadException
         try:
-            args_models = {k: v for k, v in kwargs.items() if isinstance(v, models.Model)}
+            args_models = {k + "_id": v.id for k, v in kwargs.items() if isinstance(v, models.Model)}
             if len(args_models) == 0 or len(args_models) > 1:
                 logger.error("Trying to update ObjectMutationLink with several models in params: %s",
                              ", ".join(args_models.keys()))
@@ -896,7 +896,7 @@ class RoleMutation(UUIDModel, ObjectMutation):
 
 
 class UserMutation(UUIDModel, ObjectMutation):
-    core_user = models.ForeignKey(User, models.DO_NOTHING, related_name='mutations')
+    core_user = models.ForeignKey(User, models.CASCADE, related_name='mutations')
     mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='users')
 
     class Meta:

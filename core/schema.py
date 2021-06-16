@@ -358,9 +358,11 @@ class Query(graphene.ObjectType):
         phone=graphene.String(description="exact match on phone number"),
         email=graphene.String(description="exact match on email address"),
         role_id=graphene.Int(),
+        roles=graphene.List(of_type=graphene.Int),
         health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
         region_id=graphene.Int(),
         district_id=graphene.Int(),
+        municipality_id=graphene.Int(),
         village_id=graphene.Int(),
         birth_date_from=graphene.Date(),
         birth_date_to=graphene.Date(),
@@ -401,8 +403,8 @@ class Query(graphene.ObjectType):
         return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
-                      role_id=None, health_facility_id=None, region_id=None, district_id=None,
-                      birth_date_from=None, birth_date_to=None, user_types=None, language=None,
+                      role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
+                      municipality_id=None, birth_date_from=None, birth_date_to=None, user_types=None, language=None,
                       village_id=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
@@ -463,10 +465,15 @@ class Query(graphene.ObjectType):
         if role_id:
             user_filters.append(Q(i_user__user_roles__role_id=role_id) &
                                 Q(i_user__user_roles__validity_to__isnull=True))
-        if district_id:
-            user_filters.append(Q(i_user__userdistrict__location_id=district_id))
+        if roles:
+            user_filters.append(Q(i_user__user_roles__role_id__in=roles) &
+                                Q(i_user__user_roles__validity_to__isnull=True))
         if region_id:
             user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+        if district_id:
+            user_filters.append(Q(i_user__userdistrict__location_id=district_id))
+        if municipality_id:
+            user_filters.append(Q(officer__officer_villages__location__parent_id=municipality_id))
         if village_id:
             user_filters.append(Q(officer__officer_villages__location_id=village_id))
 
@@ -842,7 +849,7 @@ class UserBase:
     phone_number = graphene.String(required=False)
     email = graphene.String(required=False)
     password = graphene.String(required=False)
-    health_facility_id = graphene.String(required=False)
+    health_facility_id = graphene.Int(required=False)
     regions = graphene.List(graphene.String, required=False)
     districts = graphene.List(graphene.Int, required=False)
     language = graphene.String(required=True, description="Language code for the user")
@@ -985,7 +992,7 @@ def update_or_create_user(data, user):
         user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
 
     if client_mutation_id:
-        UserMutation.object_mutated(user, core_user=user, client_mutation_id=client_mutation_id)
+        UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
 
 

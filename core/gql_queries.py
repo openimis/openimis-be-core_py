@@ -1,8 +1,9 @@
 import graphene
+import location.gql_queries
 from core import ExtendedConnection, filter_validity
+from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation
 from graphene_django import DjangoObjectType
-
-from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser
+from location.models import HealthFacility
 
 from .utils import prefix_filterset
 
@@ -20,6 +21,7 @@ class OfficerGQLType(DjangoObjectType):
             "code": ["exact", "icontains"],
             "last_name": ["exact", "icontains"],
             "other_names": ["exact", "icontains"],
+            "dob": ["exact"],
         }
         connection_class = ExtendedConnection
 
@@ -84,6 +86,12 @@ class InteractiveUserGQLType(DjangoObjectType):
     InteractiveUser, linked by their "code" aka "login_name"
     """
     language_id = graphene.String()
+    health_facility = graphene.Field(
+        location.gql_queries.HealthFacilityGQLType,
+        description="Health Facility is not a foreign key in the database, this field resolves it manually, use only "
+                    "if necessary.")
+    roles = graphene.List(RoleGQLType, description="Same as userRoles but a straight list, without the M-N relation")
+
     class Meta:
         model = InteractiveUser
         interfaces = (graphene.relay.Node,)
@@ -100,6 +108,20 @@ class InteractiveUserGQLType(DjangoObjectType):
             "language_id": ["exact"],
         }
         connection_class = ExtendedConnection
+
+    def resolve_health_facility(self, info, **kwargs):
+        if self.health_facility_id:
+            return HealthFacility.get_queryset(None, info).filter(pk=self.health_facility_id).first()
+        else:
+            return None
+
+    def resolve_roles(self, info, **kwargs):
+        if self.user_roles:
+            return Role.objects\
+                .filter(validity_to__isnull=True)\
+                .filter(user_roles__user_id=self.id, user_roles__validity_to__isnull=True)
+        else:
+            return None
 
     @classmethod
     def get_queryset(cls, queryset, info):
@@ -120,6 +142,7 @@ class UserGQLType(DjangoObjectType):
             "id": ["exact"],
             "username": ["exact", "icontains"],
             **prefix_filterset("i_user__", InteractiveUserGQLType._meta.filter_fields),
+            **prefix_filterset("officer__", OfficerGQLType._meta.filter_fields),
         }
         interfaces = (graphene.relay.Node,)
         connection_class = ExtendedConnection
@@ -145,3 +168,12 @@ class ModulePermissionGQLType(graphene.ObjectType):
 
 class ModulePermissionsListGQLType(graphene.ObjectType):
     module_perms_list = graphene.List(ModulePermissionGQLType)
+
+
+class UserMutationGQLType(DjangoObjectType):
+    """
+    This intermediate object links Mutations to Users. Beware of the confusion between the user performing the mutation
+    and the users affected by that mutation, the latter being listed in this object.
+    """
+    class Meta:
+        model = UserMutation
