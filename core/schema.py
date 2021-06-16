@@ -332,6 +332,8 @@ class Query(graphene.ObjectType):
         ModulePermissionsListGQLType,
     )
 
+    languages = graphene.List(LanguageGQLType)
+
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
@@ -415,6 +417,9 @@ class Query(graphene.ObjectType):
         if layer is not None:
             crits = (*crits, Q(layer=layer))
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
+
+    def resolve_languages(self, info, **kwargs):
+        return Language.objects.order_by('sort_order').all()
 
 
 class RoleBase:
