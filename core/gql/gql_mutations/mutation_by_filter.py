@@ -130,6 +130,7 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
             if not data.get('uuids', None):
                 args = json.loads(data[query_filters_field])
                 #for contract entities
+                # TODO: need to "pop" based on a section "advanced_search"
                 amount_to = None
                 amount_from = None
                 if 'amountFrom' in args:
@@ -162,6 +163,7 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
 
                 # if mutation is related to contract entities
                 # TODO check type of amount filter to check if we can send signal
+                # TODO: need to send signal for the "pop" based on a search section "advanced_search" (signal should have the advances_search section and the object name)
                 #  (to be implemented in the future) to contract module
                 if django_object.__name__ == 'Contract':
                     if amount_from or amount_to:
