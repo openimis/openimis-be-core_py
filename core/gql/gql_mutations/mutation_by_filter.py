@@ -129,8 +129,25 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
         def wrapper(cls, user, **data):
             if not data.get('uuids', None):
                 args = json.loads(data[query_filters_field])
-                q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
+                #for contract entities
+                amount_to = None
+                amount_from = None
+                if 'amountFrom' in args:
+                    amount_from = args['amountFrom']
+                    args.pop("amountFrom")
+                if 'amountTo' in args:
+                    amount_to = args['amountTo']
+                    args.pop("amountTo")
+                # remove validity filter if applied
+                if 'dateValidFrom_Gte' in args:
+                    args.pop("dateValidFrom_Gte")
+                if 'dateValidTo_Lte' in args:
+                    args.pop("dateValidTo_Lte")
+                # remove isDeleted if applied
+                if 'is_deleted' in args:
+                    args.pop("is_deleted")
 
+                q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
                 from core import datetime
                 now = datetime.datetime.now()
 
@@ -138,9 +155,17 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
                     .objects \
                     .filter(
                         Q(date_valid_from__lte=now),
-                        Q(date_valid_to=None) | Q(date_valid_to__gte=now)
+                        Q(date_valid_to=None) | Q(date_valid_to__gte=now),
+                        Q(is_deleted=False)
                     ) \
                     .filter(q_filter) \
+
+                # if mutation is related to contract entities
+                # TODO check type of amount filter to check if we can send signal
+                #  (to be implemented in the future) to contract module
+                if django_object.__name__ == 'Contract':
+                    if amount_from or amount_to:
+                        base_query = base_query.filter(_append_filter_amount(amount_from, amount_to))
 
                 if return_objects:
                     data['filtered_objects'] = base_query
@@ -150,3 +175,36 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
             async_mutate(cls, user, **data)
         return wrapper
     return inner_function
+
+
+def _append_filter_amount(amount_from, amount_to):
+    # TODO make a signal to contract module to not break modular approach and
+    #  not repeat the same code from contract module
+
+    status_notified = [1, 2]
+    status_rectified = [4, 11, 3]
+    status_due = [5, 6, 7, 8, 9, 10]
+
+    # scenario - only amount_to set
+    if not amount_from and amount_to:
+        return (
+             Q(amount_notified__lte=amount_to, state__in=status_notified) |
+             Q(amount_rectified__lte=amount_to, state__in=status_rectified) |
+             Q(amount_due__lte=amount_to, state__in=status_due)
+        )
+
+    # scenario - only amount_from set
+    if amount_from and not amount_to:
+        return (
+            Q(amount_notified__gte=amount_from, state__in=status_notified) |
+            Q(amount_rectified__gte=amount_from, state__in=status_rectified) |
+            Q(amount_due__gte=amount_from, state__in=status_due)
+        )
+
+    # scenario - both filters set
+    if amount_from and amount_to:
+        return (
+            Q(amount_notified__gte=amount_from, amount_notified__lte=amount_to, state__in=status_notified) |
+            Q(amount_rectified__gte=amount_from, amount_rectified__lte=amount_to, state__in=status_rectified) |
+            Q(amount_due__gte=amount_from, amount_due__lte=amount_to, state__in=status_due)
+        )
