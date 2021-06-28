@@ -535,7 +535,7 @@ class Query(graphene.ObjectType):
             "health_check.cache", "health_check", "health_check.db",
             "test_without_migrations", "test_without_migrations",
             "rules", "graphene_django", "rest_framework", "rest_framework_rules",
-            "health_check.storage", "channels"
+            "health_check.storage", "channels", "graphql_jwt.refresh_token.apps.RefreshTokenConfig"
         ]
         all_apps = [app for app in settings.INSTALLED_APPS if not app.startswith("django") and app not in excluded_app]
         config = []
