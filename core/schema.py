@@ -10,7 +10,7 @@ from functools import reduce
 
 import graphene_django_optimizer as gql_optimizer
 from core.services import create_or_update_interactive_user, create_or_update_core_user, create_or_update_officer, \
-    create_or_update_claim_admin
+    create_or_update_claim_admin, change_user_password
 from core.tasks import openimis_mutation_async
 from django import dispatch
 from django.conf import settings
@@ -386,6 +386,8 @@ class Query(graphene.ObjectType):
         ModulePermissionsListGQLType,
     )
 
+    languages = graphene.List(LanguageGQLType)
+
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
@@ -578,6 +580,9 @@ class Query(graphene.ObjectType):
             crits = (*crits, Q(layer=layer))
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
 
+    def resolve_languages(self, info, **kwargs):
+        return Language.objects.order_by('sort_order').all()
+
 
 class RoleBase:
     id = graphene.Int(required=False, read_only=True)
@@ -592,7 +597,7 @@ class RoleBase:
 
 def update_or_create_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -646,7 +651,7 @@ def update_or_create_role(data, user):
 
 def duplicate_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -1018,6 +1023,49 @@ def set_user_deleted(user):
         }
 
 
+class ChangePasswordMutation(OpenIMISMutation):
+    """
+    Change a user's password. Either the user can update his own by providing the old password, or an administrator
+    (actually someone with the rights to update users) can force it for anyone without providing the old password.
+    """
+    _mutation_module = "core"
+    _mutation_class = "ChangePasswordMutation"
+
+    class Input(OpenIMISMutation.Input):
+        username = graphene.String(
+            required=False,
+            description="By default, this operation works on the logged user,"
+                        "only administrators can run it on any user")
+        old_password = graphene.String(
+            required=False,
+            description="Mandatory to change the current user password, administrators can leave this blank"
+        )
+        new_password = graphene.String(
+            required=True,
+            description="New password to set"
+        )
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+
+            change_user_password(
+                user,
+                username_to_update=data.get("username"),
+                old_password=data.get("old_password"),
+                new_password=data.get("new_password"),
+            )
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_change_user_password",
+                    'detail': str(exc)
+                }]
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
@@ -1027,6 +1075,7 @@ class Mutation(graphene.ObjectType):
     create_user = CreateUserMutation.Field()
     update_user = UpdateUserMutation.Field()
     delete_user = DeleteUserMutation.Field()
+    change_password = ChangePasswordMutation.Field()
 
 
 def on_role_mutation(sender, **kwargs):

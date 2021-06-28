@@ -1,7 +1,7 @@
 import graphene
 import location.gql_queries
 from core import ExtendedConnection, filter_validity
-from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation
+from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation, Language
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility
 
@@ -177,3 +177,17 @@ class UserMutationGQLType(DjangoObjectType):
     """
     class Meta:
         model = UserMutation
+
+        
+class LanguageGQLType(DjangoObjectType):
+    class Meta:
+        model = Language
+        filter_fields = {
+            "language_code": ["exact"],
+            "name": ["exact"],
+            "sort_order": ["exact"]
+        }
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return queryset

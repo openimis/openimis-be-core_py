@@ -220,3 +220,12 @@ class ExtendedRelayConnection(graphene.relay.Connection):
 
     def resolve_edge_count(self, info, **kwargs):
         return len(self.edges)
+
+
+def get_first_or_default_language():
+    from core.models import Language
+    sorted_languages = Language.objects.filter(sort_order__isnull=False)
+    if sorted_languages.exists():
+        return sorted_languages.order_by('sort_order').first()
+    else:
+        return Language.objects.first()

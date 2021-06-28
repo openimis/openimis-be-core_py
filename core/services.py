@@ -1,7 +1,9 @@
+from core.apps import CoreConfig
 from django.apps import apps
 from core.models import User, InteractiveUser, Officer, UserRole
-
+from django.core.exceptions import PermissionDenied, ValidationError
 import logging
+from gettext import gettext as _
 
 logger = logging.getLogger(__file__)
 
@@ -182,3 +184,16 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
         user.claim_admin = claim_admin
     user.save()
     return user, created
+
+
+def change_user_password(logged_user, username_to_update=None, old_password=None, new_password=None):
+    if username_to_update and username_to_update != logged_user.username:
+        if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
+            raise PermissionDenied("unauthorized")
+        user_to_update = User.objects.get(username=username_to_update)
+    else:
+        user_to_update = logged_user
+        if not old_password or not user_to_update.check_password(old_password):
+            raise ValidationError(_("core.wrong_old_password"))
+
+    user_to_update.set_password(new_password)
