@@ -315,36 +315,33 @@ class RoleRight(VersionedModel):
 
 
 class InteractiveUser(VersionedModel):
-    id = models.AutoField(db_column='UserID', primary_key=True)
-    uuid = models.CharField(db_column='UserUUID',
-                            max_length=36, default=uuid.uuid4, unique=True)
-    language = models.ForeignKey(
-        Language, models.DO_NOTHING, db_column='LanguageID')
-    last_name = models.CharField(db_column='LastName', max_length=100)
-    other_names = models.CharField(db_column='OtherNames', max_length=100)
-    phone = models.CharField(
-        db_column='Phone', max_length=50, blank=True, null=True)
-    login_name = models.CharField(db_column='LoginName', max_length=25)
-    health_facility_id = models.IntegerField(
-        db_column='HFID', blank=True, null=True)
+    id = models.AutoField(db_column="UserID", primary_key=True)
+    uuid = models.CharField(db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True)
+    language = models.ForeignKey(Language, models.DO_NOTHING, db_column="LanguageID")
+    last_name = models.CharField(db_column="LastName", max_length=100)
+    other_names = models.CharField(db_column="OtherNames", max_length=100)
+    phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
+    login_name = models.CharField(db_column="LoginName", max_length=25)
+    health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
-    audit_user_id = models.IntegerField(db_column='AuditUserID')
+    audit_user_id = models.IntegerField(db_column="AuditUserID")
     # password = models.BinaryField(blank=True, null=True)
+    # dummy_pwd is always blank. It is actually a transient field used in the Legacy to pass the clear text password in
+    # a User object from the ASPX to the DAL where it is processed into/against password and private key/salt)
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
-    email = models.CharField(
-        db_column='EmailId', max_length=200, blank=True, null=True)
-    # private_key = models.CharField(db_column='PrivateKey', max_length=256, blank=True, null=True)
-    # stored_password = models.CharField(db_column='StoredPassword', max_length=256, blank=True, null=True)
-    # password_validity = models.DateTimeField(db_column='PasswordValidity', blank=True, null=True)
-    # is_associated = models.BooleanField(db_column='IsAssociated', blank=True, null=True)
+    email = models.CharField(db_column="EmailId", max_length=200, blank=True, null=True)
+    private_key = models.CharField(db_column="PrivateKey", max_length=256, blank=True, null=True,
+                                   help_text="The private key is actually a password salt")
+    stored_password = models.CharField(db_column="StoredPassword", max_length=256, blank=True, null=True,
+                                       help_text="By default a SHA256 of the private key (salt) and password")
+    password_validity = models.DateTimeField(db_column="PasswordValidity", blank=True, null=True)
+    is_associated = models.BooleanField(db_column="IsAssociated", blank=True, null=True,
+                                        help_text="has a claim admin or enrolment officer account")
+    role_id = models.IntegerField(db_column="RoleID", null=False)
 
     @property
     def id_for_audit(self):
         return id
-
-    def save(self, *args, **kwargs):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
 
     @property
     def username(self):
@@ -372,12 +369,38 @@ class InteractiveUser(VersionedModel):
         return [str(r) for r in self.rights]
 
     def set_password(self, raw_password):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
+        from hashlib import sha256
+        from secrets import token_hex
+        self.private_key = token_hex(128)
+        pwd_hash = sha256()
+        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
+        self.stored_password = pwd_hash.hexdigest()
 
     def check_password(self, raw_password):
-        # exclusively managed from legacy openIMIS for now!
-        raise NotImplementedError()
+        from hashlib import sha256
+        pwd_hash = sha256()
+        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
+        pwd_hash = pwd_hash.hexdigest()
+        #logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
+        # hashlib gives a lowercase digest while the legacy gives an uppercase one
+        return pwd_hash == self.stored_password.lower()
+
+    @classmethod
+    def is_interactive_user(cls, user):
+        if isinstance(user, InteractiveUser):
+            return user
+        elif isinstance(user, User) and user.i_user is not None:
+            return user.i_user
+        else:
+            return None
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        return queryset
 
     class Meta:
         managed = False
@@ -400,10 +423,10 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, PermissionsMixin):
     username = models.CharField(unique=True, max_length=25)
-    t_user = models.ForeignKey(
-        TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
-    i_user = models.ForeignKey(
-        InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
+    t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
+    i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
+    officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
+    claim_admin = models.ForeignKey("claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True)
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = []
@@ -412,7 +435,24 @@ class User(UUIDModel, PermissionsMixin):
 
     def __init__(self, *args, **kwargs):
         super(User, self).__init__(*args, **kwargs)
-        self._u = self.i_user or self.t_user
+        try:
+            self._u = self.i_user or self.officer or self.claim_admin or self.t_user
+        except ValueError:
+            deferred = self.get_deferred_fields()
+            if any(x in deferred for x in ["i_user", "officer", "claim_admin", "t_user"]):
+                logger.error("Some of the user type fields are deferred, this breaks the dynamic loading of "
+                             "openIMIS User, if calling from GraphQL, remove the optimizer")
+            raise
+
+    @property
+    def email(self):
+        if self.i_user:
+            return self.i_user.email
+        if self.officer:
+            return self.officer.email
+        if self.claim_admin:
+            return self.claim_admin.email_id
+        return None
 
     @property
     def id_for_audit(self):
@@ -461,8 +501,8 @@ class User(UUIDModel, PermissionsMixin):
             return self.username
         if name == 'get_session_auth_hash':
             return False
-        if not self._u:
-            return None
+        # if not self._u:
+        #     return None
         return getattr(self._u, name)
 
     def __call__(self, *args, **kwargs):
@@ -471,12 +511,32 @@ class User(UUIDModel, PermissionsMixin):
         return self._u(*args, **kwargs)
 
     def __str__(self):
-        return "(%s) %s [%s]" % (('i' if self.i_user else 't'), self.username, self.id)
+        if self.i_user:
+            utype = 'i'
+        elif self.t_user:
+            utype = 't'
+        elif self.officer:
+            utype = 'o'
+        elif self.claim_admin:
+            utype = 'c'
+        else:
+            utype = '?'
+        return "(%s) %s [%s]" % (utype, self.username, self.id)
 
     def save(self, *args, **kwargs):
         if self._u and self._u.id:
             self._u.save()
         super().save(*args, **kwargs)
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        if settings.ROW_SECURITY:
+            pass
+        return queryset
 
     class Meta:
         managed = True
@@ -505,20 +565,65 @@ class Officer(VersionedModel):
     location = models.ForeignKey('location.Location', models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
     substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
     works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
-    # veocode = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
-    # veolastname = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
-    # veoothernames = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
-    # veodob = models.DateField(db_column='VEODOB', blank=True, null=True)
-    # veophone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
+    veo_code = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
+    veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
+    veo_other_names = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
+    veo_dob = models.DateField(db_column='VEODOB', blank=True, null=True)
+    veo_phone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
-    # emailid = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
+    email = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
     phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
-    # permanentaddress = models.CharField(max_length=100, blank=True, null=True)
-    # haslogin = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+    address = models.CharField(db_column="permanentaddress", max_length=100, blank=True, null=True)
+    has_login = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+    # user = models.ForeignKey(User, db_column='UserID', blank=True, null=True, on_delete=models.CASCADE)
 
     def name(self):
         return " ".join(n for n in [self.last_name, self.other_names] if n is not None)
+
+    def __str__(self):
+        return "[%s] %s" % (self.code, self.name())
+
+    @property
+    def id_for_audit(self):
+        return id
+
+    @property
+    def username(self):
+        return self.code
+
+    def get_username(self):
+        return self.code
+
+    @property
+    def is_staff(self):
+        return False
+
+    @property
+    def is_superuser(self):
+        return False
+
+    @cached_property
+    def rights(self):
+        return []
+
+    @cached_property
+    def rights_str(self):
+        return []
+
+    def set_password(self, raw_password):
+        raise NotImplementedError("Shouldn't set a password on an Officer")
+
+    def check_password(self, raw_password):
+        return False
+
+    @classmethod
+    def get_queryset(cls, queryset, user):
+        if isinstance(user, ResolveInfo):
+            user = user.context.user
+        if settings.ROW_SECURITY and user.is_anonymous:
+            return queryset.filter(id=-1)
+        return queryset
 
     class Meta:
         managed = False
@@ -604,7 +709,7 @@ class ObjectMutation:
         # This method should fail silently to not disrupt the actual mutation
         # noinspection PyBroadException
         try:
-            args_models = {k: v for k, v in kwargs.items() if isinstance(v, models.Model)}
+            args_models = {k + "_id": v.id for k, v in kwargs.items() if isinstance(v, models.Model)}
             if len(args_models) == 0 or len(args_models) > 1:
                 logger.error("Trying to update ObjectMutationLink with several models in params: %s",
                              ", ".join(args_models.keys()))
@@ -757,7 +862,6 @@ class HistoryBusinessModel(HistoryModel):
         """2 step - update the fields for the entity to be replaced"""
         # convert to datetime if the date_valid_from from new entity is date
         from core import datetime
-        now = datetime.datetime.now()
         if not isinstance(date_valid_from_new_entity, datetime.datetime):
             date_valid_from_new_entity = datetime.datetime.combine(
                 date_valid_from_new_entity,
@@ -788,3 +892,12 @@ class RoleMutation(UUIDModel, ObjectMutation):
     class Meta:
         managed = True
         db_table = "core_RoleMutation"
+
+
+class UserMutation(UUIDModel, ObjectMutation):
+    core_user = models.ForeignKey(User, models.CASCADE, related_name='mutations')
+    mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='users')
+
+    class Meta:
+        managed = True
+        db_table = "core_UserMutation"

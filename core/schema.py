@@ -4,32 +4,31 @@ import logging
 import re
 import sys
 import uuid
-
 from copy import copy
 from datetime import datetime as py_datetime
-from typing import Optional
+from functools import reduce
 
-import graphene
 import graphene_django_optimizer as gql_optimizer
-from core import ExtendedConnection
+from core.services import create_or_update_interactive_user, create_or_update_core_user, create_or_update_officer, \
+    create_or_update_claim_admin, change_user_password
 from core.tasks import openimis_mutation_async
 from django import dispatch
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
-from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
-from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
+from typing import Optional
 
 from .apps import CoreConfig
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation
-
 from .gql_queries import *
+from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -307,6 +306,19 @@ class MutationLogGQLType(DjangoObjectType):
         return queryset
 
 
+UT_INTERACTIVE = "INTERACTIVE"
+UT_TECHNICAL = "TECHNICAL"
+UT_OFFICER = "OFFICER"
+UT_CLAIM_ADMIN = "CLAIM_ADMIN"
+
+UserTypeEnum = graphene.Enum("UserTypes", [
+            (UT_INTERACTIVE, UT_INTERACTIVE),
+            (UT_OFFICER, UT_OFFICER),
+            (UT_TECHNICAL, UT_TECHNICAL),
+            (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
+        ])
+
+
 class Query(graphene.ObjectType):
     module_configurations = graphene.List(
         ModuleConfigurationGQLType,
@@ -322,10 +334,52 @@ class Query(graphene.ObjectType):
         is_system=graphene.Boolean(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
+        str=graphene.String(description="Text search on any field")
     )
 
     role_right = OrderedDjangoFilterConnectionField(
         RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+    )
+
+    interactiveUsers = OrderedDjangoFilterConnectionField(
+        InteractiveUserGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date(),
+        show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
+    )
+
+    users = OrderedDjangoFilterConnectionField(
+        UserGQLType,
+        orderBy=graphene.List(of_type=graphene.String),
+        validity=graphene.Date(),
+        show_history=graphene.Boolean(),
+        client_mutation_id=graphene.String(),
+        last_name=graphene.String(description="partial match, case insensitive"),
+        other_names=graphene.String(description="partial match, case insensitive"),
+        phone=graphene.String(description="exact match on phone number"),
+        email=graphene.String(description="exact match on email address"),
+        role_id=graphene.Int(),
+        roles=graphene.List(of_type=graphene.Int),
+        health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
+        region_id=graphene.Int(),
+        district_id=graphene.Int(),
+        municipality_id=graphene.Int(),
+        village_id=graphene.Int(),
+        birth_date_from=graphene.Date(),
+        birth_date_to=graphene.Date(),
+        user_types=graphene.List(of_type=UserTypeEnum),
+        language=graphene.String(),
+        str=graphene.String(description="text search that will check username, last name, other names and email"),
+        description="This interface provides access to the various types of users in openIMIS. The main resource"
+                    "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
+                    "is exposed in GraphQL. There are also optional links to ClaimAdministrator and Officer depending"
+                    "on the setup. BEWARE, fetching these links is costly as there is no direct database link between"
+                    "these entities and there are retrieved one by one. Do not fetch them for large lists if you can"
+                    "avoid it. The showHistory is acting on the InteractiveUser, avoid mixing with Officer or "
+                    "ClaimAdmin."
+    )
+
+    user = OrderedDjangoFilterConnectionField(
+        UserGQLType, order_by=graphene.List(of_type=graphene.String)
     )
 
     modules_permissions = graphene.Field(
@@ -334,11 +388,119 @@ class Query(graphene.ObjectType):
 
     languages = graphene.List(LanguageGQLType)
 
+    def resolve_interactive_users(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionError("Unauthorized")
+        filters = []
+        query = InteractiveUser.objects
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
+        show_history = kwargs.get('show_history', False)
+        if not show_history and not kwargs.get('uuid', None):
+            filters += filter_validity(**kwargs)
+
+        return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
+                      role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
+                      municipality_id=None, birth_date_from=None, birth_date_to=None, user_types=None, language=None,
+                      village_id=None, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionError("Unauthorized")
+        user_filters = []
+        user_query = User.objects.exclude(t_user__isnull=False)
+        text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
+        if text_search:
+            user_filters.append(Q(username__icontains=text_search) |
+                                Q(i_user__last_name__icontains=text_search) |
+                                Q(officer__last_name__icontains=text_search) |
+                                Q(claim_admin__last_name__icontains=text_search) |
+                                Q(i_user__other_names__icontains=text_search) |
+                                Q(officer__other_names__icontains=text_search) |
+                                Q(claim_admin__other_names__icontains=text_search) |
+                                Q(i_user__email=text_search) |
+                                Q(officer__email=text_search) |
+                                Q(claim_admin__email_id=text_search)
+                                )
+
+        client_mutation_id = kwargs.get("client_mutation_id", None)
+        if client_mutation_id:
+            user_filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
+
+        # show_history = kwargs.get('show_history', False)
+        # if not show_history and not kwargs.get('uuid', None):
+        #     user_filters += filter_validity(**kwargs)
+        if email:
+            user_filters.append(Q(i_user__email=email) |
+                                Q(officer__email=email) |
+                                Q(claim_admin__email_id=email))
+        if phone:
+            user_filters.append(Q(i_user__phone=phone) |
+                                Q(officer__phone=phone) |
+                                Q(claim_admin__phone=phone))
+        if last_name:
+            user_filters.append(Q(i_user__last_name__icontains=last_name) |
+                                Q(officer__last_name__icontains=last_name) |
+                                Q(claim_admin__last_name__icontains=last_name))
+        if other_names:
+            user_filters.append(Q(i_user__other_names__icontains=other_names) |
+                                Q(officer__other_names__icontains=other_names) |
+                                Q(claim_admin__other_names__icontains=other_names))
+        if language:
+            user_filters.append(Q(i_user__language=language))
+            # Language is not applicable to Office/ClaimAdmin
+        if health_facility_id:
+            user_filters.append(Q(i_user__health_facility_id=health_facility_id) |
+                                Q(officer__location_id=health_facility_id) |
+                                Q(claim_admin__health_facility_id=health_facility_id))
+        if birth_date_from:
+            user_filters.append(Q(officer__dob__gte=birth_date_from) |
+                                Q(officer__veo_dob__gte=birth_date_from) |
+                                Q(claim_admin__dob__gte=birth_date_from))
+        if birth_date_to:
+            user_filters.append(Q(officer__dob__lte=birth_date_to) |
+                                Q(officer__veo_dob__lte=birth_date_to) |
+                                Q(claim_admin__dob__lte=birth_date_to))
+        if role_id:
+            user_filters.append(Q(i_user__user_roles__role_id=role_id) &
+                                Q(i_user__user_roles__validity_to__isnull=True))
+        if roles:
+            user_filters.append(Q(i_user__user_roles__role_id__in=roles) &
+                                Q(i_user__user_roles__validity_to__isnull=True))
+        if region_id:
+            user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+        if district_id:
+            user_filters.append(Q(i_user__userdistrict__location_id=district_id))
+        if municipality_id:
+            user_filters.append(Q(officer__officer_villages__location__parent_id=municipality_id))
+        if village_id:
+            user_filters.append(Q(officer__officer_villages__location_id=village_id))
+
+        if user_types:
+            ut_conditions = {
+                UT_INTERACTIVE: Q(i_user__isnull=False),
+                UT_OFFICER: Q(officer__isnull=False),
+                UT_TECHNICAL: Q(t_user__isnull=False),
+                UT_CLAIM_ADMIN: Q(claim_admin__isnull=False),
+            }
+            user_filters.append(reduce(lambda a, b: a | b, [ut_conditions[x] for x in user_types]))
+
+        # Do NOT use the query optimizer here ! It would make the t_user, officer etc as deferred fields if they are not
+        # explicitly requested in the GraphQL response. However, this prevents the dynamic remapping of the User object.
+        return user_query.filter(*user_filters)
+
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
         filters = []
         query = Role.objects
+
+        text_search = kwargs.get("str")
+        if text_search:
+            filters.append(Q(name__icontains=text_search))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
@@ -435,7 +597,7 @@ class RoleBase:
 
 def update_or_create_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -459,12 +621,10 @@ def update_or_create_role(data, user):
                 if right_id not in role_rights_currently_assigned:
                     # create role right because it is a new role right
                     RoleRight.objects.create(
-                        **{
-                            "role_id": role.id,
-                            "right_id": right_id,
-                            "audit_user_id": role.audit_user_id,
-                            "validity_from": now,
-                        }
+                        role_id=role.id,
+                        right_id=right_id,
+                        audit_user_id=role.audit_user_id,
+                        validity_from=now,
                     )
                 else:
                     # set date valid to - None
@@ -491,7 +651,7 @@ def update_or_create_role(data, user):
 
 def duplicate_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
-    client_mutation_label = data.get("client_mutation_label", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -684,11 +844,238 @@ class DuplicateRoleMutation(OpenIMISMutation):
                 }]
 
 
+class UserBase:
+    id = graphene.String(required=False, read_only=True,
+                         description="UUID of the core User, one can leave this blank and specify the username instead")
+    user_id = graphene.String(required=False)
+    other_names = graphene.String(required=True, max_length=50)
+    last_name = graphene.String(required=True, max_length=50)
+    username = graphene.String(required=True, max_length=8)
+    phone_number = graphene.String(required=False)
+    email = graphene.String(required=False)
+    password = graphene.String(required=False)
+    health_facility_id = graphene.Int(required=False)
+    regions = graphene.List(graphene.String, required=False)
+    districts = graphene.List(graphene.Int, required=False)
+    language = graphene.String(required=True, description="Language code for the user")
+
+    # Interactive User only
+    roles = graphene.List(graphene.Int, required=False,
+                          description="List of role_ids, required for interactive users")
+
+    # Enrolment Officer / Feedback / Claim Admin specific
+    birth_date = graphene.Date(required=False)
+    address = graphene.String(required=False)  # multi-line
+    works_to = graphene.Date(required=False)
+    substitution_officer_id = graphene.Int(required=False)
+    # TODO VEO_code, last_name, other names, dob, phone
+    phone_communication = graphene.Boolean(required=False)
+    village_ids = graphene.List(graphene.Int, required=False)
+
+    user_types = graphene.List(UserTypeEnum, required=True)
+
+
+class CreateUserMutation(OpenIMISMutation):
+    """
+    Create a new user, the "core" one but also Interactive, Technical, Officer or Admin
+    """
+    _mutation_module = "core"
+    _mutation_class = "CreateUserMutation"
+
+    class Input(UserBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_user(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_create_user",
+                    'detail': str(exc)
+                }]
+
+
+class UpdateUserMutation(OpenIMISMutation):
+    """
+    Update an existing User and sub-user types
+    """
+    _mutation_module = "core"
+    _mutation_class = "UpdateUserMutation"
+
+    class Input(UserBase, OpenIMISMutation.Input):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+                raise PermissionDenied("unauthorized")
+            from core.utils import TimeUtils
+            data['validity_from'] = TimeUtils.now()
+            data['audit_user_id'] = user.id_for_audit
+            update_or_create_user(data, user)
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_update_user",
+                    'detail': str(exc)
+                }]
+
+
+class DeleteUserMutation(OpenIMISMutation):
+    """
+    Delete a chosen user
+    """
+    _mutation_module = "core"
+    _mutation_class = "DeleteUserMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        if not user.has_perms(CoreConfig.gql_mutation_delete_users_perms):
+            raise PermissionDenied("unauthorized")
+        errors = []
+        for user_uuid in data["uuids"]:
+            user = User.objects \
+                .filter(id=user_uuid) \
+                .first()
+            if user is None:
+                errors.append({
+                    'title': user,
+                    'list': [{'message':
+                        "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                })
+                continue
+            errors += set_user_deleted(user)
+        if len(errors) == 1:
+            errors = errors[0]['list']
+        return errors
+
+
+@transaction.atomic
+def update_or_create_user(data, user):
+    client_mutation_id = data.get("client_mutation_id", None)
+    # client_mutation_label = data.get("client_mutation_label", None)
+
+    if "client_mutation_id" in data:
+        data.pop('client_mutation_id')
+    if "client_mutation_label" in data:
+        data.pop('client_mutation_label')
+    user_uuid = data.pop('uuid') if 'uuid' in data else None
+
+    if UT_INTERACTIVE in data["user_types"]:
+        i_user, i_user_created = create_or_update_interactive_user(
+            user_uuid, data, user.id_for_audit, len(data["user_types"]) > 1)
+    else:
+        i_user, i_user_created = None, False
+    if UT_OFFICER in data["user_types"]:
+        officer, officer_created = create_or_update_officer(
+            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
+    else:
+        officer, officer_created = None, False
+    if UT_CLAIM_ADMIN in data["user_types"]:
+        claim_admin, claim_admin_created = create_or_update_claim_admin(
+            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
+    else:
+        claim_admin, claim_admin_created = None, False
+    core_user, core_user_created = create_or_update_core_user(
+        user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
+
+    if client_mutation_id:
+        UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
+    return core_user
+
+
+def set_user_deleted(user):
+    try:
+        if user.i_user:
+            user.i_user.delete_history()
+        if user.t_user:
+            user.t_user.delete_history()
+        if user.officer:
+            user.officer.delete_history()
+        if user.claim_admin:
+            user.claim_admin.delete_history()
+        user.delete()  # TODO: we might consider disabling Users instead of deleting entirely.
+        return []
+    except Exception as exc:
+        logger.info("role.mutation.failed_to_change_status_of_user" % {'user': str(user)})
+        return {
+            "title": user.id,
+            "list": [{
+                "message": "role.mutation.failed_to_change_status_of_user" % {'user': str(user)},
+                "detail": user.id}]
+        }
+
+
+class ChangePasswordMutation(OpenIMISMutation):
+    """
+    Change a user's password. Either the user can update his own by providing the old password, or an administrator
+    (actually someone with the rights to update users) can force it for anyone without providing the old password.
+    """
+    _mutation_module = "core"
+    _mutation_class = "ChangePasswordMutation"
+
+    class Input(OpenIMISMutation.Input):
+        username = graphene.String(
+            required=False,
+            description="By default, this operation works on the logged user,"
+                        "only administrators can run it on any user")
+        old_password = graphene.String(
+            required=False,
+            description="Mandatory to change the current user password, administrators can leave this blank"
+        )
+        new_password = graphene.String(
+            required=True,
+            description="New password to set"
+        )
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+
+            change_user_password(
+                user,
+                username_to_update=data.get("username"),
+                old_password=data.get("old_password"),
+                new_password=data.get("new_password"),
+            )
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_change_user_password",
+                    'detail': str(exc)
+                }]
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
     delete_role = DeleteRoleMutation.Field()
     duplicate_role = DuplicateRoleMutation.Field()
+
+    create_user = CreateUserMutation.Field()
+    update_user = UpdateUserMutation.Field()
+    delete_user = DeleteUserMutation.Field()
+    change_password = ChangePasswordMutation.Field()
 
 
 def on_role_mutation(sender, **kwargs):
@@ -706,5 +1093,21 @@ def on_role_mutation(sender, **kwargs):
     return []
 
 
+def on_user_mutation(sender, **kwargs):
+    uuid = kwargs['data'].get('uuid', None)
+    if not uuid:
+        return []
+
+    # For duplicate log is created in the duplicate_role function, mutation log added here would reference original role
+    if "User" in str(sender._mutation_class):
+        impacted = User.objects.get(uuid=uuid)
+        UserMutation.objects.create(
+            role=impacted, mutation_id=kwargs['mutation_log_id']
+        )
+
+    return []
+
+
 def bind_signals():
     signal_mutation_module_validate["core"].connect(on_role_mutation)
+    signal_mutation_module_validate["core"].connect(on_user_mutation)
