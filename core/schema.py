@@ -545,7 +545,7 @@ class Query(graphene.ObjectType):
                 config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
                 for key, value in config_dict.items():
-                    if "gql_query" in key or "gql_mutation" in key:
+                    if key.endswith("_perms"):
                         if isinstance(value, list):
                             for val in value:
                                 permission.append(PermissionOpenImisGQLType(
