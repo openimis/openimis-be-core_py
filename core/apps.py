@@ -33,6 +33,17 @@ DEFAULT_CFG = {
     "gql_mutation_replace_roles_perms": ["122006"],
     "gql_mutation_duplicate_roles_perms": ["122005"],
     "gql_mutation_delete_roles_perms": ["122004"],
+    # TODO consider moving that roles related to ClaimAdmin and EnrolmentOfficer
+    #  into modules related to that type of user for example
+    #  EnrolmentOfficer -> policy module, ClaimAdmin -> claim module etc
+    "gql_query_enrolment_officers_perms": ["121501"],
+    "gql_mutation_create_enrolment_officers_perms": ["121502"],
+    "gql_mutation_update_enrolment_officers_perms": ["121503"],
+    "gql_mutation_delete_enrolment_officers_perms": ["121504"],
+    "gql_query_claim_administrator_perms": ["121601"],
+    "gql_mutation_create_claim_administrator_perms": ["121602"],
+    "gql_mutation_update_claim_administrator_perms": ["121603"],
+    "gql_mutation_delete_claim_administrator_perms": ["121604"],
 }
 
 
@@ -49,6 +60,17 @@ class CoreConfig(AppConfig):
     gql_mutation_create_users_perms = []
     gql_mutation_update_users_perms = []
     gql_mutation_delete_users_perms = []
+    # TODO consider moving that roles related to ClaimAdmin and EnrolmentOfficer
+    #  into modules related to that type of user for example
+    #  EnrolmentOfficer -> policy module, ClaimAdmin -> claim module etc
+    gql_query_enrolment_officers_perms = []
+    gql_mutation_create_enrolment_officers_perms = []
+    gql_mutation_update_enrolment_officers_perms = []
+    gql_mutation_delete_enrolment_officers_perms = []
+    gql_query_claim_administrator_perms = []
+    gql_mutation_create_claim_administrator_perms = []
+    gql_mutation_update_claim_administrator_perms = []
+    gql_mutation_delete_claim_administrator_perms = []
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -109,6 +131,14 @@ class CoreConfig(AppConfig):
         CoreConfig.gql_mutation_create_users_perms = cfg["gql_mutation_create_users_perms"]
         CoreConfig.gql_mutation_update_users_perms = cfg["gql_mutation_update_users_perms"]
         CoreConfig.gql_mutation_delete_users_perms = cfg["gql_mutation_delete_users_perms"]
+        CoreConfig.gql_query_enrolment_officers_perms = cfg["gql_query_enrolment_officers_perms"]
+        CoreConfig.gql_mutation_create_enrolment_officers_perms = cfg["gql_mutation_create_enrolment_officers_perms"]
+        CoreConfig.gql_mutation_update_enrolment_officers_perms = cfg["gql_mutation_update_enrolment_officers_perms"]
+        CoreConfig.gql_mutation_delete_enrolment_officers_perms = cfg["gql_mutation_delete_enrolment_officers_perms"]
+        CoreConfig.gql_query_claim_administrator_perms = cfg["gql_query_claim_administrator_perms"]
+        CoreConfig.gql_mutation_create_claim_administrator_perms = cfg["gql_mutation_create_claim_administrator_perms"]
+        CoreConfig.gql_mutation_update_claim_administrator_perms = cfg["gql_mutation_update_claim_administrator_perms"]
+        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
 
     def ready(self):
         from .models import ModuleConfiguration
