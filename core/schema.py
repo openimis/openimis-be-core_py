@@ -24,6 +24,7 @@ from django.http import HttpRequest
 from django.utils import translation
 from graphene.utils.str_converters import to_snake_case
 from graphene_django.filter import DjangoFilterConnectionField
+import graphql_jwt
 from typing import Optional
 
 from .apps import CoreConfig
@@ -1076,6 +1077,12 @@ class Mutation(graphene.ObjectType):
     update_user = UpdateUserMutation.Field()
     delete_user = DeleteUserMutation.Field()
     change_password = ChangePasswordMutation.Field()
+
+    token_auth = graphql_jwt.mutations.ObtainJSONWebToken.Field()
+    verify_token = graphql_jwt.mutations.Verify.Field()
+    refresh_token = graphql_jwt.mutations.Refresh.Field()
+    revoke_token = graphql_jwt.mutations.Revoke.Field()
+
 
 
 def on_role_mutation(sender, **kwargs):
