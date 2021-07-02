@@ -47,4 +47,10 @@ class JWTAuthentication(BaseAuthentication):
         else:
             raise exceptions.AuthenticationFailed("Missing 'Bearer' prefix")
 
+        self.enforce_csrf(request)
+
         return user, None
+
+    def enforce_csrf(self, request):
+        return  # To not perform the csrf during checking auth header
+
