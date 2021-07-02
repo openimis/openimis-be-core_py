@@ -1,7 +1,6 @@
 from .jwt import jwt_decode_user_key
 
 from django.apps import apps
-from django.middleware.csrf import CsrfViewMiddleware
 from rest_framework.authentication import BaseAuthentication
 from rest_framework import exceptions
 
@@ -9,12 +8,6 @@ import jwt
 import logging
 
 logger = logging.getLogger(__file__)
-
-
-class CSRFCheck(CsrfViewMiddleware):
-    def _reject(self, request, reason):
-        # Return the failure reason instead of an HttpResponse
-        return reason
 
 
 class JWTAuthentication(BaseAuthentication):
@@ -54,21 +47,4 @@ class JWTAuthentication(BaseAuthentication):
         else:
             raise exceptions.AuthenticationFailed("Missing 'Bearer' prefix")
 
-        self.enforce_csrf(request)
-
         return user, None
-
-
-    def enforce_csrf(self, request):
-        """
-        Enforce CSRF validation
-        """
-        check = CSRFCheck()
-        # populates request.META['CSRF_COOKIE'], which is used in process_view()
-        check.process_request(request)
-        reason = check.process_view(request, None, (), {})
-        logger.debug(reason)
-        if reason:
-            # CSRF failed, bail with explicit error message
-            raise exceptions.PermissionDenied('CSRF Failed: %s' % reason)
-
