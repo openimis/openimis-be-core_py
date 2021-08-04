@@ -334,7 +334,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(officer2.location_id, 17)
         self.assertIsNone(officer2.substitution_officer_id)
         self.assertEquals(officer2.address, "updated address")
-        self.assertEquals(officer2.works_to, "2025-05-01")
+        self.assertEquals(officer2.works_to, "2025-05-05")
         self.assertEquals(list(
             OfficerVillage.objects
                 .filter(validity_to__isnull=True, officer=officer2)

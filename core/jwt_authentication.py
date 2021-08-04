@@ -24,7 +24,7 @@ class JWTAuthentication(BaseAuthentication):
         if authorization_header.lower().startswith('bearer '):
             bearer, access_token, *extra_words = authorization_header.split(' ')
             if len(extra_words) > 0:
-                raise exceptions.AuthenticationFailed("Unproper structure of token")
+                raise exceptions.AuthenticationFailed("Improper structure of token")
             try:
                 payload = jwt_decode_user_key(token=access_token)
             except jwt.DecodeError:
