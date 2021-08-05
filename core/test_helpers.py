@@ -16,7 +16,7 @@ def create_test_officer(valid=True, custom_props=None):
     return officer
 
 
-def create_test_interactive_user(username, roles=None, custom_props=None):
+def create_test_interactive_user(username, password="Test1234", roles=None, custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
     i_user = InteractiveUser.objects.create(
@@ -30,6 +30,8 @@ def create_test_interactive_user(username, roles=None, custom_props=None):
             **(custom_props if custom_props else {})
         }
     )
+    i_user.set_password(password)
+    i_user.save()
     create_or_update_user_roles(i_user, roles)
     return User.objects.create(
         username=username,
