@@ -144,7 +144,8 @@ class ModuleConfiguration(UUIDModel):
 
     @cached_property
     def _cfg(self):
-        return json.loads(self.config)
+        import collections
+        return json.loads(self.config, object_pairs_hook=collections.OrderedDict)
 
     def __str__(self):
         return "%s [%s]" % (self.module, self.version)
