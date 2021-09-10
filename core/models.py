@@ -7,7 +7,7 @@ from copy import copy
 
 import core
 from django.db import models
-from django.db.models import Q, DO_NOTHING
+from django.db.models import Q, DO_NOTHING, F
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
@@ -43,7 +43,7 @@ class BaseVersionedModel(models.Model):
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
 
     def save_history(self, **kwargs):
-        if not self.id: # only copy if the data is being updated
+        if not self.id:  # only copy if the data is being updated
             return None
         histo = copy(self)
         histo.id = None
@@ -381,7 +381,7 @@ class InteractiveUser(VersionedModel):
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         pwd_hash = pwd_hash.hexdigest()
-        #logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
+        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
         # hashlib gives a lowercase digest while the legacy gives an uppercase one
         return pwd_hash == self.stored_password.lower()
 
@@ -563,7 +563,8 @@ class Officer(VersionedModel):
     dob = models.DateField(db_column='DOB', blank=True, null=True)
     phone = models.CharField(db_column='Phone', max_length=50, blank=True, null=True)
     location = models.ForeignKey('location.Location', models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
-    substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True, null=True)
+    substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True,
+                                             null=True)
     works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
     veo_code = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
     veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
@@ -576,6 +577,7 @@ class Officer(VersionedModel):
     phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
     address = models.CharField(db_column="permanentaddress", max_length=100, blank=True, null=True)
     has_login = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+
     # user = models.ForeignKey(User, db_column='UserID', blank=True, null=True, on_delete=models.CASCADE)
 
     def name(self):
@@ -666,7 +668,7 @@ class MutationLog(UUIDModel):
         method will only set the mutation_log as successful if it is in RECEIVED status.
         :return True if the status was updated, False if it was in ERROR or already in SUCCESS status
         """
-        affected_rows = MutationLog.objects.filter(id=self.id)\
+        affected_rows = MutationLog.objects.filter(id=self.id) \
             .filter(status=MutationLog.RECEIVED).update(status=MutationLog.SUCCESS)
         self.refresh_from_db()
         return affected_rows > 0
@@ -676,7 +678,7 @@ class MutationLog(UUIDModel):
         Do not alter the mutation_log and then save it as it might override changes from another process.
         This method will force the status to ERROR and set its error accordingly.
         """
-        MutationLog.objects.filter(id=self.id)\
+        MutationLog.objects.filter(id=self.id) \
             .update(status=MutationLog.ERROR, error=error)
         self.refresh_from_db()
 
@@ -704,6 +706,7 @@ class ObjectMutation:
     Note that payment=payment, the name of the parameter gives the field name of the xxxMutation object to use
     and the value is the instance itself.
     """
+
     @classmethod
     def object_mutated(cls, user, mutation_log_id=None, client_mutation_id=None, *args, **kwargs):
         # This method should fail silently to not disrupt the actual mutation
@@ -738,23 +741,38 @@ class ObjectMutation:
             logger.error("Error updating the %s object", cls.__name__, exc_info=True)
 
 
+class HistoryModelManager(models.Manager):
+    """
+        Custom manager that allows querying HistoryModel by uuid
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().annotate(uuid=F('id'))
+
+
 class HistoryModel(DirtyFieldsMixin, models.Model):
     id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
+    objects = HistoryModelManager()
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)
     json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
     date_created = DateTimeField(db_column="DateCreated", null=True)
     date_updated = DateTimeField(db_column="DateUpdated", null=True)
-    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created', on_delete=models.deletion.DO_NOTHING, null=False)
-    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated', on_delete=models.deletion.DO_NOTHING, null=False)
+    user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created',
+                                     on_delete=models.deletion.DO_NOTHING, null=False)
+    user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated',
+                                     on_delete=models.deletion.DO_NOTHING, null=False)
     version = models.IntegerField(default=1)
     history = HistoricalRecords(
         inherit=True,
     )
 
-    def _get_id(self):
+    @property
+    def uuid(self):
         return self.id
 
-    uuid = property(_get_id)
+    @uuid.setter
+    def uuid(self, v):
+        self.id = v
 
     def set_pk(self):
         self.pk = uuid.uuid4()
@@ -763,13 +781,13 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         pass
 
     def save(self, *args, **kwargs):
-        #get the user data so as to assign later his uuid id in fields user_updated etc
+        # get the user data so as to assign later his uuid id in fields user_updated etc
         user = User.objects.get(**kwargs)
         from core import datetime
         now = datetime.datetime.now()
-        #check if object has been newly created
+        # check if object has been newly created
         if self.id is None:
-            #save the new object
+            # save the new object
             self.set_pk()
             self.user_created = user
             self.user_updated = user
@@ -800,7 +818,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.user_updated = user
             self.version = self.version + 1
             self.is_deleted = True
-            #check if we have business model
+            # check if we have business model
             if hasattr(self, "replacement_uuid"):
                 # When a replacement entity is deleted, the link should be removed
                 # from replaced entity so a new replacement could be generated
@@ -810,7 +828,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
                     replaced_entity.save(username="admin")
             return super(HistoryModel, self).save()
         else:
-            raise ValidationError('Record has not be deactivating, the object is different and must be updated before deactivating')
+            raise ValidationError(
+                'Record has not be deactivating, the object is different and must be updated before deactivating')
 
     @classmethod
     def filter_queryset(cls, queryset=None):
@@ -829,14 +848,15 @@ class HistoryBusinessModel(HistoryModel):
     replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
 
     def replace_object(self, data, **kwargs):
-        #check if object was created and saved in database (having date_created field)
+        # check if object was created and saved in database (having date_created field)
         if self.id is None:
             return None
         user = User.objects.get(**kwargs)
-        #1 step - create new entity
+        # 1 step - create new entity
         new_entity = self._create_new_entity(user=user, data=data)
-        #2 step - update the fields for the entity to be replaced
-        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id, date_valid_from_new_entity=new_entity.date_valid_from)
+        # 2 step - update the fields for the entity to be replaced
+        self._update_replaced_entity(user=user, uuid_from_new_entity=new_entity.id,
+                                     date_valid_from_new_entity=new_entity.date_valid_from)
 
     def _create_new_entity(self, user, data):
         """1 step - create new entity"""
