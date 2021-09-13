@@ -150,7 +150,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         mutation_log = MutationLog.objects.create(
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
-            client_mutation_id=data.get('client_mutation_id'),
+            client_mutation_id=data.get("client_mutation_id"),
             client_mutation_label=data.get("client_mutation_label"),
             client_mutation_details=json.dumps(data.get(
                 "client_mutation_details"), cls=OpenIMISJSONEncoder) if data.get("client_mutation_details") else None
@@ -383,11 +383,38 @@ class Query(graphene.ObjectType):
         UserGQLType, order_by=graphene.List(of_type=graphene.String)
     )
 
+    enrolment_officers = OrderedDjangoFilterConnectionField(
+        OfficerGQLType,
+        str=graphene.String(
+            description="text search that will check username, last name, other names and email"
+        ),
+    )
+
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
 
     languages = graphene.List(LanguageGQLType)
+
+    def resolve_enrolment_officers(self, info, **kwargs):
+        from .models import Officer
+
+        if not info.context.user.has_perms(
+            CoreConfig.gql_query_enrolment_officers_perms
+        ):
+            raise PermissionError("Unauthorized")
+
+        search = kwargs.get("str")
+
+        if search is not None:
+            return gql_optimizer.query(
+                Officer.objects.filter(
+                    Q(code__icontains=search)
+                    | Q(last_name__icontains=search)
+                    | Q(other_names__icontains=search)
+                ),
+                info,
+            )
 
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):

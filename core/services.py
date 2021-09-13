@@ -42,43 +42,60 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
             i_user.stored_password = "locked"
         created = True
 
-    # TODO update regions (doesn't seem to do anything on the server and there is no table to store the data)
     i_user.save()
     create_or_update_user_roles(i_user, data["roles"])
+    create_or_update_user_districts(
+        i_user, data["districts"], data_subset["audit_user_id"]
+    )
     return i_user, created
 
 
 def create_or_update_user_roles(i_user, role_ids):
     from core import datetime
+
     now = datetime.datetime.now()
-    UserRole.objects.filter(user=i_user, validity_to__isnull=True).update(validity_to=now)
+    UserRole.objects.filter(user=i_user, validity_to__isnull=True).update(
+        validity_to=now
+    )
     for role_id in role_ids:
-        UserRole.objects.update_or_create(user=i_user, role_id=role_id, defaults={"validity_to": None})
+        UserRole.objects.update_or_create(
+            user=i_user, role_id=role_id, defaults={"validity_to": None}
+        )
 
 
 # TODO move to location module ?
-def create_or_update_user_districts(i_user, district_ids):
+def create_or_update_user_districts(i_user, district_ids, audit_user_id):
     # To avoid a static dependency from Core to Location, we'll dynamically load this class
     user_district_class = apps.get_model("location", "UserDistrict")
     from core import datetime
+
     now = datetime.datetime.now()
-    user_district_class.objects.filter(user=i_user, validity_to__isnull=True).update(validity_to=now.to_ad_datetime())
+    user_district_class.objects.filter(user=i_user, validity_to__isnull=True).update(
+        validity_to=now.to_ad_datetime()
+    )
     for district_id in district_ids:
         user_district_class.objects.update_or_create(
-            user=i_user, district_id=district_id, defaults={"validity_to": None})
+            user=i_user,
+            location_id=district_id,
+            defaults={"validity_to": None, "audit_user_id": audit_user_id},
+        )
 
 
-def create_or_update_officer_villages(officer, village_ids):
+def create_or_update_officer_villages(officer, village_ids, audit_user_id):
     # To avoid a static dependency from Core to Location, we'll dynamically load this class
     officer_village_class = apps.get_model("location", "OfficerVillage")
     from core import datetime
+
     now = datetime.datetime.now()
-    officer_village_class.objects\
-        .filter(officer=officer, validity_to__isnull=True)\
-        .update(validity_to=now)
+    officer_village_class.objects.filter(
+        officer=officer, validity_to__isnull=True
+    ).update(validity_to=now)
     for village_id in village_ids:
         officer_village_class.objects.update_or_create(
-            officer=officer, location_id=village_id, defaults={"validity_to": None})
+            officer=officer,
+            location_id=village_id,
+            defaults={"validity_to": None, "audit_user_id": audit_user_id},
+        )
 
 
 def create_or_update_officer(user_id, data, audit_user_id, connected):
@@ -91,7 +108,7 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
         "birth_date": "dob",
         "address": "address",
         "works_to": "works_to",
-        "health_facility_id": "location_id",
+        "location_id": "location_id",
         # TODO veo_code, last_name, other_names, dob, phone
         "substitution_officer_id": "substitution_officer_id",
         "phone_communication": "phone_communication",
@@ -101,9 +118,13 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     data_subset["has_login"] = connected
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
-        officer = Officer.objects.filter(validity_to__isnull=True, user__id=user_id).first()
+        officer = Officer.objects.filter(
+            validity_to__isnull=True, user__id=user_id
+        ).first()
     else:
-        officer = Officer.objects.filter(code=data_subset["code"], validity_to__isnull=True).first()
+        officer = Officer.objects.filter(
+            code=data_subset["code"], validity_to__isnull=True
+        ).first()
 
     if officer:
         officer.save_history()
@@ -115,7 +136,9 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
 
     officer.save()
     if data.get("village_ids"):
-        create_or_update_officer_villages(officer, data["village_ids"])
+        create_or_update_officer_villages(
+            officer, data["village_ids"], data_subset["audit_user_id"]
+        )
     return officer, created
 
 
