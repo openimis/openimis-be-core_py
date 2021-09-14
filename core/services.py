@@ -44,9 +44,10 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
 
     i_user.save()
     create_or_update_user_roles(i_user, data["roles"])
-    create_or_update_user_districts(
-        i_user, data["districts"], data_subset["audit_user_id"]
-    )
+    if "districts" in data:
+        create_or_update_user_districts(
+            i_user, data["districts"], data_subset["audit_user_id"]
+        )
     return i_user, created
 
 
