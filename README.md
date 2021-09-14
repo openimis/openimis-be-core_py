@@ -330,4 +330,4 @@ CLASS_RULE_PARAM_VALIDATION = [
 * gql_mutation_duplicate_roles_perms: required rights to call duplicateRole GraphQL Mutation (default: ["152105"])
 
 ## openIMIS Modules Dependencies
-N.A.
+N.A
