@@ -243,6 +243,13 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     """
 
     @classmethod
+    def _filter_order_by(cls, order_by: str) -> str:
+        if order_by:
+            return re.sub("[^\\w\\-,+]", "", order_by)
+        else:
+            return order_by
+
+    @classmethod
     def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
@@ -250,10 +257,11 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                 if order == "?":
                     snake_order = RawSQL("NEWID()", params=[])
                 else:
-                    snake_order = to_snake_case(order)
+                    # due to https://github.com/advisories/GHSA-xpfp-f569-q3p2 we are aggressively filtering the orderBy
+                    snake_order = to_snake_case(cls._filter_order_by(order))
             else:
                 snake_order = [
-                    to_snake_case(o) if o != "?" else RawSQL(
+                    to_snake_case(cls._filter_order_by(o)) if o != "?" else RawSQL(
                         "NEWID()", params=[])
                     for o in order
                 ]
