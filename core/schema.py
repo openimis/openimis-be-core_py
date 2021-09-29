@@ -873,8 +873,11 @@ class DuplicateRoleMutation(OpenIMISMutation):
 
 
 class UserBase:
-    id = graphene.String(required=False, read_only=True,
-                         description="UUID of the core User, one can leave this blank and specify the username instead")
+    uuid = graphene.String(
+        required=False,
+        read_only=True,
+        description="UUID of the core User, one can leave this blank and specify the username instead",
+    )
     user_id = graphene.String(required=False)
     other_names = graphene.String(required=True, max_length=50)
     last_name = graphene.String(required=True, max_length=50)
@@ -883,21 +886,25 @@ class UserBase:
     email = graphene.String(required=False)
     password = graphene.String(required=False)
     health_facility_id = graphene.Int(required=False)
-    regions = graphene.List(graphene.String, required=False)
     districts = graphene.List(graphene.Int, required=False)
     language = graphene.String(required=True, description="Language code for the user")
-
     # Interactive User only
-    roles = graphene.List(graphene.Int, required=False,
-                          description="List of role_ids, required for interactive users")
+    roles = graphene.List(
+        graphene.Int,
+        required=False,
+        description="List of role_ids, required for interactive users",
+    )
 
     # Enrolment Officer / Feedback / Claim Admin specific
     birth_date = graphene.Date(required=False)
     address = graphene.String(required=False)  # multi-line
-    works_to = graphene.Date(required=False)
+    works_to = graphene.DateTime(required=False)
     substitution_officer_id = graphene.Int(required=False)
     # TODO VEO_code, last_name, other names, dob, phone
     phone_communication = graphene.Boolean(required=False)
+    location_id = graphene.Int(
+        required=False, description="Location for the Enrolment Officer"
+    )
     village_ids = graphene.List(graphene.Int, required=False)
 
     user_types = graphene.List(UserTypeEnum, required=True)
@@ -1136,7 +1143,7 @@ def on_user_mutation(sender, **kwargs):
     if "User" in str(sender._mutation_class):
         impacted = User.objects.get(uuid=uuid)
         UserMutation.objects.create(
-            role=impacted, mutation_id=kwargs['mutation_log_id']
+            core_user=impacted, mutation_id=kwargs["mutation_log_id"]
         )
 
     return []
