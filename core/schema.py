@@ -1141,7 +1141,7 @@ def on_user_mutation(sender, **kwargs):
 
     # For duplicate log is created in the duplicate_role function, mutation log added here would reference original role
     if "User" in str(sender._mutation_class):
-        impacted = User.objects.get(uuid=uuid)
+        impacted = User.objects.get(id=uuid)
         UserMutation.objects.create(
             core_user=impacted, mutation_id=kwargs["mutation_log_id"]
         )
