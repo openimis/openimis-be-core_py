@@ -360,7 +360,6 @@ class Query(graphene.ObjectType):
         UserGQLType,
         orderBy=graphene.List(of_type=graphene.String),
         validity=graphene.Date(),
-        show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
         last_name=graphene.String(description="partial match, case insensitive"),
         other_names=graphene.String(description="partial match, case insensitive"),
@@ -446,6 +445,7 @@ class Query(graphene.ObjectType):
                       village_id=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
+
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
@@ -466,9 +466,6 @@ class Query(graphene.ObjectType):
         if client_mutation_id:
             user_filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
-        # show_history = kwargs.get('show_history', False)
-        # if not show_history and not kwargs.get('uuid', None):
-        #     user_filters += filter_validity(**kwargs)
         if email:
             user_filters.append(Q(i_user__email=email) |
                                 Q(officer__email=email) |
