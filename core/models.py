@@ -374,7 +374,7 @@ class InteractiveUser(VersionedModel):
         self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        self.stored_password = pwd_hash.hexdigest()
+        self.stored_password = pwd_hash.hexdigest().upper()  # Legacy requires this to be uppercase
 
     def check_password(self, raw_password):
         from hashlib import sha256
