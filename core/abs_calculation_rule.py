@@ -54,6 +54,36 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
     impacted_class_parameter = property(get_impacted_class_parameter, set_impacted_class_parameter)
 
     @classmethod
+    def get_type(cls):
+        return type(cls)._type
+
+    @classmethod
+    def set_type(cls, val):
+        type(cls)._type = val
+
+    type = property(get_type, set_type)
+
+    @classmethod
+    def get_sub_type(cls):
+        return type(cls)._sub_type
+
+    @classmethod
+    def set_sub_type(cls, val):
+        type(cls)._sub_type = val
+
+    sub_type = property(get_sub_type, set_sub_type)
+
+    @classmethod
+    def get_from_to(cls):
+        return type(cls)._from_to
+
+    @classmethod
+    def set_from_to(cls, val):
+        type(cls)._from_to = val
+
+    from_to = property(get_from_to, set_from_to)
+
+    @classmethod
     @abc.abstractmethod
     def ready(cls):
         return
@@ -65,7 +95,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
     @classmethod
     @abc.abstractmethod
-    def active_for_object(cls, instance, context):
+    def active_for_object(cls, instance, context, type='account_receivable', sub_type='contribution'):
         return
 
     @classmethod
@@ -76,6 +106,11 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
     @classmethod
     @abc.abstractmethod
     def get_linked_class(cls, sender, class_name, **kwargs):
+        return
+
+    @classmethod
+    @abc.abstractmethod
+    def convert(cls, instance, convert_from, convert_to, **kwargs):
         return
 
     @classmethod
@@ -116,3 +151,31 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
                 if cls.active_for_object(instance=instance, context=context):
                     result = cls.calculate(instance=instance)
                     return result
+
+    @classmethod
+    def run_convert(cls, sender, instance, convert_from, convert_to, **kwargs):
+        """
+            execute the conversion for the instance with the first
+            rule that provide the conversion (see get_convert_from_to)
+        """
+        list_possible_conversion = cls.get_convert_from_to(sender=sender, instance=instance)
+        for possible_conversion in list_possible_conversion:
+            if convert_from == possible_conversion['from'] and convert_to == possible_conversion['to']:
+                result = cls.convert(
+                    instance=instance, convert_from=convert_from, convert_to=convert_to
+                )
+                return result
+
+    @classmethod
+    def get_convert_from_to(cls, sender, instance, **kwargs):
+        """
+            get the possible conversion, return [calc UUID, from, to]
+        """
+        list_possible_conversion = []
+        for ft in cls.from_to:
+            convert_from_to = {}
+            convert_from_to['calc_uuid'] = cls.uuid
+            convert_from_to['from'] = ft['from']
+            convert_from_to['to'] = ft['to']
+            list_possible_conversion.append(convert_from_to)
+        return list_possible_conversion
