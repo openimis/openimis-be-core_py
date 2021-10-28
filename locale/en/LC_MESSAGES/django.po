@@ -28,3 +28,6 @@ msgstr "Unknown gender"
 #: core/core/utils.py:80 core/utils.py:95
 msgid "core.insuree.unknown_dob"
 msgstr "Unknown date of birth"
+
+msgid "core.wrong_old_password"
+msgstr "The old password is incorrect"

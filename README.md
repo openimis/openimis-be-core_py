@@ -41,6 +41,7 @@ None
 * role
 * role_right
 * modules_permissions
+* languages
 
 ## GraphQL Mutations
 * createRole
@@ -86,6 +87,7 @@ to listen to all mutations, regardless of module) and 3 at module level:
 
 To register a module on a (mutation) signal, one can register a callback
 via bind_signals() in his module's schema.py file.
+
 ```
 from core.schema import signal_mutation_module_validate, signal_mutation_module_before_mutating, signal_mutation_module_after_mutating
 
@@ -111,6 +113,22 @@ If the callback returns None (or an empty array), the mutation is marked as succ
 
 __Important Note__: by default the callback is executed __in transaction__ and, as a consequence, will (in case of exception/errors) cancel the complete mutation. If this is not the desired behaviour, the callback must explicitely detach to separate transaction (process).
 
+#### Service signals 
+In addition, the core provides the possibility to register additional signals via 
+the `register_service_signal` decorator. Registered signals are stored in
+the `core.signals.REGISTERED_SERVICE_SIGNALS` dictionary. Signal name has to be unique.  
+**Example use:**
+```python
+@register_service_signal('create_policy', PolicyServiceClass)
+def create_policy(self, *args, **kwargs):
+    ...
+```
+Will create new RegisteredServiceSignal instance available from  
+`REGISTERED_SERVICE_SIGNALS['create_policy'].`
+
+When running the application, the modules are searched for the `bind_service_signals()` 
+function in the module_name/signals.py directory. This method should use `core.signals.bind_service_signal`
+function to connect new signals. Receivers can be registered also in other places.
 
 ### Graphene Custom Types & Helper Classes/Methods
 * schema.SmallInt: Integer, with values ranging from -32768 to +32767

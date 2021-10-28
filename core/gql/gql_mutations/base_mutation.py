@@ -1,3 +1,5 @@
+from django.db import transaction
+
 from core import TimeUtils
 from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
@@ -244,11 +246,26 @@ class BaseHistoryModelDeleteMutationMixin:
             raise ValidationError("mutation.authentication_required")
 
     @classmethod
-    def _mutate(cls, user, uuid):
-        object_to_delete = cls._model.objects.filter(id=uuid).first()
+    def _mutate(cls, user, **data):
+        if "client_mutation_id" in data:
+            data.pop('client_mutation_id')
+        if "client_mutation_label" in data:
+            data.pop('client_mutation_label')
 
+        id_ = data.get('uuid', None) or data.get('id', None)
+        ids = data.get('uuids', None) or data.get('ids', None)
+        if id_:
+            cls.__delete_single_obj(user=user, id_=id_)
+        elif ids:
+            with transaction.atomic():
+                for id_ in ids:
+                    cls.__delete_single_obj(user, id_)
+
+    @classmethod
+    def __delete_single_obj(cls, user, id_):
+        object_to_delete = cls._model.objects.filter(id=id_).first()
         if object_to_delete is None:
-            cls._object_not_exist_exception(uuid)
+            cls._object_not_exist_exception(id_)
         else:
             object_to_delete.delete(username=user.username)
 
