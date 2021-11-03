@@ -162,8 +162,6 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
         list_possible_conversion = cls.get_convert_from_to()
         for possible_conversion in list_possible_conversion:
             if convert_from == possible_conversion['from'] and convert_to == possible_conversion['to']:
-                # before this method there is check if invoice is already generated for policy/contract contribution plan details,
-                # after this method signal is sent to invoice module to save data in db
                 result = cls.convert(
                     instance=instance, convert_to=convert_to, **kwargs
                 )
