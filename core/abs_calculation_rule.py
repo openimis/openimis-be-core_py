@@ -95,7 +95,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
     @classmethod
     @abc.abstractmethod
-    def active_for_object(cls, instance, context, type='account_receivable', sub_type='contribution'):
+    def active_for_object(cls, instance, context, type, sub_type):
         return
 
     @classmethod
@@ -110,7 +110,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
     @classmethod
     @abc.abstractmethod
-    def convert(cls, instance, convert_from, convert_to, **kwargs):
+    def convert(cls, instance, convert_to, **kwargs):
         return
 
     @classmethod
@@ -153,29 +153,29 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
                     return result
 
     @classmethod
-    def run_convert(cls, sender, instance, convert_from, convert_to, **kwargs):
+    def run_convert(cls, instance, convert_to, **kwargs):
         """
             execute the conversion for the instance with the first
             rule that provide the conversion (see get_convert_from_to)
         """
-        list_possible_conversion = cls.get_convert_from_to(sender=sender, instance=instance)
+        convert_from = instance.__class__.__name__
+        list_possible_conversion = cls.get_convert_from_to()
         for possible_conversion in list_possible_conversion:
             if convert_from == possible_conversion['from'] and convert_to == possible_conversion['to']:
+                # before this method there is check if invoice is already generated for policy/contract contribution plan details,
+                # after this method signal is sent to invoice module to save data in db
                 result = cls.convert(
-                    instance=instance, convert_from=convert_from, convert_to=convert_to
+                    instance=instance, convert_to=convert_to, **kwargs
                 )
                 return result
 
     @classmethod
-    def get_convert_from_to(cls, sender, instance, **kwargs):
+    def get_convert_from_to(cls):
         """
             get the possible conversion, return [calc UUID, from, to]
         """
         list_possible_conversion = []
         for ft in cls.from_to:
-            convert_from_to = {}
-            convert_from_to['calc_uuid'] = cls.uuid
-            convert_from_to['from'] = ft['from']
-            convert_from_to['to'] = ft['to']
+            convert_from_to = {'calc_uuid': cls.uuid, 'from': ft['from'], 'to': ft['to']}
             list_possible_conversion.append(convert_from_to)
         return list_possible_conversion
