@@ -311,7 +311,7 @@ CLASS_RULE_PARAM_VALIDATION = [
  
   - calculate(instance, *args) - Function that will do the calculation based on the parameters
   - get_linked_class(List[classname]) - that function will return the possible instance that can have a link to the calculation
-  - convert(from,to,**argv) - Convert on or several object toward another type, especially to invoice or bill . It will check the from-to, and the rights then will call the Function Name with agrv as parameters
+  - convert(instance, convert_to, **argv) - Convert on or several object toward another type, especially to invoice or bill . It will check the from-to, and the rights then will call the Function Name with agrv as parameters
 * generic methods defined on abstract class level
   - get_rule_name(classname) - return an object which is representation of calculaton rule
   - get_rule_details(classname) - return the data about class and parameters
