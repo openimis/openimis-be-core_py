@@ -318,7 +318,7 @@ CLASS_RULE_PARAM_VALIDATION = [
   - get_parameters(class_name, instance) - Function to obtain the required parameter and its properties for an instance of certain model. 
       This function is registered to the module signal via the ready function if the rule is active
   - run_calculation_rules(instance, context) - trigger the calculations. This function is registered to the module signal via the ready function if the rule is active
-  - run_convert(instance, from, to, **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to)
+  - run_convert(instance, convert_to **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to). 'from_to' is deducted from instance. 
   - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
