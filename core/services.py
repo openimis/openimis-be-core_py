@@ -43,7 +43,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         created = True
 
     i_user.save()
-    create_or_update_user_roles(i_user, data["roles"])
+    create_or_update_user_roles(i_user, data["roles"], audit_user_id)
     if "districts" in data:
         create_or_update_user_districts(
             i_user, data["districts"], data_subset["audit_user_id"]
@@ -51,7 +51,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
     return i_user, created
 
 
-def create_or_update_user_roles(i_user, role_ids):
+def create_or_update_user_roles(i_user, role_ids, audit_user_id):
     from core import datetime
 
     now = datetime.datetime.now()
@@ -59,8 +59,8 @@ def create_or_update_user_roles(i_user, role_ids):
         validity_to=now
     )
     for role_id in role_ids:
-        UserRole.objects.update_or_create(
-            user=i_user, role_id=role_id, defaults={"validity_to": None}
+        UserRole.objects.create(
+            user=i_user, role_id=role_id, audit_user_id=audit_user_id
         )
 
 
