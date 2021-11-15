@@ -159,12 +159,12 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
             rule that provide the conversion (see get_convert_from_to)
         """
         convert_from = instance.__class__.__name__
+        if convert_from == "Contract":
+            convert_from = "ContractContributionPlanDetails"
         list_possible_conversion = cls.get_convert_from_to()
         for possible_conversion in list_possible_conversion:
             if convert_from == possible_conversion['from'] and convert_to == possible_conversion['to']:
-                result = cls.convert(
-                    instance=instance, convert_to=convert_to, **kwargs
-                )
+                result = cls.convert(instance=instance, convert_to=convert_to, **kwargs)
                 return result
 
     @classmethod
