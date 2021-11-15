@@ -53,13 +53,16 @@ def comparable(cls):
     return cls
 
 
-def filter_validity(arg='validity', **kwargs):
+def filter_validity(arg="validity", **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
-        validity = core.datetime.datetime.now()
+        return (
+            Q(validity_from__lte=core.datetime.datetime.now()),
+            Q(legacy_id__isnull=True),
+        )
     return (
        Q(validity_from__lte=validity),
-        Q(validity_to__isnull=True) | Q(validity_to__gte=validity)
+        Q(validity_to__isnull=True) | Q(validity_to__gte=validity),
     )
 
 
