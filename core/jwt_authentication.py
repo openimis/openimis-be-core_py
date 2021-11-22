@@ -1,11 +1,14 @@
 from .jwt import jwt_decode_user_key
 
 from django.apps import apps
+from django.contrib.auth import authenticate
 from rest_framework.authentication import BaseAuthentication
 from rest_framework import exceptions
 
+import base64
 import jwt
 import logging
+import os
 
 logger = logging.getLogger(__file__)
 
@@ -21,6 +24,7 @@ class JWTAuthentication(BaseAuthentication):
         if not authorization_header:
             return None
         payload = None
+        is_remote_user_auth = eval(os.getenv('REMOTE_USER_AUTHENTICATION', False))
         if authorization_header.lower().startswith('bearer '):
             bearer, access_token, *extra_words = authorization_header.split(' ')
             if len(extra_words) > 0:
@@ -44,6 +48,10 @@ class JWTAuthentication(BaseAuthentication):
                 raise exceptions.AuthenticationFailed('User inactive or deleted/not existed.')
             if not user.is_active:
                 raise exceptions.AuthenticationFailed('User is inactive')
+        elif is_remote_user_auth:
+            # support for basic auth when we have in backend 'api' instead of 'iapi'
+            user = self._support_basic_auth(authorization_header)
+            return user, None
         else:
             raise exceptions.AuthenticationFailed("Missing 'Bearer' prefix")
 
@@ -54,3 +62,16 @@ class JWTAuthentication(BaseAuthentication):
     def enforce_csrf(self, request):
         return  # To not perform the csrf during checking auth header
 
+    def _support_basic_auth(self, auth_header):
+        """when we have 'api' root instead of 'iapi' - check user by using basic auth"""
+        if auth_header.lower().startswith('basic'):
+            token_type, _, credentials = auth_header.partition(' ')
+            # get username from base token
+            username = base64.b64decode(credentials).decode("utf8").split(':', 1)[0]
+            # check if user exists in db
+            user_class = apps.get_model("core", "User")
+            user = user_class.objects.filter(username=username).first()
+            if user:
+                return user
+            else:
+                raise exceptions.AuthenticationFailed("Basic auth error: such user doesn't exist")
