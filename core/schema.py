@@ -930,7 +930,7 @@ class CreateUserMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+            if not user.has_perms(CoreConfig.gql_mutation_create_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
@@ -960,7 +960,7 @@ class UpdateUserMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+            if not user.has_perms(CoreConfig.gql_mutation_update_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
