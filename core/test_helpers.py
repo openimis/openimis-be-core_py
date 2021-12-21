@@ -32,7 +32,7 @@ def create_test_interactive_user(username, password="Test1234", roles=None, cust
     )
     i_user.set_password(password)
     i_user.save()
-    create_or_update_user_roles(i_user, roles)
+    create_or_update_user_roles(i_user, roles, None)
     return User.objects.create(
         username=username,
         i_user=i_user,

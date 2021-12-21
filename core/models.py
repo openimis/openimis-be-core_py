@@ -6,6 +6,7 @@ import uuid
 from copy import copy
 
 import core
+from django.apps import apps
 from django.db import models
 from django.db.models import Q, DO_NOTHING, F
 from django.conf import settings
@@ -369,6 +370,13 @@ class InteractiveUser(VersionedModel):
     def rights_str(self):
         return [str(r) for r in self.rights]
 
+    @cached_property
+    def get_health_facility(self):
+        if self.health_facility_id:
+            hf_model = apps.get_model("location", "HealthFacility")
+            if hf_model:
+                return hf_model.objects.filter(pk=self.health_facility_id).first()
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -494,6 +502,13 @@ class User(UUIDModel, PermissionsMixin):
     def get_session_auth_hash(self):
         key_salt = "core.User.get_session_auth_hash"
         return salted_hmac(key_salt, self.username).hexdigest()
+
+    def get_health_facility(self):
+        if self.claim_admin:
+            return self.claim_admin.health_facility
+        if self.i_user:
+            return self.i_user.get_health_facility()
+        return None
 
     def __getattr__(self, name):
         if name == '_u':
