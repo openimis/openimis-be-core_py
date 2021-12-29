@@ -324,21 +324,37 @@ class InteractiveUser(VersionedModel):
     other_names = models.CharField(db_column="OtherNames", max_length=100)
     phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
     login_name = models.CharField(db_column="LoginName", max_length=25)
+    last_login = models.DateTimeField(db_column="LastLogin", null=True)
     health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
     audit_user_id = models.IntegerField(db_column="AuditUserID")
-    # password = models.BinaryField(blank=True, null=True)
     # dummy_pwd is always blank. It is actually a transient field used in the Legacy to pass the clear text password in
     # a User object from the ASPX to the DAL where it is processed into/against password and private key/salt)
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
     email = models.CharField(db_column="EmailId", max_length=200, blank=True, null=True)
-    private_key = models.CharField(db_column="PrivateKey", max_length=256, blank=True, null=True,
-                                   help_text="The private key is actually a password salt")
-    stored_password = models.CharField(db_column="StoredPassword", max_length=256, blank=True, null=True,
-                                       help_text="By default a SHA256 of the private key (salt) and password")
-    password_validity = models.DateTimeField(db_column="PasswordValidity", blank=True, null=True)
-    is_associated = models.BooleanField(db_column="IsAssociated", blank=True, null=True,
-                                        help_text="has a claim admin or enrolment officer account")
+    private_key = models.CharField(
+        db_column="PrivateKey",
+        max_length=256,
+        blank=True,
+        null=True,
+        help_text="The private key is actually a password salt",
+    )
+    password = models.CharField(
+        db_column="StoredPassword",
+        max_length=256,
+        blank=True,
+        null=True,
+        help_text="By default a SHA256 of the private key (salt) and password",
+    )
+    password_validity = models.DateTimeField(
+        db_column="PasswordValidity", blank=True, null=True
+    )
+    is_associated = models.BooleanField(
+        db_column="IsAssociated",
+        blank=True,
+        null=True,
+        help_text="has a claim admin or enrolment officer account",
+    )
     role_id = models.IntegerField(db_column="RoleID", null=False)
 
     @property
@@ -351,6 +367,17 @@ class InteractiveUser(VersionedModel):
 
     def get_username(self):
         return self.login_name
+
+    @property
+    def stored_password(self):
+        return self.password
+
+    @stored_password.setter
+    def stored_password(self, value):
+        logger.warn(
+            "You should not use this property to set a password. Use 'password' instead."
+        )
+        self.password = value
 
     @property
     def is_staff(self):
@@ -380,26 +407,23 @@ class InteractiveUser(VersionedModel):
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
+
         self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        self.stored_password = (
+        self.password = (
             pwd_hash.hexdigest().upper()
         )  # Legacy requires this to be uppercase
-        self.clear_refresh_tokens()
-
-    def clear_refresh_tokens(self):
-        for refresh in self.refresh_tokens.filter(revoked__isnull=True):
-            refresh.revoke()
 
     def check_password(self, raw_password):
         from hashlib import sha256
+
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         pwd_hash = pwd_hash.hexdigest()
-        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
+        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.password)
         # hashlib gives a lowercase digest while the legacy gives an uppercase one
-        return pwd_hash == self.stored_password.lower()
+        return pwd_hash == self.password.lower()
 
     @classmethod
     def is_interactive_user(cls, user):
@@ -468,6 +492,14 @@ class User(UUIDModel, PermissionsMixin):
         return self._u.id
 
     @property
+    def last_login(self):
+        return getattr(self._u, "last_login")
+
+    @last_login.setter
+    def last_login(self, value):
+        return setattr(self._u, "last_login", value)
+
+    @property
     def is_anonymous(self):
         return False
 
@@ -497,12 +529,21 @@ class User(UUIDModel, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        return True if i_user is not None and perm in i_user.rights_str else super(User, self).has_perm(perm, obj)
+        return (
+            True
+            if i_user is not None and perm in i_user.rights_str
+            else super(User, self).has_perm(perm, obj)
+        )
 
     def set_password(self, raw_password):
         if self._u and hasattr(self._u, "set_password"):
             return self._u.set_password(raw_password)
+        self.clear_refresh_tokens()
         return None
+
+    def clear_refresh_tokens(self):
+        for refresh in self.refresh_tokens.filter(revoked__isnull=True):
+            refresh.revoke()
 
     def get_session_auth_hash(self):
         key_salt = "core.User.get_session_auth_hash"
@@ -522,8 +563,6 @@ class User(UUIDModel, PermissionsMixin):
             return self.username
         if name == 'get_session_auth_hash':
             return False
-        # if not self._u:
-        #     return None
         return getattr(self._u, name)
 
     def __call__(self, *args, **kwargs):

@@ -3,10 +3,21 @@
 import jwt
 from graphql_jwt.settings import jwt_settings
 from django.apps import apps
+from graphql_jwt.signals import token_issued
+from django.apps import apps
+from django.utils import timezone
+from django.dispatch import receiver
 
 import logging
 
 logger = logging.getLogger(__file__)
+
+
+@receiver(token_issued)
+def on_token_issued(sender, request, user, **kwargs):
+    # Store the date on which the user got the auth token
+    user.last_login = timezone.now()
+    user.save()
 
 
 def jwt_encode_user_key(payload, context=None):
