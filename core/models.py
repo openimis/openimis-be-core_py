@@ -383,7 +383,14 @@ class InteractiveUser(VersionedModel):
         self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        self.stored_password = pwd_hash.hexdigest().upper()  # Legacy requires this to be uppercase
+        self.stored_password = (
+            pwd_hash.hexdigest().upper()
+        )  # Legacy requires this to be uppercase
+        self.clear_refresh_tokens()
+
+    def clear_refresh_tokens(self):
+        for refresh in self.refresh_tokens.filter(revoked__isnull=True):
+            refresh.revoke()
 
     def check_password(self, raw_password):
         from hashlib import sha256
@@ -442,16 +449,9 @@ class User(UUIDModel, PermissionsMixin):
 
     objects = UserManager()
 
-    def __init__(self, *args, **kwargs):
-        super(User, self).__init__(*args, **kwargs)
-        try:
-            self._u = self.i_user or self.officer or self.claim_admin or self.t_user
-        except ValueError:
-            deferred = self.get_deferred_fields()
-            if any(x in deferred for x in ["i_user", "officer", "claim_admin", "t_user"]):
-                logger.error("Some of the user type fields are deferred, this breaks the dynamic loading of "
-                             "openIMIS User, if calling from GraphQL, remove the optimizer")
-            raise
+    @property
+    def _u(self):
+        return self.i_user or self.officer or self.claim_admin or self.t_user
 
     @property
     def email(self):
@@ -498,6 +498,11 @@ class User(UUIDModel, PermissionsMixin):
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
         return True if i_user is not None and perm in i_user.rights_str else super(User, self).has_perm(perm, obj)
+
+    def set_password(self, raw_password):
+        if self._u and hasattr(self._u, "set_password"):
+            return self._u.set_password(raw_password)
+        return None
 
     def get_session_auth_hash(self):
         key_salt = "core.User.get_session_auth_hash"
