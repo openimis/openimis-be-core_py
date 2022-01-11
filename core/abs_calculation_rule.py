@@ -145,12 +145,15 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
             reply if they have object matching the classname in their list of object
         """
         list_class = cls.get_linked_class(sender=sender, class_name=instance.__class__.__name__)
-        if len(list_class) > 0:
-            rule_details = cls.get_rule_details(class_name=list_class[0], sender=sender)
-            if rule_details:
-                if cls.active_for_object(instance=instance, context=context):
-                    result = cls.calculate(instance=instance)
-                    return result
+        if list_class:
+            if len(list_class) > 0:
+                rule_details = cls.get_rule_details(class_name=list_class[0], sender=sender)
+                if rule_details or len(cls.impacted_class_parameter) == 0:
+                    if cls.active_for_object(instance=instance, context=context):
+                        # add context to kwargs
+                        kwargs["context"] = context
+                        result = cls.calculate(instance=instance, **kwargs)
+                        return result
 
     @classmethod
     def run_convert(cls, instance, convert_to, **kwargs):
