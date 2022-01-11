@@ -1,7 +1,13 @@
 from core.apps import CoreConfig
 from django.apps import apps
 from core.models import User, InteractiveUser, Officer, UserRole
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.mail import send_mail, BadHeaderError
+from django.conf import settings
+from django.template import loader
+from django.utils.http import urlencode
+
 import logging
 from gettext import gettext as _
 
@@ -210,7 +216,9 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
     return user, created
 
 
-def change_user_password(logged_user, username_to_update=None, old_password=None, new_password=None):
+def change_user_password(
+    logged_user, username_to_update=None, old_password=None, new_password=None
+):
     if username_to_update and username_to_update != logged_user.username:
         if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
             raise PermissionDenied("unauthorized")
@@ -221,3 +229,48 @@ def change_user_password(logged_user, username_to_update=None, old_password=None
             raise ValidationError(_("core.wrong_old_password"))
 
     user_to_update.set_password(new_password)
+    user_to_update.save()
+
+
+def set_user_password(request, username, token, password):
+    user = User.objects.get(username=username)
+
+    if default_token_generator.check_token(user, token):
+        user.set_password(password)
+        user.save()
+    else:
+        raise ValidationError("Invalid Token")
+
+
+def reset_user_password(request, username):
+    user = User.objects.get(username=username)
+    user.clear_refresh_tokens()
+
+    if not user.email:
+        raise ValidationError(
+            f"User {username} cannot reset password because he has no email address"
+        )
+
+    token = default_token_generator.make_token(user)
+    try:
+        logger.info(f"Send mail to reset password for {user} with token '{token}'")
+        params = urlencode({"token": token})
+        reset_url = f"{settings.FRONTEND_URL}/set_password?{params}"
+        message = loader.render_to_string(
+            CoreConfig.password_reset_template,
+            {
+                "reset_url": reset_url,
+                "user": user,
+            },
+        )
+        logger.debug("Message sent: %s" % message)
+        email_to_send = send_mail(
+            subject="[OpenIMIS] Reset Password",
+            message=message,
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        return email_to_send
+    except BadHeaderError:
+        return ValueError("Invalid header found.")
