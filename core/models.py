@@ -371,11 +371,12 @@ class InteractiveUser(VersionedModel):
         return [str(r) for r in self.rights]
 
     @cached_property
-    def get_health_facility(self):
+    def health_facility(self):
         if self.health_facility_id:
             hf_model = apps.get_model("location", "HealthFacility")
             if hf_model:
                 return hf_model.objects.filter(pk=self.health_facility_id).first()
+        return None
 
     def set_password(self, raw_password):
         from hashlib import sha256
@@ -507,7 +508,7 @@ class User(UUIDModel, PermissionsMixin):
         if self.claim_admin:
             return self.claim_admin.health_facility
         if self.i_user:
-            return self.i_user.get_health_facility()
+            return self.i_user.health_facility
         return None
 
     def __getattr__(self, name):
