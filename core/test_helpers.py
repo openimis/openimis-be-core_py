@@ -55,5 +55,5 @@ def create_test_technical_user(
     return User.objects.get_or_create(
         username=username,
         t_user=t_user,
-        **{custom_core_user_props if custom_core_user_props else {}}
+        **(custom_core_user_props if custom_core_user_props else {})
     )
