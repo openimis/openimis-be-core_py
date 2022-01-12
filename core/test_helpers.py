@@ -51,8 +51,9 @@ def create_test_technical_user(
             **(custom_tech_user_props if custom_tech_user_props else {})
         }
     )
-    return User.objects.create(
+    # Just for safety and retrieving the User because TechnicalUser will automatically create its User
+    return User.objects.get_or_create(
         username=username,
         t_user=t_user,
-        **{custom_core_user_props if custom_tech_user_props else {}}
+        **{custom_core_user_props if custom_core_user_props else {}}
     )

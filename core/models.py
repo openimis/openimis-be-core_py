@@ -249,14 +249,14 @@ class TechnicalUser(AbstractBaseUser):
         try:
             usr = User.objects.get(t_user=self)
         except ObjectDoesNotExist:
-            usr = User()
+            usr = User(username=self.username)
             usr.t_user = self
             save_required = True
         if usr.username != self.username:
             usr.username = self.username
             save_required = True
         if save_required:
-            usr.save()
+            usr.shallow_save()
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -587,6 +587,10 @@ class User(UUIDModel, PermissionsMixin):
     def save(self, *args, **kwargs):
         if self._u and self._u.id:
             self._u.save()
+        super().save(*args, **kwargs)
+
+    def shallow_save(self, *args, **kwargs):
+        """ Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion """
         super().save(*args, **kwargs)
 
     @classmethod
