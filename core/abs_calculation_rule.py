@@ -100,7 +100,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
     @classmethod
     @abc.abstractmethod
-    def calculate(cls, instance, *args):
+    def calculate(cls, instance, *args, **kwargs):
         return
 
     @classmethod
@@ -152,7 +152,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
                     if cls.active_for_object(instance=instance, context=context):
                         # add context to kwargs
                         kwargs["context"] = context
-                        result = cls.calculate(instance=instance, **kwargs)
+                        result = cls.calculate(instance, **kwargs)
                         return result
 
     @classmethod
