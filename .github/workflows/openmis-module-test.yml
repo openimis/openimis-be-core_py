@@ -30,8 +30,8 @@ jobs:
           python-version: 3.8
       - name: install linux packages
         run: |
-          wget https://raw.githubusercontent.com/openimis/database_ms_sqlserver/main/Empty%20databases/openIMIS_ONLINE.sql -O openIMIS_ONLINE.sql
-          wget https://raw.githubusercontent.com/openimis/database_ms_sqlserver/main/Demo%20database/openIMIS_demo_ONLINE.sql -O openIMIS_demo_ONLINE.sql
+          git clone --depth 1 --branch develop https://github.com/openimis/database_ms_sqlserver.git  ./sql
+          cd sql/ && bash concatenate_files.sh && cd ..
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
           sudo apt-get update
@@ -50,8 +50,8 @@ jobs:
         run: |
           export MODULE_NAME="$(echo $GITHUB_REPOSITORY | sed 's#^openimis/openimis-be-\(.*\)_py$#\1#')"
           echo "the local module called $MODULE_NAME will be injected in openIMIS .json"
-          echo $(jq   "(.modules[]  | select(.name == \"$MODULE_NAME\") | .pip)|=\"../current-module\"" openimis.json) > openimis.json
-          cat openimis.json
+          jq --arg name "$MODULE_NAME" 'if [.modules[].name  ==  ($name)]| max then (.modules[]  | select(.name == ($name)) | .pip)|="../current-module" else .modules |= .+ [{name:($name), pip:"../current-module"}] end' openimis.json
+          echo $(jq --arg name "$MODULE_NAME" 'if [.modules[].name  ==  ($name)]| max then (.modules[]  | select(.name == ($name)) | .pip)|="../current-module" else .modules |= .+ [{name:($name), pip:"../current-module"}] end' openimis.json)  > openimis.json
       - name: Install openIMIS Python dependencies
         working-directory: ./openimis
         run: |
@@ -67,8 +67,7 @@ jobs:
         run: |
           /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -Q 'DROP DATABASE IF EXISTS imis'
           /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -Q 'CREATE DATABASE imis'
-          /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -d imis -i openIMIS_ONLINE.sql | grep . | uniq -c
-          /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -d imis -i openIMIS_demo_ONLINE.sql | grep . | uniq -c
+          /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -d imis -i sql/output/fullDemoDatabase.sql | grep . | uniq -c
         env:
           SA_PASSWORD: GitHub999
           ACCEPT_EULA: Y
