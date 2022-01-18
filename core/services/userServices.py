@@ -1,15 +1,16 @@
-from core.apps import CoreConfig
+import logging
+from gettext import gettext as _
+
 from django.apps import apps
-from core.models import User, InteractiveUser, Officer, UserRole
+from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail, BadHeaderError
-from django.conf import settings
 from django.template import loader
 from django.utils.http import urlencode
 
-import logging
-from gettext import gettext as _
+from core.apps import CoreConfig
+from core.models import User, InteractiveUser, Officer, UserRole
 
 logger = logging.getLogger(__file__)
 
@@ -216,9 +217,7 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
     return user, created
 
 
-def change_user_password(
-    logged_user, username_to_update=None, old_password=None, new_password=None
-):
+def change_user_password(logged_user, username_to_update=None, old_password=None, new_password=None):
     if username_to_update and username_to_update != logged_user.username:
         if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
             raise PermissionDenied("unauthorized")
