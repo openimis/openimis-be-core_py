@@ -31,7 +31,7 @@ class BaseService(ABC):
                 obj_ = self.OBJECT_TYPE(**obj_data)
                 return self.save_instance(obj_)
         except Exception as exc:
-            return output_exception(model_name="Invoice", method="create", exception=exc)
+            return output_exception(model_name=self.OBJECT_TYPE.__name__, method="create", exception=exc)
 
     @check_authentication
     def update(self, obj_data):
@@ -43,7 +43,7 @@ class BaseService(ABC):
                 [setattr(obj_, key, obj_data[key]) for key in obj_data]
                 return self.save_instance(obj_)
         except Exception as exc:
-            return output_exception(model_name="Invoice", method="update", exception=exc)
+            return output_exception(model_name=self.OBJECT_TYPE.__name__, method="update", exception=exc)
 
     @check_authentication
     def delete(self, obj_data):
@@ -53,7 +53,7 @@ class BaseService(ABC):
                 obj_ = self.OBJECT_TYPE.objects.filter(id=obj_data['id']).first()
                 return self.delete_instance(obj_)
         except Exception as exc:
-            return output_exception(model_name="Invoice", method="delete", exception=exc)
+            return output_exception(model_name=self.OBJECT_TYPE.__name__, method="delete", exception=exc)
 
     def save_instance(self, obj_):
         obj_.save(username=self.user.username)
