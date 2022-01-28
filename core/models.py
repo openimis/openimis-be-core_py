@@ -1,26 +1,27 @@
-import sys
-import os
 import json
 import logging
+import os
+import sys
 import uuid
 from copy import copy
+from datetime import datetime as py_datetime
 
-import core
+from cached_property import cached_property
+from dirtyfields import DirtyFieldsMixin
 from django.apps import apps
+from django.conf import settings
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import models
 from django.db.models import Q, DO_NOTHING, F
-from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
-from cached_property import cached_property
 from graphql import ResolveInfo
-from .fields import DateTimeField
-from datetime import datetime as py_datetime
-from .utils import filter_validity, filter_is_deleted
 from jsonfallback.fields import FallbackJSONField
 from simple_history.models import HistoricalRecords
-from dirtyfields import DirtyFieldsMixin
+
+import core
+from .fields import DateTimeField
+from .utils import filter_validity
 
 logger = logging.getLogger(__name__)
 
@@ -847,7 +848,10 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     def save(self, *args, **kwargs):
         # get the user data so as to assign later his uuid id in fields user_updated etc
-        user = User.objects.get(**kwargs)
+        if 'username' in kwargs:
+            user = User.objects.get(username=kwargs.pop('username'))
+        else:
+            raise ValidationError('Save error! Provide the username of the current user in `username` argument')
         from core import datetime
         now = datetime.datetime.now()
         # check if object has been newly created
@@ -858,7 +862,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.user_updated = user
             self.date_created = now
             self.date_updated = now
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         if self.is_dirty(check_relationship=True):
             self.date_updated = now
             self.user_updated = user
@@ -867,7 +871,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             if hasattr(self, "replacement_uuid"):
                 if self.replacement_uuid is not None and 'replacement_uuid' not in self.get_dirty_fields():
                     raise ValidationError('Update error! You cannot update replaced entity')
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         else:
             raise ValidationError('Record has not be updated - there are no changes in fields')
 
