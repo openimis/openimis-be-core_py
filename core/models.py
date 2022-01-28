@@ -879,7 +879,10 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         pass
 
     def delete(self, *args, **kwargs):
-        user = User.objects.get(**kwargs)
+        if 'username' in kwargs:
+            user = User.objects.get(username=kwargs.pop('username'))
+        else:
+            raise ValidationError('Delete error! Provide the username of the current user in `username` argument')
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
             from core import datetime
             now = datetime.datetime.now()
@@ -895,7 +898,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
                 if replaced_entity:
                     replaced_entity.replacement_uuid = None
                     replaced_entity.save(username="admin")
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         else:
             raise ValidationError(
                 'Record has not be deactivating, the object is different and must be updated before deactivating')
