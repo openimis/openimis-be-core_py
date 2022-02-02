@@ -1213,11 +1213,14 @@ class Mutation(graphene.ObjectType):
     change_password = ChangePasswordMutation.Field()
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
+
     token_auth = graphql_jwt.mutations.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()
 
+    delete_token_cookie = graphql_jwt.DeleteJSONWebTokenCookie.Field()
+    delete_refresh_token_cookie = graphql_jwt.DeleteRefreshTokenCookie.Field()
 
 
 def on_role_mutation(sender, **kwargs):
