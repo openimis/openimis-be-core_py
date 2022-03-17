@@ -480,16 +480,6 @@ class User(UUIDModel, PermissionsMixin):
         return self.i_user or self.officer or self.claim_admin or self.t_user
 
     @property
-    def email(self):
-        if self.i_user:
-            return self.i_user.email
-        if self.officer:
-            return self.officer.email
-        if self.claim_admin:
-            return self.claim_admin.email_id
-        return None
-
-    @property
     def id_for_audit(self):
         return self._u.id
 
@@ -537,6 +527,12 @@ class User(UUIDModel, PermissionsMixin):
             else super(User, self).has_perm(perm, obj)
         )
 
+    @property
+    def rights(self):
+        if self.i_user:
+            return self.i_user.rights
+        return []
+
     def set_password(self, raw_password):
         if self._u and hasattr(self._u, "set_password"):
             return self._u.set_password(raw_password)
@@ -557,6 +553,10 @@ class User(UUIDModel, PermissionsMixin):
         if self.i_user:
             return self.i_user.health_facility
         return None
+
+    @property
+    def health_facility(self):
+        return self.get_health_facility()
 
     def __getattr__(self, name):
         if name == '_u':

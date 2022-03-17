@@ -420,9 +420,7 @@ class Query(graphene.ObjectType):
                     "ClaimAdmin."
     )
 
-    user = OrderedDjangoFilterConnectionField(
-        UserGQLType, order_by=graphene.List(of_type=graphene.String)
-    )
+    user = graphene.Field(UserGQLType)
 
     enrolment_officers = OrderedDjangoFilterConnectionField(
         OfficerGQLType,
@@ -472,6 +470,11 @@ class Query(graphene.ObjectType):
             filters += filter_validity(**kwargs)
 
         return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_user(self, info):
+        if info.context.user.is_authenticated:
+            return info.context.user
+        return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
                       role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
@@ -921,7 +924,7 @@ class UserBase:
     other_names = graphene.String(required=True, max_length=50)
     last_name = graphene.String(required=True, max_length=50)
     username = graphene.String(required=True, max_length=8)
-    phone_number = graphene.String(required=False)
+    phone = graphene.String(required=False)
     email = graphene.String(required=False)
     password = graphene.String(required=False)
     health_facility_id = graphene.Int(required=False)
