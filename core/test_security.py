@@ -1,5 +1,5 @@
 from django.test import TestCase
-from .security import ObjectPermissions, RemoteUserBackend
+from .security import ObjectPermissions
 from .models import ModuleConfiguration
 
 
@@ -16,9 +16,3 @@ class ObjectPermissionsTest(TestCase):
                           perms.get_required_object_permissions('PATCH', ModuleConfiguration))
         self.assertEquals(['core.delete_moduleconfiguration'],
                           perms.get_required_object_permissions('DELETE', ModuleConfiguration))
-
-
-# Removed because it can't be False and not sure about the goal of this test
-# class RemoteUserBackeTest(TestCase):
-#     def test_no_create_user(self):
-#         self.assertFalse(RemoteUserBackend().create_unknown_user)
