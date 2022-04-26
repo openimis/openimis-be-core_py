@@ -58,7 +58,7 @@ def filter_validity(arg="validity", **kwargs):
     if validity is None:
         return (
             Q(legacy_id__isnull=True),
-            Q(date_valid_to__isnull=True),
+            Q(validity_to__isnull=True),
         )
     return (
        Q(validity_from__lte=validity),
