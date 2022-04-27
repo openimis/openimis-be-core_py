@@ -209,6 +209,12 @@ TechnicalUserForm (ability to add technical users from the console)
   ```
   claim.objects.filter(json_ext__jsoncontains={'amount': 10.00, 'adress': { 'country': 'X', 'city': 'Y'}})
   ```
+* jsoncontainskey - another custom filtering parameter for json fields. Equivalent to `__contains` search on
+  underlying serialized json string. It allows queries as:
+  ```
+  claim.objects.filter(json_ext__jsoncontainskey='amount')
+  ```
+  This query searches for `"amouunt":` in json string, so it will match keys in nested json objects
   
 ### WebSocket client
 The module gives access to WebSocket clients allowing external socket communication. 

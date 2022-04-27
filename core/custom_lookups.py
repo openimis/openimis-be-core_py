@@ -1,4 +1,5 @@
 from django.db.models import Lookup
+from django.db.models.lookups import Contains
 
 from jsonfallback.fields import FallbackJSONField
 
@@ -40,3 +41,15 @@ class JsonContains(Lookup):
             conditions.append(json_key)
             conditions.append(expected_value)
         return conditions
+
+
+@FallbackJSONField.register_lookup
+class JsonContainsKey(Contains):
+    lookup_name = 'jsoncontainskey'
+
+    def __init__(self, lhs, rhs):
+        rhs = f'"{rhs}":'
+        super().__init__(lhs, rhs)
+
+    def get_rhs_op(self, connection, rhs):
+        return connection.operators['contains'] % rhs
