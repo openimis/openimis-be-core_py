@@ -381,7 +381,7 @@ class Query(graphene.ObjectType):
     )
 
     role_right = OrderedDjangoFilterConnectionField(
-        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date(), max_limit=None
     )
 
     interactiveUsers = OrderedDjangoFilterConnectionField(
@@ -596,7 +596,12 @@ class Query(graphene.ObjectType):
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(RoleRight.objects.all(), info)
+        filters = []
+        if 'validity' in kwargs:
+            filters += filter_validity(**kwargs)
+            return gql_optimizer.query(RoleRight.objects.filter(*filters), info)
+        else:
+            return gql_optimizer.query(RoleRight.objects.filter(validity_to__isnull=True), info)
 
     def resolve_modules_permissions(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -611,8 +616,13 @@ class Query(graphene.ObjectType):
         config = []
         for app in all_apps:
             apps = __import__(f"{app}.apps")
-            if hasattr(apps.apps, 'DEFAULT_CFG'):
-                config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
+            is_default_cfg = hasattr(apps.apps, 'DEFAULT_CFG')
+            is_defaulf_config = hasattr(apps.apps, 'DEFAULT_CONFIG')
+            if is_default_cfg or is_defaulf_config:
+                if is_defaulf_config:
+                    config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CONFIG)
+                else:
+                    config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
                 for key, value in config_dict.items():
                     if key.endswith("_perms"):
