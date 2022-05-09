@@ -146,7 +146,7 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
         """
         list_class = cls.get_linked_class(sender=sender, class_name=instance.__class__.__name__)
         # if the class have a calculation param, (like contribution or payment plan) add class name
-        if hasattr(instance,'calculation'):
+        if hasattr(instance, 'calculation'):
             list_class.append(instance.__class__.__name__)
         if list_class:
             for class_name in list_class:
@@ -154,13 +154,13 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
                 if rule_details or len(cls.impacted_class_parameter) == 0:
                     # add context to kwargs
                     kwargs["context"] = context
-                    result = cls.calculate_if_active_for_object(instance, context, **kwargs)
+                    result = cls.calculate_if_active_for_object(instance, **kwargs)
                     return result
 
     @classmethod
-    def calculate_if_active_for_object(cls, instance, context, **kwargs):
-        if cls.active_for_object(instance=instance, context=context):
-            return cls.calculate(instance, context=context, **kwargs)
+    def calculate_if_active_for_object(cls, instance, **kwargs):
+        if cls.active_for_object(instance=instance, context=kwargs['context']):
+            return cls.calculate(instance, **kwargs)
 
     @classmethod
     def run_convert(cls, instance, convert_to, **kwargs):
