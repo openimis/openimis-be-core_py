@@ -8,6 +8,7 @@ from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
 from django.utils.translation import gettext_lazy
+from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 import graphene_django_optimizer as gql_optimizer
 from core.services import (
     create_or_update_interactive_user,
@@ -1213,6 +1214,20 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
+    """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers """
+    @classmethod
+    def mutate(cls, root, info, **kwargs):
+        username = kwargs.get("username")
+        # consider auto-provisioning
+        if username:
+            # get_or_create will auto-provision from tblUsers if applicable
+            user = User.objects.get_or_create(username=username)
+            if user:
+                logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+        return super().mutate(cls, info, **kwargs)
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
@@ -1227,7 +1242,7 @@ class Mutation(graphene.ObjectType):
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
 
-    token_auth = graphql_jwt.mutations.ObtainJSONWebToken.Field()
+    token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()
