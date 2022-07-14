@@ -130,6 +130,27 @@ When running the application, the modules are searched for the `bind_service_sig
 function in the module_name/signals.py directory. This method should use `core.signals.bind_service_signal`
 function to connect new signals. Receivers can be registered also in other places.
 
+#### Modules Scheduled Tasks
+To add a scheduled task directly from within a module, add the file `scheduled_tasks.py` 
+in the module package. From there, the function `schedule_tasks` accepting `BackgroundScheudler` 
+as argument must be accessible. 
+
+**Example content of scheduled_tasks.py:**
+```python
+def module_task():
+    ...
+
+def schedule_tasks(scheduler: BackgroundScheduler): # Has to accept BackgroundScheudler as input
+    scheduler.add_job(
+        module_task,
+        trigger=CronTrigger(hour=8),  # Daily at 8 AM
+        id="custom_schedule_id",  # Must be unique across application
+        max_instances=1
+    )    
+```
+Task will be automatically registered, but it will not be triggered unless `SCHEDULER_AUTOSTART` setting is
+set to `True`.
+
 ### Graphene Custom Types & Helper Classes/Methods
 * schema.SmallInt: Integer, with values ranging from -32768 to +32767
 * schema.TinyInt: Integer (8 bit), with values ranging from 0 to 255
