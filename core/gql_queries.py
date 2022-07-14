@@ -123,6 +123,12 @@ class InteractiveUserGQLType(DjangoObjectType):
         else:
             return None
 
+    def resolve_userdistrict_set(self, info, **kwargs):
+        if self.userdistrict_set:
+            return self.userdistrict_set.filter(*filter_validity())
+        else:
+            return None
+
     @classmethod
     def get_queryset(cls, queryset, info):
         return InteractiveUser.get_queryset(queryset, info)
