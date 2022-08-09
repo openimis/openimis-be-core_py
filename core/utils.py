@@ -2,6 +2,11 @@ import core
 import graphene
 from django.db.models import Q
 from django.utils.translation import gettext as _
+import logging
+from django.apps import apps
+
+
+logger = logging.getLogger(__file__)
 
 __all__ = [
     "TimeUtils",
@@ -232,3 +237,16 @@ def get_first_or_default_language():
         return sorted_languages.order_by('sort_order').first()
     else:
         return Language.objects.first()
+
+
+def insert_role_right_for_system(system_role, right_id):
+    RoleRight = apps.get_model("core", "RoleRight")
+    Role = apps.get_model("core", "Role")
+    existing_role = Role.objects.filter(is_system=system_role).first()
+    if not existing_role:
+        logger.warning("Migration requested a role_right for system role %s but couldn't find that role", system_role)
+    role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
+    if not role_right:
+        role_right = RoleRight.objects.create(role=existing_role, right_id=right_id)
+
+    return role_right

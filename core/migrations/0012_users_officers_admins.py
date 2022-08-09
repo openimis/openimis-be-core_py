@@ -38,32 +38,4 @@ class Migration(migrations.Migration):
             },
             bases=(models.Model, core.models.ObjectMutation),
         ),
-        migrations.RunSQL(sql="""
-            insert into core_User (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
-            select replace(lower(newid()), '-', ''), o.code, u.UserID, null, max(o.OfficerID), null
-            from tblOfficer o
-            left join tblUsers u on o.code = u.LoginName
-            where not exists (select 1 from core_User where username=o.code)
-            and o.ValidityTo is null and u.ValidityTo is null
-            group by o.code, u.UserID;
-            update core_User
-            set officer_id=maxofficer.maxid
-            from core_User cu inner join
-                (select code, max(OfficerID) as maxid from tblOfficer where validityTo is null group by code) maxofficer
-                    on code=cu.username
-            where cu.officer_id is null;
-            insert into core_User (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
-            select replace(lower(newid()), '-', '') as uuid, ca.ClaimAdminCode, u.UserID, null as t, null as o, max(ca.ClaimAdminId) as max_id
-            from tblClaimAdmin ca
-            left join tblUsers u on ca.ClaimAdminCode = u.LoginName
-            where not exists (select 1 from core_User where username=ca.ClaimAdminCode)
-            and ca.ValidityTo is null and u.ValidityTo is null
-            group by ca.ClaimAdminCode, u.UserID;
-            update core_User
-            set claim_admin_id=maxca.maxid
-            from core_User cu inner join
-                (select ClaimAdminCode, max(ClaimAdminId) as maxid from tblClaimAdmin where validityTo is null group by ClaimAdminCode) maxca
-                    on ClaimAdminCode=cu.username
-            where cu.claim_admin_id is null;
-        """, reverse_sql="")
     ]
