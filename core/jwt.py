@@ -2,7 +2,6 @@
 # from django.utils.deprecation import MiddlewareMixin
 import jwt
 from graphql_jwt.settings import jwt_settings
-from django.apps import apps
 from graphql_jwt.signals import token_issued
 from django.apps import apps
 from django.utils import timezone

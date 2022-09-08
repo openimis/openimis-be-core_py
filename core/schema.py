@@ -288,16 +288,18 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
+            random_expression = RawSQL("NEWID()", params=[]) \
+                if "sql_server" in settings.DB_ENGINE else \
+                RawSQL("RANDOM()", params=[])
             if type(order) is str:
                 if order == "?":
-                    snake_order = RawSQL("NEWID()", params=[])
+                    snake_order = random_expression
                 else:
                     # due to https://github.com/advisories/GHSA-xpfp-f569-q3p2 we are aggressively filtering the orderBy
                     snake_order = to_snake_case(cls._filter_order_by(order))
             else:
                 snake_order = [
-                    to_snake_case(cls._filter_order_by(o)) if o != "?" else RawSQL(
-                        "NEWID()", params=[])
+                    to_snake_case(cls._filter_order_by(o)) if o != "?" else random_expression
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
