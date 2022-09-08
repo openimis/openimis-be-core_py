@@ -406,6 +406,11 @@ class InteractiveUser(VersionedModel):
                 return hf_model.objects.filter(pk=self.health_facility_id).first()
         return None
 
+    @property
+    def is_officer(self):
+        return Officer.objects.filter(
+            code=self.username, has_login=True, validity_to__isnull=True).exists()
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -684,6 +689,24 @@ class Officer(VersionedModel):
 
     def check_password(self, raw_password):
         return False
+
+    @property
+    def officer_allowed_locations(self):
+        """
+        Returns uuid of all locations allowed for given officer
+        """
+        from location.models import OfficerVillage
+        villages = OfficerVillage.objects\
+            .filter(officer=self, validity_to__isnull=True)
+        all_allowed_uuids = []
+        for village in villages:
+            allowed_uuids = [village.location.uuid]
+            parent = village.location.parent
+            while parent is not None:
+                allowed_uuids.append(parent.uuid)
+                parent = parent.parent
+            all_allowed_uuids.extend(allowed_uuids)
+        return all_allowed_uuids
 
     @classmethod
     def get_queryset(cls, queryset, user):
