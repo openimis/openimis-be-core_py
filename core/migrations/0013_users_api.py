@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db import migrations
 
 
-NEWID_FUNC = "replace(lower(newid()), '-', '')" if "sql_server" in settings.DB_ENGINE else "gen_random_uuid()"
+NEWID_FUNC = "replace(lower(newid()), '-', '')" if settings.MSSQL else "gen_random_uuid()"
 
 
 class Migration(migrations.Migration):

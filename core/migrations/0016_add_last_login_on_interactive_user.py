@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunSQL(
             "ALTER TABLE tblUsers ADD LastLogin [datetime] NULL"
-            if "sql_server" in settings.DB_ENGINE else
+            if settings.MSSQL else
             'ALTER TABLE "tblUsers" ADD "LastLogin" timestamp NULL',
             reverse_sql='ALTER TABLE "tblUsers" DROP COLUMN "LastLogin"',
         ),

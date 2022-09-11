@@ -13,10 +13,9 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import models
-from django.db.models import Q, DO_NOTHING, F
+from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
-from jsonfallback.fields import FallbackJSONField
 from simple_history.models import HistoricalRecords
 
 import core
@@ -93,7 +92,7 @@ class UUIDVersionedModel(BaseVersionedModel):
 
 
 class ExtendableModel(models.Model):
-    json_ext = FallbackJSONField(
+    json_ext = JSONField(
         db_column='JsonExt', blank=True, null=True)
 
     class Meta:
@@ -843,7 +842,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
     objects = HistoryModelManager()
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)
-    json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
+    json_ext = models.JSONField(db_column="Json_ext", blank=True, null=True)
     date_created = DateTimeField(db_column="DateCreated", null=True)
     date_updated = DateTimeField(db_column="DateUpdated", null=True)
     user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created',
