@@ -32,6 +32,8 @@ class OfficerGQLType(DjangoObjectType):
 
 
 class RoleGQLType(DjangoObjectType):
+    system_role_id = graphene.Int()
+
     class Meta:
         model = Role
         interfaces = (graphene.relay.Node,)
