@@ -378,6 +378,7 @@ class Query(graphene.ObjectType):
         RoleGQLType,
         orderBy=graphene.List(of_type=graphene.String),
         is_system=graphene.Boolean(),
+        system_role_id=graphene.Int(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
         str=graphene.String(description="Text search on any field")
@@ -594,6 +595,10 @@ class Query(graphene.ObjectType):
                 query = query.filter(
                     is_system=0
                 )
+
+        if system_role_id := kwargs.get('system_role_id', None):
+            query = query.filter(is_system=system_role_id)
+
         return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_role_right(self, info, **kwargs):
@@ -676,6 +681,8 @@ class RoleBase:
     is_blocked = graphene.Boolean(required=True)
     # field to save all chosen rights to the role
     rights_id = graphene.List(graphene.Int, required=False)
+
+    system_role_id = graphene.Int(required=False)
 
 
 def update_or_create_role(data, user):
