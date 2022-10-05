@@ -49,6 +49,7 @@ DEFAULT_CFG = {
 
 
 class CoreConfig(AppConfig):
+    default_auto_field = 'django.db.models.AutoField'  # Django 3.1+
     name = MODULE_NAME
     age_of_majority = 18
     password_reset_template = "password_reset.txt"

@@ -289,7 +289,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         order = args.get('orderBy', None)
         if order:
             random_expression = RawSQL("NEWID()", params=[]) \
-                if "sql_server" in settings.DB_ENGINE else \
+                if settings.MSSQL else \
                 RawSQL("RANDOM()", params=[])
             if type(order) is str:
                 if order == "?":
