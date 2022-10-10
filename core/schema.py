@@ -8,6 +8,7 @@ from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
 from django.utils.translation import gettext_lazy
+from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 import graphene_django_optimizer as gql_optimizer
 from core.services import (
@@ -38,6 +39,7 @@ from typing import Optional
 from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
+from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -371,6 +373,9 @@ class Query(graphene.ObjectType):
         validity=graphene.String(),
         layer=graphene.String())
 
+    user_obligatory_fields = GenericScalar()
+    eo_obligatory_fields = GenericScalar()
+
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
@@ -478,6 +483,16 @@ class Query(graphene.ObjectType):
     def resolve_user(self, info):
         if info.context.user.is_authenticated:
             return info.context.user
+        return None
+
+    def resolve_user_obligatory_fields(self, info):
+        if info.context.user.is_authenticated:
+            return CoreConfig.fields_controls_user
+        return None
+
+    def resolve_eo_obligatory_fields(self, info):
+        if info.context.user.is_authenticated:
+            return CoreConfig.fields_controls_eo
         return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
@@ -1065,6 +1080,7 @@ class DeleteUserMutation(OpenIMISMutation):
 
 
 @transaction.atomic
+@validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
