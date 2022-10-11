@@ -30,7 +30,7 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
-from graphene.utils.str_converters import to_snake_case
+from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
 from typing import Optional
@@ -101,6 +101,31 @@ class TinyInt(graphene.Int):
             return None
 
 
+class ParsedJSONString(graphene.JSONString):
+    """
+    This type automatically converts keys of json object between camel case (to be used in serialized strings)
+    and snake case (to fit Python objects).
+    """
+
+    @staticmethod
+    def parse_keys(input_dict, key_parser):
+        if isinstance(input_dict, dict):
+            return {key_parser(k): ParsedJSONString.parse_keys(v, key_parser) if isinstance(v, dict) else v for k, v in
+                    input_dict.items()}
+
+    @staticmethod
+    def serialize(dt):
+        return ParsedJSONString.parse_keys(graphene.JSONString.serialize(dt), to_camel_case)
+
+    @staticmethod
+    def parse_literal(node):
+        return ParsedJSONString.parse_keys(graphene.JSONString.parse_literal(node), to_snake_case)
+
+    @staticmethod
+    def parse_value(value):
+        return ParsedJSONString.parse_keys(graphene.JSONString.parse_value(value), to_snake_case)
+
+
 class OpenIMISJSONEncoder(DjangoJSONEncoder):
     def default(self, o):
         if isinstance(o, HttpRequest):
@@ -141,6 +166,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
         client_mutation_details = graphene.List(graphene.String)
+        mutation_extensions = ParsedJSONString(
+            description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
     def async_mutate(cls, user, **data) -> Optional[str]:
@@ -172,10 +199,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             mutation_log.client_mutation_label,
         )
         if (
-            info
-            and info.context
-            and info.context.user
-            and not info.context.user.is_anonymous
+                info
+                and info.context
+                and info.context.user
+                and not info.context.user.is_anonymous
         ):
             lang = info.context.user.language
             if isinstance(lang, Language):
@@ -225,9 +252,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
+                    mutation_data = data.copy()
+                    mutation_data.pop("mutation_extensions", None)
                     error_messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
-                        **data)
+                        **mutation_data)
                     if not error_messages:
                         logger.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
@@ -358,11 +387,11 @@ UT_OFFICER = "OFFICER"
 UT_CLAIM_ADMIN = "CLAIM_ADMIN"
 
 UserTypeEnum = graphene.Enum("UserTypes", [
-            (UT_INTERACTIVE, UT_INTERACTIVE),
-            (UT_OFFICER, UT_OFFICER),
-            (UT_TECHNICAL, UT_TECHNICAL),
-            (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
-        ])
+    (UT_INTERACTIVE, UT_INTERACTIVE),
+    (UT_OFFICER, UT_OFFICER),
+    (UT_TECHNICAL, UT_TECHNICAL),
+    (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
+])
 
 
 class Query(graphene.ObjectType):
@@ -443,7 +472,7 @@ class Query(graphene.ObjectType):
         from .models import Officer
 
         if not info.context.user.has_perms(
-            CoreConfig.gql_query_enrolment_officers_perms
+                CoreConfig.gql_query_enrolment_officers_perms
         ):
             raise PermissionError("Unauthorized")
 
@@ -891,7 +920,7 @@ class DeleteRoleMutation(OpenIMISMutation):
                 errors.append({
                     'title': role,
                     'list': [{'message':
-                        "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                                  "role.validation.id_does_not_exist" % {'id': role_uuid}}]
                 })
                 continue
             errors += set_role_deleted(role)
@@ -1055,7 +1084,7 @@ class DeleteUserMutation(OpenIMISMutation):
                 errors.append({
                     'title': user,
                     'list': [{'message':
-                        "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                                  "user.validation.id_does_not_exist" % {'id': user_uuid}}]
                 })
                 continue
             errors += set_user_deleted(user)
@@ -1130,7 +1159,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
         username = graphene.String(
             required=False,
             description="By default, this operation works on the logged user,"
-            "only administrators can run it on any user",
+                        "only administrators can run it on any user",
         )
         old_password = graphene.String(
             required=False,
@@ -1143,7 +1172,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(
-        cls, root, info, new_password, old_password=None, username=None, **input
+            cls, root, info, new_password, old_password=None, username=None, **input
     ):
         try:
             user = info.context.user
@@ -1225,6 +1254,7 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 
 class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers """
+
     @classmethod
     def mutate(cls, root, info, **kwargs):
         username = kwargs.get("username")
