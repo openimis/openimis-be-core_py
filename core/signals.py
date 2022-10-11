@@ -61,7 +61,7 @@ def register_service_signal(signal_name: str):
 
     def decorator(func):
         @functools.wraps(func)
-        def wrapper_do_twice(*args, **kwargs):
+        def wrapper_propagate_signal(*args, **kwargs):
             registered_signal = REGISTERED_SERVICE_SIGNALS.get(signal_name, None)
             if registered_signal is None:
                 __raise_unregistered_signal_exception(signal_name)
@@ -77,7 +77,7 @@ def register_service_signal(signal_name: str):
             signal_call_args['result'] = out
             registered_signal.send_signal_after(sender=cls_, **signal_call_args)
             return out
-        return wrapper_do_twice
+        return wrapper_propagate_signal
 
     return decorator
 

@@ -45,6 +45,8 @@ DEFAULT_CFG = {
     "gql_mutation_create_claim_administrator_perms": ["121602"],
     "gql_mutation_update_claim_administrator_perms": ["121603"],
     "gql_mutation_delete_claim_administrator_perms": ["121604"],
+    "fields_controls_user": {},
+    "fields_controls_eo": {},
 }
 
 
@@ -74,6 +76,9 @@ class CoreConfig(AppConfig):
     gql_mutation_create_claim_administrator_perms = []
     gql_mutation_update_claim_administrator_perms = []
     gql_mutation_delete_claim_administrator_perms = []
+
+    fields_controls_user = {}
+    fields_controls_eo = {}
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -142,6 +147,10 @@ class CoreConfig(AppConfig):
         CoreConfig.gql_mutation_create_claim_administrator_perms = cfg["gql_mutation_create_claim_administrator_perms"]
         CoreConfig.gql_mutation_update_claim_administrator_perms = cfg["gql_mutation_update_claim_administrator_perms"]
         CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
+        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
+
+        CoreConfig.fields_controls_user = cfg["fields_controls_user"]
+        CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
 
     def ready(self):
         from .models import ModuleConfiguration
