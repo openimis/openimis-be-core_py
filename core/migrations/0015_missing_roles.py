@@ -35,8 +35,6 @@ def create_role_right(apps, schema_editor):
         )
         new_role.save()
 
-    # Your migration code goes here
-
 
 class Migration(migrations.Migration):
 

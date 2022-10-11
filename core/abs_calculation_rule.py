@@ -54,6 +54,36 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
     impacted_class_parameter = property(get_impacted_class_parameter, set_impacted_class_parameter)
 
     @classmethod
+    def get_type(cls):
+        return type(cls)._type
+
+    @classmethod
+    def set_type(cls, val):
+        type(cls)._type = val
+
+    type = property(get_type, set_type)
+
+    @classmethod
+    def get_sub_type(cls):
+        return type(cls)._sub_type
+
+    @classmethod
+    def set_sub_type(cls, val):
+        type(cls)._sub_type = val
+
+    sub_type = property(get_sub_type, set_sub_type)
+
+    @classmethod
+    def get_from_to(cls):
+        return type(cls)._from_to
+
+    @classmethod
+    def set_from_to(cls, val):
+        type(cls)._from_to = val
+
+    from_to = property(get_from_to, set_from_to)
+
+    @classmethod
     @abc.abstractmethod
     def ready(cls):
         return
@@ -65,17 +95,22 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
 
     @classmethod
     @abc.abstractmethod
-    def active_for_object(cls, instance, context):
+    def active_for_object(cls, instance, context, type, sub_type):
         return
 
     @classmethod
     @abc.abstractmethod
-    def calculate(cls, instance, *args):
+    def calculate(cls, instance, *args, **kwargs):
         return
 
     @classmethod
     @abc.abstractmethod
     def get_linked_class(cls, sender, class_name, **kwargs):
+        return
+
+    @classmethod
+    @abc.abstractmethod
+    def convert(cls, instance, convert_to, **kwargs):
         return
 
     @classmethod
@@ -110,9 +145,38 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
             reply if they have object matching the classname in their list of object
         """
         list_class = cls.get_linked_class(sender=sender, class_name=instance.__class__.__name__)
-        if len(list_class) > 0:
-            rule_details = cls.get_rule_details(class_name=list_class[0], sender=sender)
-            if rule_details:
-                if cls.active_for_object(instance=instance, context=context):
-                    result = cls.calculate(instance=instance)
-                    return result
+        if list_class:
+            if len(list_class) > 0:
+                rule_details = cls.get_rule_details(class_name=list_class[0], sender=sender)
+                if rule_details or len(cls.impacted_class_parameter) == 0:
+                    if cls.active_for_object(instance=instance, context=context):
+                        # add context to kwargs
+                        kwargs["context"] = context
+                        result = cls.calculate(instance, **kwargs)
+                        return result
+
+    @classmethod
+    def run_convert(cls, instance, convert_to, **kwargs):
+        """
+            execute the conversion for the instance with the first
+            rule that provide the conversion (see get_convert_from_to)
+        """
+        convert_from = instance.__class__.__name__
+        if convert_from == "Contract":
+            convert_from = "ContractContributionPlanDetails"
+        list_possible_conversion = cls.get_convert_from_to()
+        for possible_conversion in list_possible_conversion:
+            if convert_from == possible_conversion['from'] and convert_to == possible_conversion['to']:
+                result = cls.convert(instance=instance, convert_to=convert_to, **kwargs)
+                return result
+
+    @classmethod
+    def get_convert_from_to(cls):
+        """
+            get the possible conversion, return [calc UUID, from, to]
+        """
+        list_possible_conversion = []
+        for ft in cls.from_to:
+            convert_from_to = {'calc_uuid': cls.uuid, 'from': ft['from'], 'to': ft['to']}
+            list_possible_conversion.append(convert_from_to)
+        return list_possible_conversion

@@ -95,7 +95,7 @@ class InteractiveUserGQLType(DjangoObjectType):
     class Meta:
         model = InteractiveUser
         interfaces = (graphene.relay.Node,)
-        exclude = ("stored_password", "private_key")
+        exclude = ("stored_password", "password", "private_key")
         filter_fields = {
             "id": ["exact"],
             "uuid": ["exact"],
@@ -135,6 +135,12 @@ class UserGQLType(DjangoObjectType):
     managed through this API.
     """
     client_mutation_id = graphene.String()
+    rights = graphene.List(graphene.String)
+    health_facility = graphene.Field(location.gql_queries.HealthFacilityGQLType)
+    other_names = graphene.String()
+    last_name = graphene.String()
+    email = graphene.String()
+    phone = graphene.String()
 
     class Meta:
         model = User
@@ -178,7 +184,7 @@ class UserMutationGQLType(DjangoObjectType):
     class Meta:
         model = UserMutation
 
-        
+
 class LanguageGQLType(DjangoObjectType):
     class Meta:
         model = Language

@@ -213,6 +213,8 @@ class BaseHistoryModelUpdateMutationMixin:
 
     @classmethod
     def _mutate(cls, user, **data):
+        if "date_valid_to" not in data:
+            data['date_valid_to'] = None
         if "client_mutation_id" in data:
             data.pop('client_mutation_id')
         if "client_mutation_label" in data:

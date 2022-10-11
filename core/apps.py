@@ -22,6 +22,7 @@ DEFAULT_CFG = {
     "iso_raw_date": "False",
     "age_of_majority": "18",
     "async_mutations": "False",
+    "password_reset_template": "password_reset.txt",
     "currency": "$",
     "gql_query_users_perms": ["121701"],
     "gql_mutation_create_users_perms": ["121702"],
@@ -50,6 +51,7 @@ DEFAULT_CFG = {
 class CoreConfig(AppConfig):
     name = MODULE_NAME
     age_of_majority = 18
+    password_reset_template = "password_reset.txt"
     gql_query_roles_perms = []
     gql_mutation_create_roles_perms = []
     gql_mutation_update_roles_perms = []
@@ -149,6 +151,8 @@ class CoreConfig(AppConfig):
         self._configure_graphql(cfg)
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
+
+        self.password_reset_template = cfg["password_reset_template"]
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler

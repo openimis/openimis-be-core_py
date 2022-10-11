@@ -1,6 +1,6 @@
 import importlib
 import logging
-
+from django.test.client import RequestFactory
 from django.apps import apps
 
 import core
@@ -10,6 +10,8 @@ from core.services import (
     create_or_update_core_user,
     create_or_update_officer,
     create_or_update_claim_admin,
+    reset_user_password,
+    set_user_password,
 )
 from django.test import TestCase
 from location.models import OfficerVillage
@@ -25,6 +27,7 @@ class UserServicesTest(TestCase):
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
         core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
         self.claim_admin_class = apps.get_model("claim", "ClaimAdmin")
+        self.factory = RequestFactory()
 
     def test_iuser_min(self):
         roles = [11]
@@ -65,7 +68,7 @@ class UserServicesTest(TestCase):
                 other_names="Other 1 2 3",
                 roles=roles,
                 language="fr",
-                phone_number="+123456789",
+                phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
                 password="foobar123",
@@ -86,10 +89,8 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.language.code, "fr")
         self.assertEquals(i_user.phone, "+123456789")
         self.assertEquals(i_user.email, f"{username}@illuminati.int")
-        self.assertIsNotNone(i_user.stored_password)
-        self.assertNotEqual(
-            i_user.stored_password, "foobar123"
-        )  # No clear text password
+        self.assertIsNotNone(i_user.password)
+        self.assertNotEqual(i_user.password, "foobar123")  # No clear text password
         self.assertTrue(i_user.check_password("foobar123"))
         self.assertFalse(i_user.check_password("wrong_password"))
 
@@ -108,7 +109,7 @@ class UserServicesTest(TestCase):
                 other_names="Other 1 2 3",
                 roles=roles,
                 language="fr",
-                phone_number="+123456789",
+                phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
                 password="foobar123",
@@ -144,7 +145,7 @@ class UserServicesTest(TestCase):
                 other_names="Other updated",
                 roles=roles2,
                 language="en",
-                phone_number="updated phone",
+                phone="updated phone",
                 email=f"{username}@updated.int",
                 health_facility_id=2,
                 password="updated",
@@ -249,7 +250,7 @@ class UserServicesTest(TestCase):
                 last_name="Last Name O2",
                 other_names="Other 1 2 3",
                 dob="1999-05-05",
-                phone_number="+12345678",
+                phone="+12345678",
                 email="imis@foo.be",
                 location_id=1,
                 village_ids=[22, 35, 50],
@@ -296,7 +297,7 @@ class UserServicesTest(TestCase):
                 last_name="Last Name O2",
                 other_names="Other 1 2 3",
                 dob="1999-05-05",
-                phone_number="+12345678",
+                phone="+12345678",
                 email="imis@foo.be",
                 location_id=1,
                 village_ids=[22, 35, 50],
@@ -338,7 +339,7 @@ class UserServicesTest(TestCase):
                 last_name="Last updated",
                 other_names="Other updated",
                 dob="1999-01-01",
-                phone_number="+00000",
+                phone="+00000",
                 email="imis@bar.be",
                 location_id=17,
                 village_ids=[22],
@@ -406,7 +407,7 @@ class UserServicesTest(TestCase):
                 last_name="Last Name CA2",
                 other_names="Other 1 2 3",
                 dob="1999-05-05",
-                phone_number="+12345678",
+                phone="+12345678",
                 email="imis@foo.be",
                 health_facility_id=1,
             ),
@@ -426,3 +427,75 @@ class UserServicesTest(TestCase):
 
         deleted_officers = Officer.objects.filter(code=username).delete()
         logger.info(f"Deleted {deleted_officers} officers after test")
+
+    def test_user_reset_password(self):
+        from django.core import mail
+
+        roles = [11, 12]
+        username = "user_reset"
+        i_user, created = create_or_update_interactive_user(
+            user_id=None,
+            data=dict(
+                username=username,
+                last_name="LN",
+                other_names="ON",
+                roles=roles,
+                language="fr",
+                phone="+123456789",
+                email=f"{username}@illuminati.int",
+                health_facility_id=1,
+                password="foobar123",
+            ),
+            audit_user_id=999,
+            connected=False,
+        )
+        self.assertTrue(created)
+        self.assertTrue(i_user.check_password("foobar123"))
+
+        # Core user necessary for the update
+        core_user, core_user_created = create_or_update_core_user(
+            None, username, i_user=i_user
+        )
+        request = self.factory.get("/")
+
+        reset_user_password(request, username)
+
+        self.assertTrue(len(mail.outbox) == 1)
+        self.assertTrue(mail.outbox[0].subject == "[OpenIMIS] Reset Password")
+
+        core_user.delete()
+        i_user.delete()
+
+    def test_user_set_password(self):
+        roles = [11, 12]
+        username = "user_set"
+        i_user, created = create_or_update_interactive_user(
+            user_id=None,
+            data=dict(
+                username=username,
+                last_name="LN",
+                other_names="ON",
+                roles=roles,
+                language="fr",
+                phone="+123456789",
+                email=f"{username}@illuminati.int",
+                health_facility_id=1,
+                password="foobar123",
+            ),
+            audit_user_id=999,
+            connected=False,
+        )
+        self.assertTrue(created)
+        self.assertTrue(i_user.check_password("foobar123"))
+
+        # Core user necessary for the update
+        core_user, _ = create_or_update_core_user(None, username, i_user=i_user)
+
+        from django.core.exceptions import ValidationError
+
+        request = self.factory.get("/")
+        with self.assertRaises(ValidationError):
+            set_user_password(request, username, "TOKEN", "new_password")
+
+        core_user.delete()
+        i_user.delete()

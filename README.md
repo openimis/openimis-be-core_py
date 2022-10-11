@@ -209,6 +209,12 @@ TechnicalUserForm (ability to add technical users from the console)
   ```
   claim.objects.filter(json_ext__jsoncontains={'amount': 10.00, 'adress': { 'country': 'X', 'city': 'Y'}})
   ```
+* jsoncontainskey - another custom filtering parameter for json fields. Equivalent to `__contains` search on
+  underlying serialized json string. It allows queries as:
+  ```
+  claim.objects.filter(json_ext__jsoncontainskey='amount')
+  ```
+  This query searches for `"amouunt":` in json string, so it will match keys in nested json objects
   
 ### WebSocket client
 The module gives access to WebSocket clients allowing external socket communication. 
@@ -311,12 +317,15 @@ CLASS_RULE_PARAM_VALIDATION = [
  
   - calculate(instance, *args) - Function that will do the calculation based on the parameters
   - get_linked_class(List[classname]) - that function will return the possible instance that can have a link to the calculation
+  - convert(instance, convert_to, **argv) - Convert on or several object toward another type, especially to invoice or bill . It will check the from-to, and the rights then will call the Function Name with agrv as parameters
 * generic methods defined on abstract class level
   - get_rule_name(classname) - return an object which is representation of calculaton rule
   - get_rule_details(classname) - return the data about class and parameters
   - get_parameters(class_name, instance) - Function to obtain the required parameter and its properties for an instance of certain model. 
       This function is registered to the module signal via the ready function if the rule is active
-  - run_calculation_rules(instance, context) - trigger the calculations. This function is registered to the module signal via the ready function if the rule is active 
+  - run_calculation_rules(instance, context) - trigger the calculations. This function is registered to the module signal via the ready function if the rule is active
+  - run_convert(instance, convert_to **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to). 'from_to' is deducted from instance. 
+  - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER

@@ -1,4 +1,4 @@
-from core.models import Officer, InteractiveUser, User
+from core.models import Officer, InteractiveUser, User, TechnicalUser
 from core.services import create_or_update_user_roles
 
 
@@ -37,3 +37,24 @@ def create_test_interactive_user(username, password="Test1234", roles=None, cust
         username=username,
         i_user=i_user,
     )
+
+
+def create_test_technical_user(
+        username, password="S\/pe®Pąßw0rd""", super_user=False,
+        custom_tech_user_props=None, custom_core_user_props=None):
+    t_user, t_user_created = TechnicalUser.objects.get_or_create(
+        **{
+            "username": username,
+            "email": "test_tech_user@openimis.org",
+            "is_staff": super_user,
+            "is_superuser": super_user,
+            **(custom_tech_user_props if custom_tech_user_props else {})
+        }
+    )
+    # Just for safety and retrieving the User because TechnicalUser will automatically create its User
+    core_user, core_user_created = User.objects.get_or_create(
+        username=username,
+        t_user=t_user,
+        **(custom_core_user_props if custom_core_user_props else {})
+    )
+    return core_user

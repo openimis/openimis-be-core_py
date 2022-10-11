@@ -7,10 +7,17 @@ import uuid
 from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
-
+from django.utils.translation import gettext_lazy
 import graphene_django_optimizer as gql_optimizer
-from core.services import create_or_update_interactive_user, create_or_update_core_user, create_or_update_officer, \
-    create_or_update_claim_admin, change_user_password
+from core.services import (
+    create_or_update_interactive_user,
+    create_or_update_core_user,
+    create_or_update_officer,
+    create_or_update_claim_admin,
+    change_user_password,
+    reset_user_password,
+    set_user_password,
+)
 from core.tasks import openimis_mutation_async
 from django import dispatch
 from django.conf import settings
@@ -152,11 +159,23 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get("client_mutation_id"),
             client_mutation_label=data.get("client_mutation_label"),
-            client_mutation_details=json.dumps(data.get(
-                "client_mutation_details"), cls=OpenIMISJSONEncoder) if data.get("client_mutation_details") else None
+            client_mutation_details=json.dumps(
+                data.get("client_mutation_details"), cls=OpenIMISJSONEncoder
+            )
+            if data.get("client_mutation_details")
+            else None,
         )
-        logger.debug("OpenIMISMutation: saved as %s, label: %s", mutation_log.id, mutation_log.client_mutation_label)
-        if info and info.context and info.context.user and info.context.user.language:
+        logger.debug(
+            "OpenIMISMutation: saved as %s, label: %s",
+            mutation_log.id,
+            mutation_log.client_mutation_label,
+        )
+        if (
+            info
+            and info.context
+            and info.context.user
+            and not info.context.user.is_anonymous
+        ):
             lang = info.context.user.language
             if isinstance(lang, Language):
                 translation.activate(lang.code)
@@ -166,14 +185,29 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         try:
             logger.debug("[OpenIMISMutation %s] Sending signals", mutation_log.id)
             results = signal_mutation.send(
-                sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class)
-            results.extend(signal_mutation_module_validate[cls._mutation_module].send(
-                sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
-            ))
+                sender=cls,
+                mutation_log_id=mutation_log.id,
+                data=data,
+                user=info.context.user,
+                mutation_module=cls._mutation_module,
+                mutation_class=cls._mutation_class,
+            )
+            results.extend(
+                signal_mutation_module_validate[cls._mutation_module].send(
+                    sender=cls,
+                    mutation_log_id=mutation_log.id,
+                    data=data,
+                    user=info.context.user,
+                    mutation_module=cls._mutation_module,
+                    mutation_class=cls._mutation_class,
+                )
+            )
             errors = [err for r in results for err in r[1]]
-            logger.debug("[OpenIMISMutation %s] signals sent, got errors back: ", mutation_log.id, len(errors))
+            logger.debug(
+                "[OpenIMISMutation %s] signals sent, got errors back: %d",
+                mutation_log.id,
+                len(errors),
+            )
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
                 return cls(internal_id=mutation_log.id)
@@ -386,9 +420,7 @@ class Query(graphene.ObjectType):
                     "ClaimAdmin."
     )
 
-    user = OrderedDjangoFilterConnectionField(
-        UserGQLType, order_by=graphene.List(of_type=graphene.String)
-    )
+    user = graphene.Field(UserGQLType)
 
     enrolment_officers = OrderedDjangoFilterConnectionField(
         OfficerGQLType,
@@ -438,6 +470,11 @@ class Query(graphene.ObjectType):
             filters += filter_validity(**kwargs)
 
         return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_user(self, info):
+        if info.context.user.is_authenticated:
+            return info.context.user
+        return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
                       role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
@@ -887,7 +924,7 @@ class UserBase:
     other_names = graphene.String(required=True, max_length=50)
     last_name = graphene.String(required=True, max_length=50)
     username = graphene.String(required=True, max_length=8)
-    phone_number = graphene.String(required=False)
+    phone = graphene.String(required=False)
     email = graphene.String(required=False)
     password = graphene.String(required=False)
     health_facility_id = graphene.Int(required=False)
@@ -930,7 +967,7 @@ class CreateUserMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-            if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
+            if not user.has_perms(CoreConfig.gql_mutation_create_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
@@ -960,7 +997,7 @@ class UpdateUserMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-            if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
+            if not user.has_perms(CoreConfig.gql_mutation_update_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
@@ -1063,47 +1100,107 @@ def set_user_deleted(user):
         }
 
 
-class ChangePasswordMutation(OpenIMISMutation):
+class ChangePasswordMutation(graphene.relay.ClientIDMutation):
     """
     Change a user's password. Either the user can update his own by providing the old password, or an administrator
     (actually someone with the rights to update users) can force it for anyone without providing the old password.
     """
-    _mutation_module = "core"
-    _mutation_class = "ChangePasswordMutation"
 
-    class Input(OpenIMISMutation.Input):
+    class Input:
         username = graphene.String(
             required=False,
             description="By default, this operation works on the logged user,"
-                        "only administrators can run it on any user")
+            "only administrators can run it on any user",
+        )
         old_password = graphene.String(
             required=False,
-            description="Mandatory to change the current user password, administrators can leave this blank"
+            description="Mandatory to change the current user password, administrators can leave this blank",
         )
-        new_password = graphene.String(
-            required=True,
-            description="New password to set"
-        )
+        new_password = graphene.String(required=True, description="New password to set")
+
+    success = graphene.Boolean()
+    error = graphene.String()
 
     @classmethod
-    def async_mutate(cls, user, **data):
+    def mutate_and_get_payload(
+        cls, root, info, new_password, old_password=None, username=None, **input
+    ):
         try:
+            user = info.context.user
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
-
             change_user_password(
                 user,
-                username_to_update=data.get("username"),
-                old_password=data.get("old_password"),
-                new_password=data.get("new_password"),
+                username_to_update=username,
+                old_password=old_password if not username else None,
+                new_password=new_password,
             )
-            return None
+            return ChangePasswordMutation(success=True)
         except Exception as exc:
-            return [
-                {
-                    'message': "core.mutation.failed_to_change_user_password",
-                    'detail': str(exc)
-                }]
+            logger.exception(exc)
+            return ChangePasswordMutation(
+                success=False,
+                error=gettext_lazy("Failed to change user password"),
+            )
+
+
+class ResetPasswordMutation(graphene.relay.ClientIDMutation):
+    """
+    Recover a user' account using its username or e-mail address.
+    """
+
+    class Input:
+        username = graphene.String(
+            required=True,
+            description=gettext_lazy("Username of the account to recover"),
+        )
+
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username, **input):
+        try:
+            reset_user_password(info.context, username)
+            return ResetPasswordMutation(success=True)
+        except Exception as exc:
+            logger.exception(exc)
+            return ResetPasswordMutation(
+                success=False,
+                error=gettext_lazy("Failed to reset password."),
+            )
+
+
+class SetPasswordMutation(graphene.relay.ClientIDMutation):
+    """
+    Set a password using a pre-generated token received by email
+    """
+
+    class Input:
+        username = graphene.String(
+            required=True, description=gettext_lazy("Username of the user")
+        )
+        token = graphene.String(
+            required=True, description=gettext_lazy("Token used to validate the user")
+        )
+        new_password = graphene.String(
+            required=True, description=gettext_lazy("New password for the user")
+        )
+
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username, token, new_password, **input):
+        try:
+            set_user_password(info.context, username, token, new_password)
+            return SetPasswordMutation(success=True)
+        except Exception as exc:
+            logger.exception(exc)
+            return SetPasswordMutation(
+                success=False,
+                error=gettext_lazy("Failed to set password."),
+            )
 
 
 class Mutation(graphene.ObjectType):
@@ -1115,13 +1212,18 @@ class Mutation(graphene.ObjectType):
     create_user = CreateUserMutation.Field()
     update_user = UpdateUserMutation.Field()
     delete_user = DeleteUserMutation.Field()
+
     change_password = ChangePasswordMutation.Field()
+    reset_password = ResetPasswordMutation.Field()
+    set_password = SetPasswordMutation.Field()
 
     token_auth = graphql_jwt.mutations.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()
 
+    delete_token_cookie = graphql_jwt.DeleteJSONWebTokenCookie.Field()
+    delete_refresh_token_cookie = graphql_jwt.DeleteRefreshTokenCookie.Field()
 
 
 def on_role_mutation(sender, **kwargs):

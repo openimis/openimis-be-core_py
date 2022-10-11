@@ -1,26 +1,27 @@
-import sys
-import os
 import json
 import logging
+import os
+import sys
 import uuid
 from copy import copy
+from datetime import datetime as py_datetime
 
-import core
+from cached_property import cached_property
+from dirtyfields import DirtyFieldsMixin
 from django.apps import apps
+from django.conf import settings
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import models
 from django.db.models import Q, DO_NOTHING, F
-from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.utils.crypto import salted_hmac
-from cached_property import cached_property
 from graphql import ResolveInfo
-from .fields import DateTimeField
-from datetime import datetime as py_datetime
-from .utils import filter_validity, filter_is_deleted
 from jsonfallback.fields import FallbackJSONField
 from simple_history.models import HistoricalRecords
-from dirtyfields import DirtyFieldsMixin
+
+import core
+from .fields import DateTimeField
+from .utils import filter_validity
 
 logger = logging.getLogger(__name__)
 
@@ -249,14 +250,14 @@ class TechnicalUser(AbstractBaseUser):
         try:
             usr = User.objects.get(t_user=self)
         except ObjectDoesNotExist:
-            usr = User()
+            usr = User(username=self.username)
             usr.t_user = self
             save_required = True
         if usr.username != self.username:
             usr.username = self.username
             save_required = True
         if save_required:
-            usr.save()
+            usr.shallow_save()
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -324,21 +325,37 @@ class InteractiveUser(VersionedModel):
     other_names = models.CharField(db_column="OtherNames", max_length=100)
     phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
     login_name = models.CharField(db_column="LoginName", max_length=25)
+    last_login = models.DateTimeField(db_column="LastLogin", null=True)
     health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
     audit_user_id = models.IntegerField(db_column="AuditUserID")
-    # password = models.BinaryField(blank=True, null=True)
     # dummy_pwd is always blank. It is actually a transient field used in the Legacy to pass the clear text password in
     # a User object from the ASPX to the DAL where it is processed into/against password and private key/salt)
     # dummy_pwd = models.CharField(db_column='DummyPwd', max_length=25, blank=True, null=True)
     email = models.CharField(db_column="EmailId", max_length=200, blank=True, null=True)
-    private_key = models.CharField(db_column="PrivateKey", max_length=256, blank=True, null=True,
-                                   help_text="The private key is actually a password salt")
-    stored_password = models.CharField(db_column="StoredPassword", max_length=256, blank=True, null=True,
-                                       help_text="By default a SHA256 of the private key (salt) and password")
-    password_validity = models.DateTimeField(db_column="PasswordValidity", blank=True, null=True)
-    is_associated = models.BooleanField(db_column="IsAssociated", blank=True, null=True,
-                                        help_text="has a claim admin or enrolment officer account")
+    private_key = models.CharField(
+        db_column="PrivateKey",
+        max_length=256,
+        blank=True,
+        null=True,
+        help_text="The private key is actually a password salt",
+    )
+    password = models.CharField(
+        db_column="StoredPassword",
+        max_length=256,
+        blank=True,
+        null=True,
+        help_text="By default a SHA256 of the private key (salt) and password",
+    )
+    password_validity = models.DateTimeField(
+        db_column="PasswordValidity", blank=True, null=True
+    )
+    is_associated = models.BooleanField(
+        db_column="IsAssociated",
+        blank=True,
+        null=True,
+        help_text="has a claim admin or enrolment officer account",
+    )
     role_id = models.IntegerField(db_column="RoleID", null=False)
 
     @property
@@ -351,6 +368,17 @@ class InteractiveUser(VersionedModel):
 
     def get_username(self):
         return self.login_name
+
+    @property
+    def stored_password(self):
+        return self.password
+
+    @stored_password.setter
+    def stored_password(self, value):
+        logger.warn(
+            "You should not use this property to set a password. Use 'password' instead."
+        )
+        self.password = value
 
     @property
     def is_staff(self):
@@ -381,19 +409,23 @@ class InteractiveUser(VersionedModel):
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
+
         self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        self.stored_password = pwd_hash.hexdigest().upper()  # Legacy requires this to be uppercase
+        self.password = (
+            pwd_hash.hexdigest().upper()
+        )  # Legacy requires this to be uppercase
 
     def check_password(self, raw_password):
         from hashlib import sha256
+
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         pwd_hash = pwd_hash.hexdigest()
-        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.stored_password)
+        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.password)
         # hashlib gives a lowercase digest while the legacy gives an uppercase one
-        return pwd_hash == self.stored_password.lower()
+        return pwd_hash == self.password.lower()
 
     @classmethod
     def is_interactive_user(cls, user):
@@ -443,30 +475,21 @@ class User(UUIDModel, PermissionsMixin):
 
     objects = UserManager()
 
-    def __init__(self, *args, **kwargs):
-        super(User, self).__init__(*args, **kwargs)
-        try:
-            self._u = self.i_user or self.officer or self.claim_admin or self.t_user
-        except ValueError:
-            deferred = self.get_deferred_fields()
-            if any(x in deferred for x in ["i_user", "officer", "claim_admin", "t_user"]):
-                logger.error("Some of the user type fields are deferred, this breaks the dynamic loading of "
-                             "openIMIS User, if calling from GraphQL, remove the optimizer")
-            raise
-
     @property
-    def email(self):
-        if self.i_user:
-            return self.i_user.email
-        if self.officer:
-            return self.officer.email
-        if self.claim_admin:
-            return self.claim_admin.email_id
-        return None
+    def _u(self):
+        return self.i_user or self.officer or self.claim_admin or self.t_user
 
     @property
     def id_for_audit(self):
         return self._u.id
+
+    @property
+    def last_login(self):
+        return getattr(self._u, "last_login")
+
+    @last_login.setter
+    def last_login(self, value):
+        return setattr(self._u, "last_login", value)
 
     @property
     def is_anonymous(self):
@@ -498,7 +521,27 @@ class User(UUIDModel, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        return True if i_user is not None and perm in i_user.rights_str else super(User, self).has_perm(perm, obj)
+        return (
+            True
+            if i_user is not None and perm in i_user.rights_str
+            else super(User, self).has_perm(perm, obj)
+        )
+
+    @property
+    def rights(self):
+        if self.i_user:
+            return self.i_user.rights
+        return []
+
+    def set_password(self, raw_password):
+        if self._u and hasattr(self._u, "set_password"):
+            return self._u.set_password(raw_password)
+        self.clear_refresh_tokens()
+        return None
+
+    def clear_refresh_tokens(self):
+        for refresh in self.refresh_tokens.filter(revoked__isnull=True):
+            refresh.revoke()
 
     def get_session_auth_hash(self):
         key_salt = "core.User.get_session_auth_hash"
@@ -511,6 +554,10 @@ class User(UUIDModel, PermissionsMixin):
             return self.i_user.health_facility
         return None
 
+    @property
+    def health_facility(self):
+        return self.get_health_facility()
+
     def __getattr__(self, name):
         if name == '_u':
             raise ValueError('wrapper has not been initialised')
@@ -518,8 +565,6 @@ class User(UUIDModel, PermissionsMixin):
             return self.username
         if name == 'get_session_auth_hash':
             return False
-        # if not self._u:
-        #     return None
         return getattr(self._u, name)
 
     def __call__(self, *args, **kwargs):
@@ -543,6 +588,10 @@ class User(UUIDModel, PermissionsMixin):
     def save(self, *args, **kwargs):
         if self._u and self._u.id:
             self._u.save()
+        super().save(*args, **kwargs)
+
+    def shallow_save(self, *args, **kwargs):
+        """ Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion """
         super().save(*args, **kwargs)
 
     @classmethod
@@ -799,7 +848,10 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 
     def save(self, *args, **kwargs):
         # get the user data so as to assign later his uuid id in fields user_updated etc
-        user = User.objects.get(**kwargs)
+        if 'username' in kwargs:
+            user = User.objects.get(username=kwargs.pop('username'))
+        else:
+            raise ValidationError('Save error! Provide the username of the current user in `username` argument')
         from core import datetime
         now = datetime.datetime.now()
         # check if object has been newly created
@@ -810,7 +862,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.user_updated = user
             self.date_created = now
             self.date_updated = now
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         if self.is_dirty(check_relationship=True):
             self.date_updated = now
             self.user_updated = user
@@ -819,7 +871,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             if hasattr(self, "replacement_uuid"):
                 if self.replacement_uuid is not None and 'replacement_uuid' not in self.get_dirty_fields():
                     raise ValidationError('Update error! You cannot update replaced entity')
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         else:
             raise ValidationError('Record has not be updated - there are no changes in fields')
 
@@ -827,7 +879,10 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         pass
 
     def delete(self, *args, **kwargs):
-        user = User.objects.get(**kwargs)
+        if 'username' in kwargs:
+            user = User.objects.get(username=kwargs.pop('username'))
+        else:
+            raise ValidationError('Delete error! Provide the username of the current user in `username` argument')
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
             from core import datetime
             now = datetime.datetime.now()
@@ -843,7 +898,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
                 if replaced_entity:
                     replaced_entity.replacement_uuid = None
                     replaced_entity.save(username="admin")
-            return super(HistoryModel, self).save()
+            return super(HistoryModel, self).save(*args, **kwargs)
         else:
             raise ValidationError(
                 'Record has not be deactivating, the object is different and must be updated before deactivating')
