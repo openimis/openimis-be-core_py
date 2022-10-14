@@ -441,6 +441,10 @@ class InteractiveUser(VersionedModel):
             return None
 
     @classmethod
+    def get_email_field_name(cls):
+        return "email"
+
+    @classmethod
     def get_queryset(cls, queryset, user):
         if isinstance(user, ResolveInfo):
             user = user.context.user
