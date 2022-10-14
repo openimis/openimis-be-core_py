@@ -1,13 +1,11 @@
-import sys
 import importlib
 import core
 from django.test import TestCase
-from ..datetimes.ad_datetime import date
-from .ad_calendar import *
 
 
 class CalendarTestCase(TestCase):
     def setUp(self):
+        super(CalendarTestCase, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ad_calendar', 'core')
         core.datetime = importlib.import_module(

@@ -1,4 +1,3 @@
-import sys
 import importlib
 import core
 from django.test import TestCase
@@ -7,6 +6,7 @@ from datetime import date as py_date
 
 class CalendarTestCase(TestCase):
     def setUp(self):
+        super(CalendarTestCase, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ne_calendar', 'core')
         core.datetime = importlib.import_module(
@@ -16,7 +16,7 @@ class CalendarTestCase(TestCase):
         core.calendar = importlib.import_module(
             '.calendars.ad_calendar', 'core')
         core.datetime = importlib.import_module(
-            '.datetimes.ad_datetime', 'core')                  
+            '.datetimes.ad_datetime', 'core')
 
     def test_from_ad_date(self):
         dt = core.datetime.date.from_ad_date(py_date(2020, 1, 13))
@@ -36,7 +36,7 @@ class CalendarTestCase(TestCase):
         wd = core.calendar.weekday(2076, 9, 11)
         self.assertEqual(wd, 5)
         wd = core.calendar.weekday(2076, 9, 28)
-        self.assertEqual(wd, 1)        
+        self.assertEqual(wd, 1)
 
     def test_monthfirstday(self):
         dt = core.calendar.monthfirstday(2076, 9)
