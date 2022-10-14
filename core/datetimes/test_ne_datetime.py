@@ -9,6 +9,7 @@ from .shared import is_midnight, datetimedelta
 
 class NeDateTestCase(TestCase):
     def setUp(self):
+        super(NeDateTestCase, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ne_calendar', 'core')
         core.datetime = importlib.import_module(
@@ -163,6 +164,7 @@ class NeDateTestCase(TestCase):
 
 class NeDatetimeTestCase(TestCase):
     def setUp(self):
+        super(NeDatetimeTestCase, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ne_calendar', 'core')
         core.datetime = importlib.import_module(

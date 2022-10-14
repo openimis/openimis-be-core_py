@@ -9,6 +9,7 @@ from .shared import is_midnight, datetimedelta
 
 class SharedUtilsTest(TestCase):
     def setUp(self):
+        super(SharedUtilsTest, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ad_calendar', 'core')
         core.datetime = importlib.import_module(
@@ -148,6 +149,7 @@ class AdDateTestCase(TestCase):
 
 class AdDatetimeTestCase(TestCase):
     def setUp(self):
+        super(AdDatetimeTestCase, self).setUp()
         core.calendar = importlib.import_module(
             '.calendars.ad_calendar', 'core')
         core.datetime = importlib.import_module(

@@ -23,6 +23,7 @@ class UserServicesTest(TestCase):
     claim_admin_class = None
 
     def setUp(self):
+        super(UserServicesTest, self).setUp()
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
         core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
