@@ -441,6 +441,10 @@ class InteractiveUser(VersionedModel):
             return None
 
     @classmethod
+    def get_email_field_name(cls):
+        return "email"
+
+    @classmethod
     def get_queryset(cls, queryset, user):
         if isinstance(user, ResolveInfo):
             user = user.context.user
@@ -574,6 +578,10 @@ class User(UUIDModel, PermissionsMixin):
     def __call__(self, *args, **kwargs):
         # if not self._u:
         #     raise ValueError('wrapper has not been initialised')
+        if len(args) == 0 and len(kwargs) == 0 and not callable(self._u):
+            # This happens when doing callable(user). Since this is a method, the class looks callable but it is not
+            # To avoid this, we'll just return the object when calling it. This avoid issues in Django templates
+            return self
         return self._u(*args, **kwargs)
 
     def __str__(self):
