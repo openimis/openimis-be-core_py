@@ -145,15 +145,22 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
             reply if they have object matching the classname in their list of object
         """
         list_class = cls.get_linked_class(sender=sender, class_name=instance.__class__.__name__)
+        # if the class have a calculation param, (like contribution or payment plan) add class name
+        if hasattr(instance, 'calculation'):
+            list_class.append(instance.__class__.__name__)
         if list_class:
-            if len(list_class) > 0:
-                rule_details = cls.get_rule_details(class_name=list_class[0], sender=sender)
+            for class_name in list_class:
+                rule_details = cls.get_rule_details(class_name=class_name, sender=sender)
                 if rule_details or len(cls.impacted_class_parameter) == 0:
-                    if cls.active_for_object(instance=instance, context=context):
-                        # add context to kwargs
-                        kwargs["context"] = context
-                        result = cls.calculate(instance, **kwargs)
-                        return result
+                    # add context to kwargs
+                    kwargs["context"] = context
+                    result = cls.calculate_if_active_for_object(instance, **kwargs)
+                    return result
+
+    @classmethod
+    def calculate_if_active_for_object(cls, instance, **kwargs):
+        if cls.active_for_object(instance=instance, context=kwargs['context']):
+            return cls.calculate(instance, **kwargs)
 
     @classmethod
     def run_convert(cls, instance, convert_to, **kwargs):

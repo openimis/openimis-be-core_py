@@ -11,6 +11,7 @@ from django.utils.http import urlencode
 
 from core.apps import CoreConfig
 from core.models import User, InteractiveUser, Officer, UserRole
+from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 logger = logging.getLogger(__file__)
 
@@ -106,6 +107,7 @@ def create_or_update_officer_villages(officer, village_ids, audit_user_id):
         )
 
 
+@validate_payload_for_obligatory_fields(CoreConfig.fields_controls_eo, 'data')
 def create_or_update_officer(user_id, data, audit_user_id, connected):
     officer_fields = {
         "username": "code",

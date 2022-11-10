@@ -23,6 +23,7 @@ class UserServicesTest(TestCase):
     claim_admin_class = None
 
     def setUp(self):
+        super(UserServicesTest, self).setUp()
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
         core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
@@ -227,7 +228,7 @@ class UserServicesTest(TestCase):
         officer, created = create_or_update_officer(
             user_id=None,
             data=dict(
-                username=username, last_name="Last Name O1", other_names="Other 1 2 3"
+                username=username, last_name="Last Name O1", other_names="Other 1 2 3", phone="+12345678"
             ),
             audit_user_id=999,
             connected=False,
@@ -237,6 +238,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(officer.username, username)
         self.assertEquals(officer.last_name, "Last Name O1")
         self.assertEquals(officer.other_names, "Other 1 2 3")
+        self.assertEquals(officer.phone, "+12345678")
 
         deleted_officers = Officer.objects.filter(code=username).delete()
         logger.info(f"Deleted {deleted_officers} officers after test")

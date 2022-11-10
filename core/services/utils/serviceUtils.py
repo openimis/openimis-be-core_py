@@ -22,6 +22,24 @@ def check_authentication(function):
     return wrapper
 
 
+def check_permissions(permissions=None):
+    def decorator(function):
+        def wrapper(self, *args, **kwargs):
+            if not self.user.has_perms(permissions):
+                return {
+                    "success": False,
+                    "message": "Permissions required",
+                    "detail": "PermissionDenied",
+                }
+            else:
+                result = function(self, *args, **kwargs)
+                return result
+
+        return wrapper
+
+    return decorator
+
+
 def model_representation(model):
     uuid_string = str(model.id)
     dict_representation = model_to_dict(model)

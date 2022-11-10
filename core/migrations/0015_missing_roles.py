@@ -7,7 +7,7 @@ from core.models import RoleRight, Role
 logger = logging.getLogger(__name__)
 
 ROLE_RIGHTS_ID = [101201, 101101, 101001, 101105]
-MANAGER_ROLE_IS_SYSTEM = 256  # By default missing rights are assigned to ClaimAdmin role
+MANAGER_ROLE_IS_SYSTEM = 64  # By default missing rights are assigned to ClaimAdmin role
 
 
 @lru_cache(maxsize=1)

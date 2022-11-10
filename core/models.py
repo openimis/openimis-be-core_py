@@ -13,10 +13,9 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import models
-from django.db.models import Q, DO_NOTHING, F
+from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
-from jsonfallback.fields import FallbackJSONField
 from simple_history.models import HistoricalRecords
 
 import core
@@ -93,7 +92,7 @@ class UUIDVersionedModel(BaseVersionedModel):
 
 
 class ExtendableModel(models.Model):
-    json_ext = FallbackJSONField(
+    json_ext = JSONField(
         db_column='JsonExt', blank=True, null=True)
 
     class Meta:
@@ -406,6 +405,11 @@ class InteractiveUser(VersionedModel):
                 return hf_model.objects.filter(pk=self.health_facility_id).first()
         return None
 
+    @property
+    def is_officer(self):
+        return Officer.objects.filter(
+            code=self.username, has_login=True, validity_to__isnull=True).exists()
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -435,6 +439,10 @@ class InteractiveUser(VersionedModel):
             return user.i_user
         else:
             return None
+
+    @classmethod
+    def get_email_field_name(cls):
+        return "email"
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -570,6 +578,10 @@ class User(UUIDModel, PermissionsMixin):
     def __call__(self, *args, **kwargs):
         # if not self._u:
         #     raise ValueError('wrapper has not been initialised')
+        if len(args) == 0 and len(kwargs) == 0 and not callable(self._u):
+            # This happens when doing callable(user). Since this is a method, the class looks callable but it is not
+            # To avoid this, we'll just return the object when calling it. This avoid issues in Django templates
+            return self
         return self._u(*args, **kwargs)
 
     def __str__(self):
@@ -684,6 +696,24 @@ class Officer(VersionedModel):
 
     def check_password(self, raw_password):
         return False
+
+    @property
+    def officer_allowed_locations(self):
+        """
+        Returns uuid of all locations allowed for given officer
+        """
+        from location.models import OfficerVillage
+        villages = OfficerVillage.objects\
+            .filter(officer=self, validity_to__isnull=True)
+        all_allowed_uuids = []
+        for village in villages:
+            allowed_uuids = [village.location.uuid]
+            parent = village.location.parent
+            while parent is not None:
+                allowed_uuids.append(parent.uuid)
+                parent = parent.parent
+            all_allowed_uuids.extend(allowed_uuids)
+        return all_allowed_uuids
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -820,7 +850,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     id = models.UUIDField(primary_key=True, db_column="UUID", default=None, editable=False)
     objects = HistoryModelManager()
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)
-    json_ext = FallbackJSONField(db_column="Json_ext", blank=True, null=True)
+    json_ext = models.JSONField(db_column="Json_ext", blank=True, null=True)
     date_created = DateTimeField(db_column="DateCreated", null=True)
     date_updated = DateTimeField(db_column="DateUpdated", null=True)
     user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created',

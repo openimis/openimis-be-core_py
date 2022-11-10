@@ -7,6 +7,7 @@ from .models import TechnicalUser
 
 User = get_user_model()
 
+
 class TechnicalUserForm(forms.ModelForm):
     password = forms.CharField(
         strip=False,
@@ -25,8 +26,10 @@ class TechnicalUserForm(forms.ModelForm):
             user.save()
         return user        
 
+
 class TechnicalUserAdmin(admin.ModelAdmin):
     form = TechnicalUserForm
+
 
 class GroupAdminForm(forms.ModelForm):
     class Meta:
@@ -51,6 +54,7 @@ class GroupAdminForm(forms.ModelForm):
         instance = super(GroupAdminForm, self).save(commit=True)
         self.save_m2m()
         return instance    
+
 
 class GroupAdmin(admin.ModelAdmin):
     form = GroupAdminForm

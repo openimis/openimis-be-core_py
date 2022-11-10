@@ -32,6 +32,8 @@ class OfficerGQLType(DjangoObjectType):
 
 
 class RoleGQLType(DjangoObjectType):
+    system_role_id = graphene.Int()
+
     class Meta:
         model = Role
         interfaces = (graphene.relay.Node,)
@@ -120,6 +122,12 @@ class InteractiveUserGQLType(DjangoObjectType):
             return Role.objects\
                 .filter(validity_to__isnull=True)\
                 .filter(user_roles__user_id=self.id, user_roles__validity_to__isnull=True)
+        else:
+            return None
+
+    def resolve_userdistrict_set(self, info, **kwargs):
+        if self.userdistrict_set:
+            return self.userdistrict_set.filter(*filter_validity())
         else:
             return None
 

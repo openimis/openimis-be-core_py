@@ -8,6 +8,8 @@ from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
 from django.utils.translation import gettext_lazy
+from graphene.types.generic import GenericScalar
+from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 import graphene_django_optimizer as gql_optimizer
 from core.services import (
     create_or_update_interactive_user,
@@ -29,7 +31,7 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
-from graphene.utils.str_converters import to_snake_case
+from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
 from typing import Optional
@@ -37,6 +39,7 @@ from typing import Optional
 from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
+from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -100,6 +103,31 @@ class TinyInt(graphene.Int):
             return None
 
 
+class ParsedJSONString(graphene.JSONString):
+    """
+    This type automatically converts keys of json object between camel case (to be used in serialized strings)
+    and snake case (to fit Python objects).
+    """
+
+    @staticmethod
+    def parse_keys(input_dict, key_parser):
+        if isinstance(input_dict, dict):
+            return {key_parser(k): ParsedJSONString.parse_keys(v, key_parser) if isinstance(v, dict) else v for k, v in
+                    input_dict.items()}
+
+    @staticmethod
+    def serialize(dt):
+        return ParsedJSONString.parse_keys(graphene.JSONString.serialize(dt), to_camel_case)
+
+    @staticmethod
+    def parse_literal(node):
+        return ParsedJSONString.parse_keys(graphene.JSONString.parse_literal(node), to_snake_case)
+
+    @staticmethod
+    def parse_value(value):
+        return ParsedJSONString.parse_keys(graphene.JSONString.parse_value(value), to_snake_case)
+
+
 class OpenIMISJSONEncoder(DjangoJSONEncoder):
     def default(self, o):
         if isinstance(o, HttpRequest):
@@ -140,6 +168,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
         client_mutation_details = graphene.List(graphene.String)
+        mutation_extensions = ParsedJSONString(
+            description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
     def async_mutate(cls, user, **data) -> Optional[str]:
@@ -171,10 +201,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             mutation_log.client_mutation_label,
         )
         if (
-            info
-            and info.context
-            and info.context.user
-            and not info.context.user.is_anonymous
+                info
+                and info.context
+                and info.context.user
+                and not info.context.user.is_anonymous
         ):
             lang = info.context.user.language
             if isinstance(lang, Language):
@@ -224,9 +254,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
+                    mutation_data = data.copy()
+                    mutation_data.pop("mutation_extensions", None)
                     error_messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
-                        **data)
+                        **mutation_data)
                     if not error_messages:
                         logger.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
@@ -287,16 +319,18 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
+            random_expression = RawSQL("NEWID()", params=[]) \
+                if settings.MSSQL else \
+                RawSQL("RANDOM()", params=[])
             if type(order) is str:
                 if order == "?":
-                    snake_order = RawSQL("NEWID()", params=[])
+                    snake_order = random_expression
                 else:
                     # due to https://github.com/advisories/GHSA-xpfp-f569-q3p2 we are aggressively filtering the orderBy
                     snake_order = to_snake_case(cls._filter_order_by(order))
             else:
                 snake_order = [
-                    to_snake_case(cls._filter_order_by(o)) if o != "?" else RawSQL(
-                        "NEWID()", params=[])
+                    to_snake_case(cls._filter_order_by(o)) if o != "?" else random_expression
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
@@ -355,11 +389,11 @@ UT_OFFICER = "OFFICER"
 UT_CLAIM_ADMIN = "CLAIM_ADMIN"
 
 UserTypeEnum = graphene.Enum("UserTypes", [
-            (UT_INTERACTIVE, UT_INTERACTIVE),
-            (UT_OFFICER, UT_OFFICER),
-            (UT_TECHNICAL, UT_TECHNICAL),
-            (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
-        ])
+    (UT_INTERACTIVE, UT_INTERACTIVE),
+    (UT_OFFICER, UT_OFFICER),
+    (UT_TECHNICAL, UT_TECHNICAL),
+    (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN)
+])
 
 
 class Query(graphene.ObjectType):
@@ -368,6 +402,9 @@ class Query(graphene.ObjectType):
         validity=graphene.String(),
         layer=graphene.String())
 
+    user_obligatory_fields = GenericScalar()
+    eo_obligatory_fields = GenericScalar()
+
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String))
 
@@ -375,13 +412,14 @@ class Query(graphene.ObjectType):
         RoleGQLType,
         orderBy=graphene.List(of_type=graphene.String),
         is_system=graphene.Boolean(),
+        system_role_id=graphene.Int(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
         str=graphene.String(description="Text search on any field")
     )
 
     role_right = OrderedDjangoFilterConnectionField(
-        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date()
+        RoleRightGQLType, orderBy=graphene.List(of_type=graphene.String), validity=graphene.Date(), max_limit=None
     )
 
     interactiveUsers = OrderedDjangoFilterConnectionField(
@@ -439,7 +477,7 @@ class Query(graphene.ObjectType):
         from .models import Officer
 
         if not info.context.user.has_perms(
-            CoreConfig.gql_query_enrolment_officers_perms
+                CoreConfig.gql_query_enrolment_officers_perms
         ):
             raise PermissionError("Unauthorized")
 
@@ -474,6 +512,16 @@ class Query(graphene.ObjectType):
     def resolve_user(self, info):
         if info.context.user.is_authenticated:
             return info.context.user
+        return None
+
+    def resolve_user_obligatory_fields(self, info):
+        if info.context.user.is_authenticated:
+            return CoreConfig.fields_controls_user
+        return None
+
+    def resolve_eo_obligatory_fields(self, info):
+        if info.context.user.is_authenticated:
+            return CoreConfig.fields_controls_eo
         return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
@@ -591,12 +639,21 @@ class Query(graphene.ObjectType):
                 query = query.filter(
                     is_system=0
                 )
+
+        if system_role_id := kwargs.get('system_role_id', None):
+            query = query.filter(is_system=system_role_id)
+
         return gql_optimizer.query(query.filter(*filters), info)
 
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        return gql_optimizer.query(RoleRight.objects.all(), info)
+        filters = []
+        if 'validity' in kwargs:
+            filters += filter_validity(**kwargs)
+            return gql_optimizer.query(RoleRight.objects.filter(*filters), info)
+        else:
+            return gql_optimizer.query(RoleRight.objects.filter(validity_to__isnull=True), info)
 
     def resolve_modules_permissions(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -611,8 +668,13 @@ class Query(graphene.ObjectType):
         config = []
         for app in all_apps:
             apps = __import__(f"{app}.apps")
-            if hasattr(apps.apps, 'DEFAULT_CFG'):
-                config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
+            is_default_cfg = hasattr(apps.apps, 'DEFAULT_CFG')
+            is_defaulf_config = hasattr(apps.apps, 'DEFAULT_CONFIG')
+            if is_default_cfg or is_defaulf_config:
+                if is_defaulf_config:
+                    config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CONFIG)
+                else:
+                    config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
                 for key, value in config_dict.items():
                     if key.endswith("_perms"):
@@ -663,6 +725,8 @@ class RoleBase:
     is_blocked = graphene.Boolean(required=True)
     # field to save all chosen rights to the role
     rights_id = graphene.List(graphene.Int, required=False)
+
+    system_role_id = graphene.Int(required=False)
 
 
 def update_or_create_role(data, user):
@@ -871,7 +935,7 @@ class DeleteRoleMutation(OpenIMISMutation):
                 errors.append({
                     'title': role,
                     'list': [{'message':
-                        "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                                  "role.validation.id_does_not_exist" % {'id': role_uuid}}]
                 })
                 continue
             errors += set_role_deleted(role)
@@ -1035,7 +1099,7 @@ class DeleteUserMutation(OpenIMISMutation):
                 errors.append({
                     'title': user,
                     'list': [{'message':
-                        "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                                  "user.validation.id_does_not_exist" % {'id': user_uuid}}]
                 })
                 continue
             errors += set_user_deleted(user)
@@ -1045,6 +1109,7 @@ class DeleteUserMutation(OpenIMISMutation):
 
 
 @transaction.atomic
+@validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
@@ -1110,7 +1175,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
         username = graphene.String(
             required=False,
             description="By default, this operation works on the logged user,"
-            "only administrators can run it on any user",
+                        "only administrators can run it on any user",
         )
         old_password = graphene.String(
             required=False,
@@ -1123,7 +1188,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(
-        cls, root, info, new_password, old_password=None, username=None, **input
+            cls, root, info, new_password, old_password=None, username=None, **input
     ):
         try:
             user = info.context.user
@@ -1203,6 +1268,21 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
+    """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers """
+
+    @classmethod
+    def mutate(cls, root, info, **kwargs):
+        username = kwargs.get("username")
+        # consider auto-provisioning
+        if username:
+            # get_or_create will auto-provision from tblUsers if applicable
+            user = User.objects.get_or_create(username=username)
+            if user:
+                logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+        return super().mutate(cls, info, **kwargs)
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
@@ -1217,7 +1297,7 @@ class Mutation(graphene.ObjectType):
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
 
-    token_auth = graphql_jwt.mutations.ObtainJSONWebToken.Field()
+    token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()

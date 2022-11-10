@@ -113,6 +113,10 @@ If the callback returns None (or an empty array), the mutation is marked as succ
 
 __Important Note__: by default the callback is executed __in transaction__ and, as a consequence, will (in case of exception/errors) cancel the complete mutation. If this is not the desired behaviour, the callback must explicitely detach to separate transaction (process).
 
+#### Extending mutations with signals
+Signal callbacks could use mutationExtensions JSON field to receive additional data from mutation payload. This
+feature allows to extend mutations with a new module without modifying the base mutation.
+
 #### Service signals 
 In addition, the core provides the possibility to register additional signals via 
 the `register_service_signal` decorator. Registered signals are stored in
@@ -129,6 +133,27 @@ Will create new RegisteredServiceSignal instance available from
 When running the application, the modules are searched for the `bind_service_signals()` 
 function in the module_name/signals.py directory. This method should use `core.signals.bind_service_signal`
 function to connect new signals. Receivers can be registered also in other places.
+
+#### Modules Scheduled Tasks
+To add a scheduled task directly from within a module, add the file `scheduled_tasks.py` 
+in the module package. From there, the function `schedule_tasks` accepting `BackgroundScheudler` 
+as argument must be accessible. 
+
+**Example content of scheduled_tasks.py:**
+```python
+def module_task():
+    ...
+
+def schedule_tasks(scheduler: BackgroundScheduler): # Has to accept BackgroundScheudler as input
+    scheduler.add_job(
+        module_task,
+        trigger=CronTrigger(hour=8),  # Daily at 8 AM
+        id="custom_schedule_id",  # Must be unique across application
+        max_instances=1
+    )    
+```
+Task will be automatically registered, but it will not be triggered unless `SCHEDULER_AUTOSTART` setting is
+set to `True`.
 
 ### Graphene Custom Types & Helper Classes/Methods
 * schema.SmallInt: Integer, with values ranging from -32768 to +32767

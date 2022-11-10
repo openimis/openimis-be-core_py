@@ -4,13 +4,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
 from core import get_scheduler_method_ref
 from django_apscheduler.jobstores import register_events  # , register_job
+from copy import deepcopy
 
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 # Create scheduler to run in a thread inside the application process
-scheduler = BackgroundScheduler(settings.SCHEDULER_CONFIG)
+scheduler = BackgroundScheduler(deepcopy(settings.SCHEDULER_CONFIG))
 
 
 def schedule_tasks(task_scheduler):
