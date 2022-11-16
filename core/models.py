@@ -385,7 +385,10 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_superuser(self):
-        return False
+        if isinstance(self, TechnicalUser):
+            return super(TechnicalUser, self).is_superuser()
+        else:
+            return False
 
     @cached_property
     def rights(self):
@@ -513,7 +516,10 @@ class User(UUIDModel, PermissionsMixin):
 
     @property
     def is_superuser(self):
-        return self._u.is_superuser
+        if isinstance(self, TechnicalUser):
+            return self.is_superuser
+        else:
+            return False
 
     @property
     def is_active(self):
@@ -528,10 +534,12 @@ class User(UUIDModel, PermissionsMixin):
         return True
 
     def has_perm(self, perm, obj=None):
-        i_user = self.i_user if obj is None else obj.i_user
+        self.has_perms(self, perm, obj=None)
+
+    def has_perms(self, perm, obj=None):
         return (
             True
-            if i_user is not None and perm in i_user.rights_str
+            if self.is_superuser is True
             else super(User, self).has_perm(perm, obj)
         )
 
