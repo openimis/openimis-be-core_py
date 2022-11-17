@@ -537,18 +537,10 @@ class User(UUIDModel, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        if i_user is not None and i_user.is_superuser or perm in i_user.rights_str:
+        if i_user is not None and (i_user.is_superuser or perm in i_user.rights_str):
             return True
         else:
             return super(User, self).has_perm(perm, obj)
-
-    def has_perms(self, perm, obj=None):
-        i_user = self.i_user if obj is None else obj.i_user
-        return (
-            True
-            if i_user is not None and perm in i_user.rights_str
-            else super(User, self).has_perm(perm, obj)
-        )
 
     @property
     def rights(self):
