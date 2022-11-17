@@ -539,7 +539,7 @@ class User(UUIDModel, PermissionsMixin):
         i_user = self.i_user if obj is None else obj.i_user
         return (
             True
-            if i_user is not None and i_user.is_superuser or perm in i_user.rights_str
+            if i_user is not None and (i_user.is_superuser or perm in i_user.rights_str)
             else super(User, self).has_perm(perm, obj)
         )
 
