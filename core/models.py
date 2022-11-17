@@ -372,6 +372,10 @@ class InteractiveUser(VersionedModel):
     def stored_password(self):
         return self.password
 
+    @property
+    def user(self):
+        return self.user_set.first()
+
     @stored_password.setter
     def stored_password(self, value):
         logger.warn(
@@ -385,6 +389,8 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_superuser(self):
+        if self.user and self.user.t_user:
+            return self.user.t_user.is_superuser
         return False
 
     @cached_property
@@ -513,7 +519,9 @@ class User(UUIDModel, PermissionsMixin):
 
     @property
     def is_superuser(self):
-        return self._u.is_superuser
+        if self.user and self.user.t_user:
+            return self.user.t_user.is_superuser
+        return False
 
     @property
     def is_active(self):
@@ -529,11 +537,10 @@ class User(UUIDModel, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        return (
-            True
-            if i_user is not None and perm in i_user.rights_str
-            else super(User, self).has_perm(perm, obj)
-        )
+        if i_user is not None and (i_user.is_superuser or perm in i_user.rights_str):
+            return True
+        else:
+            return super(User, self).has_perm(perm, obj)
 
     @property
     def rights(self):
