@@ -1,10 +1,12 @@
+import csv
 import json
 import logging
 import os
 import sys
 import uuid
 from copy import copy
-from datetime import datetime as py_datetime
+from datetime import datetime as py_datetime, timedelta
+from typing import List, Callable
 
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
@@ -12,10 +14,12 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
+from django.core.files.base import ContentFile
 from django.db import models
 from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
+from pandas import DataFrame
 from simple_history.models import HistoricalRecords
 
 import core
@@ -1030,3 +1034,51 @@ class UserMutation(UUIDModel, ObjectMutation):
     class Meta:
         managed = True
         db_table = "core_UserMutation"
+
+
+def _get_default_expire_date():
+    return py_datetime.now() + timedelta(days=1)
+
+
+def _query_export_path(instance, filename):
+    # file will be uploaded to MEDIA_ROOT/user_<id>/<filename>
+    return F'query_exports/user_{instance.user.uuid}/{filename}'
+
+
+class ExportableQueryModel(models.Model):
+    name = models.CharField(max_length=255)
+    model = models.CharField(max_length=255)
+    content = models.FileField(upload_to=_query_export_path)
+
+    user = models.ForeignKey(
+        User, db_column="User", related_name='data_exports',
+        on_delete=models.deletion.DO_NOTHING, null=False)
+
+    sql_query = models.TextField()
+    create_date = DateTimeField(db_column='DateCreated', default=py_datetime.now)
+    expire_date = DateTimeField(db_column='DateExpiring', default=_get_default_expire_date)
+    is_deleted = models.BooleanField(default=False)
+
+    @staticmethod
+    def create_csv_export(qs, values, user, column_names=None,
+                          patches=None):
+        if patches is None:
+            patches = []
+        sql = qs.query.sql_with_params()
+        content = DataFrame.from_records(qs.values_list(*values))
+        content.columns = values
+        for patch in patches:
+            content = patch(content)
+
+        content.columns = column_names or values
+        filename = F"{uuid.uuid4()}.csv"
+        content = ContentFile(content.to_csv(), filename)
+        export = ExportableQueryModel(
+            name=filename,
+            model=qs.model,
+            content=content,
+            user=user,
+            sql_query=sql,
+        )
+        export.save()
+        return export
