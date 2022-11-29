@@ -24,7 +24,7 @@ class ExportableQueryMixin:
     @classmethod
     def get_exportable_fields(cls):
         if not hasattr(cls, 'exportable_fields'):
-            raise NotImplemented(
+            raise NotImplementedError(
                 "Class using `ExportableQueryMixin` has to provide either exportable_fields "
                 "or overwrite`get_exportable_fields` to provide list of fields that can be exported.")
         return cls.exportable_fields
