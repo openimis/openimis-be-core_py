@@ -49,7 +49,7 @@ def register_service_signal(signal_name: str):
     overridden after very call.
 
     Example use:
-        @register_service_signal('create_policy', PolicyServiceClass):
+        @register_service_signal('create_policy'):
         def create_policy(self, *args, **kwargs)
             ...
 
@@ -85,7 +85,7 @@ def register_service_signal(signal_name: str):
 def bind_service_signal(signal_name: str, func: Callable,
                         bind_type: ServiceSignalBindType = ServiceSignalBindType.BEFORE_AND_AFTER):
     """
-    By default binding is done after modules are loaded, with same similar approach as for graphql.
+    By default, binding is done after modules are loaded, with same similar approach as for graphql.
     Main OpenIMIS backend is crawling through modules searching for bind_service_signals function
     in module_name.signals path. In most cases function connected to signal will be loaded before signals are
     registered. They're queued and connected after signal definition is provided.

@@ -17,9 +17,9 @@ class RegisteredServiceSignal:
     def __init__(self, providing_args=None):
         """
         Due to how python manage class prototypes, there's a chance that class definition using register_service_signal
-        will not be loaded until first import of given class. Therefore it's likely that binding function responsible
+        will not be loaded until first import of given class. Therefore, it's likely that binding function responsible
         for loading functions called before/after signal will be invoked before signal register. In this case functions
-        are queued and connected to actual signal after the registration. Whether or not registration took place
+        are queued and connected to actual signal after the registration. Whether registration took place
         is defined by providing_args. If argument is None, signal is considered not registered.
         """
         self.__signal_results = {'before': None, 'after': None}
