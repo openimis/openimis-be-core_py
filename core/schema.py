@@ -608,7 +608,7 @@ class Query(graphene.ObjectType):
 
         # Do NOT use the query optimizer here ! It would make the t_user, officer etc as deferred fields if they are not
         # explicitly requested in the GraphQL response. However, this prevents the dynamic remapping of the User object.
-        return user_query.filter(*user_filters)
+        return user_query.filter(*user_filters).distinct()
 
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -935,7 +935,7 @@ class DeleteRoleMutation(OpenIMISMutation):
                 errors.append({
                     'title': role,
                     'list': [{'message':
-                                  "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                              "role.validation.id_does_not_exist" % {'id': role_uuid}}]
                 })
                 continue
             errors += set_role_deleted(role)
@@ -1101,7 +1101,7 @@ class DeleteUserMutation(OpenIMISMutation):
                 errors.append({
                     'title': user,
                     'list': [{'message':
-                                  "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                              "user.validation.id_does_not_exist" % {'id': user_uuid}}]
                 })
                 continue
             errors += set_user_deleted(user)
