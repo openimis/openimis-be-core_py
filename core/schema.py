@@ -441,6 +441,7 @@ class Query(graphene.ObjectType):
         roles=graphene.List(of_type=graphene.Int),
         health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
         region_id=graphene.Int(),
+        region_ids=graphene.List(of_type=graphene.Int),
         district_id=graphene.Int(),
         municipality_id=graphene.Int(),
         village_id=graphene.Int(),
@@ -525,9 +526,9 @@ class Query(graphene.ObjectType):
         return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
-                      role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
-                      municipality_id=None, birth_date_from=None, birth_date_to=None, user_types=None, language=None,
-                      village_id=None, **kwargs):
+                      role_id=None, roles=None, health_facility_id=None, region_id=None,
+                      district_id=None, municipality_id=None, birth_date_from=None, birth_date_to=None,
+                      user_types=None, language=None, village_id=None, region_ids=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
 
@@ -588,8 +589,12 @@ class Query(graphene.ObjectType):
         if roles:
             user_filters.append(Q(i_user__user_roles__role_id__in=roles) &
                                 Q(i_user__user_roles__validity_to__isnull=True))
+
         if region_id:
             user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+        elif region_ids:
+            user_filters.append(Q(i_user__userdistrict__location__parent_id__in=region_ids))
+
         if district_id:
             user_filters.append(Q(i_user__userdistrict__location_id=district_id))
         if municipality_id:

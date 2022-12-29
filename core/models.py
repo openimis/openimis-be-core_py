@@ -1,4 +1,3 @@
-import csv
 import json
 import logging
 import os
@@ -6,7 +5,6 @@ import sys
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime, timedelta
-from typing import List, Callable
 
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
