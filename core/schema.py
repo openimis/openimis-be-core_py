@@ -474,6 +474,18 @@ class Query(graphene.ObjectType):
 
     languages = graphene.List(LanguageGQLType)
 
+    validate_username = graphene.Field(
+        graphene.Boolean,
+        username=graphene.String(required=True),
+        description="Checks that the specified username is unique."
+    )
+
+    def resolve_validate_username(self, info, **kwargs):
+        if User.objects.filter(username=kwargs['username']).exists():
+            return False
+        else:
+            return True
+
     def resolve_enrolment_officers(self, info, **kwargs):
         from .models import Officer
 
