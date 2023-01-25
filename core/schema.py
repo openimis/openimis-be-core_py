@@ -39,6 +39,7 @@ from typing import Optional
 from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
+from .services.roleServices import check_unique_name
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
@@ -479,6 +480,16 @@ class Query(graphene.ObjectType):
         username=graphene.String(required=True),
         description="Checks that the specified username is unique."
     )
+
+    validate_role_name = graphene.Field(
+        graphene.Boolean,
+        role_name=graphene.String(required=True),
+        description="Checks that the specified role name is unique."
+    )
+
+    def resolve_validate_role_name(self, info, **kwargs):
+        errors = check_unique_name(name=kwargs['role_name'])
+        return False if errors else True
 
     def resolve_validate_username(self, info, **kwargs):
         if User.objects.filter(username=kwargs['username']).exists():
