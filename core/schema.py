@@ -39,7 +39,7 @@ from typing import Optional
 from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
-from .services.roleServices import check_unique_name
+from .services.roleServices import check_role_unique_name
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
@@ -488,7 +488,7 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_validate_role_name(self, info, **kwargs):
-        errors = check_unique_name(name=kwargs['role_name'])
+        errors = check_role_unique_name(name=kwargs['role_name'])
         return False if errors else True
 
     def resolve_validate_username(self, info, **kwargs):
@@ -884,6 +884,8 @@ class CreateRoleMutation(OpenIMISMutation):
                 raise ValidationError("mutation.authentication_required")
             if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
                 raise PermissionDenied("unauthorized")
+            if check_role_unique_name(data.get('name', None), data.get('uuid', None)):
+                raise ValidationError("mutation.duplicate_of_role_name")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
