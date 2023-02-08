@@ -40,6 +40,7 @@ from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 from .services.roleServices import check_role_unique_name
+from .services.userServices import check_user_unique_email
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
@@ -481,6 +482,12 @@ class Query(graphene.ObjectType):
         description="Checks that the specified username is unique."
     )
 
+    validate_user_email = graphene.Field(
+        graphene.Boolean,
+        user_email=graphene.String(required=True),
+        description="Checks that the specified user email is unique."
+    )
+
     validate_role_name = graphene.Field(
         graphene.Boolean,
         role_name=graphene.String(required=True),
@@ -496,6 +503,10 @@ class Query(graphene.ObjectType):
             return False
         else:
             return True
+
+    def resolve_validate_user_email(self, info, **kwargs):
+        errors = check_user_unique_email(user_email=kwargs['user_email'])
+        return False if errors else True
 
     def resolve_enrolment_officers(self, info, **kwargs):
         from .models import Officer
