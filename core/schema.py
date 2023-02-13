@@ -506,6 +506,8 @@ class Query(graphene.ObjectType):
             return True
 
     def resolve_validate_user_email(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         errors = check_user_unique_email(user_email=kwargs['user_email'])
         return False if errors else True
 
