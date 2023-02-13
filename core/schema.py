@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 import uuid
+from gettext import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
@@ -1158,6 +1159,17 @@ class DeleteUserMutation(OpenIMISMutation):
 def update_or_create_user(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
+
+    incoming_email = data.get('email')
+    current_user = InteractiveUser.objects.filter(user__id=data['uuid']).first()
+
+    current_email = current_user.email if current_user else None
+
+    if current_email != incoming_email:
+        if not incoming_email:
+            pass
+        elif check_user_unique_email(user_email=data['email']):
+            raise ValidationError(_("mutation.user_email_duplicated"))
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
