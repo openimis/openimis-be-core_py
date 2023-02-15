@@ -418,6 +418,17 @@ class InteractiveUser(VersionedModel):
         return Officer.objects.filter(
             code=self.username, has_login=True, validity_to__isnull=True).exists()
 
+    @property
+    def is_claim_admin(self):
+        # Unlike Officer ClaimAdmin model was moved to the claim module,
+        # and it's not granted that the module is installed.
+        if 'claim' in sys.modules:
+            from claim.models import ClaimAdmin
+            return ClaimAdmin.objects.filter(
+                code=self.username, has_login=True, validity_to__isnull=True).exists()
+        else:
+            return False
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -711,7 +722,7 @@ class Officer(VersionedModel):
         """
         Returns uuid of all locations allowed for given officer
         """
-        from location.models import OfficerVillage
+        from location.models import OfficerVillage, Location
         villages = OfficerVillage.objects\
             .filter(officer=self, validity_to__isnull=True)
         all_allowed_uuids = []
@@ -722,7 +733,7 @@ class Officer(VersionedModel):
                 allowed_uuids.append(parent.uuid)
                 parent = parent.parent
             all_allowed_uuids.extend(allowed_uuids)
-        return all_allowed_uuids
+        return Location.objects.filter(uuid__in=all_allowed_uuids)
 
     @classmethod
     def get_queryset(cls, queryset, user):
