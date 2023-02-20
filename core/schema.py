@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 import uuid
+from gettext import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
@@ -40,6 +41,7 @@ from .apps import CoreConfig
 from .gql_queries import *
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 from .services.roleServices import check_role_unique_name
+from .services.userServices import check_user_unique_email
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
@@ -481,6 +483,12 @@ class Query(graphene.ObjectType):
         description="Checks that the specified username is unique."
     )
 
+    validate_user_email = graphene.Field(
+        graphene.Boolean,
+        user_email=graphene.String(required=True),
+        description="Checks that the specified user email is unique."
+    )
+
     validate_role_name = graphene.Field(
         graphene.Boolean,
         role_name=graphene.String(required=True),
@@ -496,6 +504,12 @@ class Query(graphene.ObjectType):
             return False
         else:
             return True
+
+    def resolve_validate_user_email(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        errors = check_user_unique_email(user_email=kwargs['user_email'])
+        return False if errors else True
 
     def resolve_enrolment_officers(self, info, **kwargs):
         from .models import Officer
@@ -1147,6 +1161,17 @@ class DeleteUserMutation(OpenIMISMutation):
 def update_or_create_user(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
+
+    incoming_email = data.get('email')
+    current_user = InteractiveUser.objects.filter(user__id=data['uuid']).first()
+
+    current_email = current_user.email if current_user else None
+
+    if current_email != incoming_email:
+        if not incoming_email:
+            pass
+        elif check_user_unique_email(user_email=data['email']):
+            raise ValidationError(_("mutation.user_email_duplicated"))
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')

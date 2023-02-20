@@ -243,6 +243,12 @@ def set_user_password(request, username, token, password):
         raise ValidationError("Invalid Token")
 
 
+def check_user_unique_email(user_email):
+    if InteractiveUser.objects.filter(email=user_email, validity_to__isnull=True).exists():
+        return [{"message": "User email %s already exists" % user_email}]
+    return []
+
+
 def reset_user_password(request, username):
     user = User.objects.get(username=username)
     user.clear_refresh_tokens()
