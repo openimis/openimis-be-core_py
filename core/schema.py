@@ -35,7 +35,7 @@ from django.utils import translation
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
 from .gql_queries import *
@@ -175,7 +175,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
-    def async_mutate(cls, user, **data) -> Optional[str]:
+    def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB
@@ -266,8 +266,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         logger.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
                     else:
+                        exceptions = [message.pop("exc") for message in error_messages if "exc" in message]
                         errors_json = json.dumps(error_messages)
                         logger.error("[OpenIMISMutation %s] marked as failed: %s", mutation_log.id, errors_json)
+                        for exc in exceptions:
+                            logger.error("[OpenIMISMutation %s] Exception:", mutation_log.id, exc_info=exc)
                         mutation_log.mark_as_failed(errors_json)
                 except BaseException as exc:
                     error_messages = exc
