@@ -205,3 +205,13 @@ class LanguageGQLType(DjangoObjectType):
     @classmethod
     def get_queryset(cls, queryset, info):
         return queryset
+
+
+class ValidationMessageGQLType(graphene.ObjectType):
+    """
+    This object is used for validation of user's input in forms (e.g. insuree code).
+    """
+    is_valid = graphene.Boolean()
+    error_code = graphene.Int()
+    error_message = graphene.String()
+
