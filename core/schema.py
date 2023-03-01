@@ -499,10 +499,14 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_validate_role_name(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionDenied(_("unauthorized"))
         errors = check_role_unique_name(name=kwargs['role_name'])
         return False if errors else True
 
     def resolve_validate_username(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         if User.objects.filter(username=kwargs['username']).exists():
             return False
         else:
