@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2020-06-05 10:45+0200\n"
+"POT-Creation-Date: 2023-03-01 11:30+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,17 +17,71 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: core/core/utils.py:61 core/utils.py:76
+#: core/core/utils.py:61 core/utils.py:76 core/utils.py:150 core/utils.py:150
 msgid "core.string.over_max_length"
 msgstr "Value %(value)s is over maximum length: %(max_length)s"
 
-#: core/core/utils.py:78 core/utils.py:93
+#: core/core/utils.py:78 core/utils.py:93 core/utils.py:167 core/utils.py:167
 msgid "core.insuree.unknown_gender"
 msgstr "Unknown gender"
 
-#: core/core/utils.py:80 core/utils.py:95
+#: core/core/utils.py:80 core/utils.py:95 core/utils.py:169 core/utils.py:169
 msgid "core.insuree.unknown_dob"
 msgstr "Unknown date of birth"
 
+#: core/services/userServices.py:230 core/services/userServices.py:230
 msgid "core.wrong_old_password"
 msgstr "The old password is incorrect"
+
+#: core/validation/objectExistsValidationMixin.py:6
+#: core/validation/objectExistsValidationMixin.py:6
+#, python-format
+msgid "%(model)s for id  %(id)s does not exists"
+msgstr ""
+
+#: core/validation/uniqueCodeValidationMixin.py:6
+#: core/validation/uniqueCodeValidationMixin.py:6
+#, python-format
+msgid "Object code %(code)s is not unique."
+msgstr ""
+
+#: core/schema.py:503 core/schema.py:509 core/schema.py:517 core/schema.py:503
+#: core/schema.py:509 core/schema.py:517
+msgid "unauthorized"
+msgstr "User not authorized for this operation"
+
+#: core/schema.py:1181 core/schema.py:1181
+msgid "mutation.user_email_duplicated"
+msgstr ""
+
+#: core/schema.py:1274 core/schema.py:1274
+msgid "Failed to change user password"
+msgstr ""
+
+#: core/schema.py:1286 core/schema.py:1286
+msgid "Username of the account to recover"
+msgstr ""
+
+#: core/schema.py:1301 core/schema.py:1301
+msgid "Failed to reset password."
+msgstr ""
+
+#: core/schema.py:1312 core/schema.py:1312
+msgid "Username of the user"
+msgstr ""
+
+#: core/schema.py:1315 core/schema.py:1315
+msgid "Token used to validate the user"
+msgstr ""
+
+#: core/schema.py:1318 core/schema.py:1318
+msgid "New password for the user"
+msgstr ""
+
+#: core/schema.py:1333 core/schema.py:1333
+msgid "Failed to set password."
+msgstr ""
+
+#: core/views.py:35 core/views.py:35
+msgid "Only user requesting export can fetch request"
+msgstr ""
