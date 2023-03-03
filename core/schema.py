@@ -4,7 +4,7 @@ import logging
 import re
 import sys
 import uuid
-from gettext import gettext as _
+from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
