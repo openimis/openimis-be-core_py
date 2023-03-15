@@ -474,6 +474,14 @@ class Query(graphene.ObjectType):
         ),
     )
 
+    substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
+        OfficerGQLType,
+        officer_uuid=graphene.String(required=True),
+        str=graphene.String(
+            description="Query that will return possible EO replacements."
+        ),
+    )
+
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
@@ -537,6 +545,24 @@ class Query(graphene.ObjectType):
                 ),
                 info,
             )
+
+    def resolve_substitution_enrolment_officers(self, info, **kwargs):
+        from .models import Officer
+
+        if not info.context.user.has_perms(
+                CoreConfig.gql_query_enrolment_officers_perms
+        ):
+            raise PermissionError("Unauthorized")
+
+        current_officer = Officer.objects.get(uuid=kwargs['officer_uuid'])
+        current_officer_locations = set(current_officer.officer_allowed_locations)
+
+        allowed_officers = Officer.objects.filter(validity_to__isnull=True).exclude(uuid=kwargs['officer_uuid'])
+        for officer in allowed_officers:
+            if not current_officer_locations.issubset(set(officer.officer_allowed_locations)):
+                allowed_officers = allowed_officers.exclude(uuid=officer.uuid)
+
+        return allowed_officers
 
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
