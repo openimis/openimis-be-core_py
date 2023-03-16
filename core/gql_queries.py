@@ -4,6 +4,9 @@ from core import ExtendedConnection, filter_validity
 from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation, Language
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility
+from .apps import CoreConfig
+from django.utils.translation import gettext as _
+from django.core.exceptions import PermissionDenied
 
 from .utils import prefix_filterset
 
@@ -112,12 +115,16 @@ class InteractiveUserGQLType(DjangoObjectType):
         connection_class = ExtendedConnection
 
     def resolve_health_facility(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         if self.health_facility_id:
             return HealthFacility.get_queryset(None, info).filter(pk=self.health_facility_id).first()
         else:
             return None
 
     def resolve_roles(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         if self.user_roles:
             return Role.objects\
                 .filter(validity_to__isnull=True)\
@@ -126,6 +133,8 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_userdistrict_set(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         if self.userdistrict_set:
             return self.userdistrict_set.filter(*filter_validity())
         else:
@@ -166,6 +175,8 @@ class UserGQLType(DjangoObjectType):
         return User.get_queryset(queryset, info)
 
     def resolve_client_mutation_id(self, info):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
         user_mutation = self.mutations.select_related('mutation').filter(mutation__status=0).first()
         return user_mutation.mutation.client_mutation_id if user_mutation else None
 

@@ -346,6 +346,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
             connection, iterable, info, args
         )
@@ -744,6 +746,8 @@ class Query(graphene.ObjectType):
         # configuration is loaded before even the core module
         # the datetime is ALWAYS a Gregorian one
         # (whatever datetime is used in business modules)
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         if validity is None:
             validity = py_datetime.now()
         else:
@@ -762,6 +766,8 @@ class Query(graphene.ObjectType):
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
 
     def resolve_languages(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return Language.objects.order_by('sort_order').all()
 
 

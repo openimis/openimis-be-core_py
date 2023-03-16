@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 import logging
 from django.apps import apps
+from django.core.exceptions import PermissionDenied
 
 
 logger = logging.getLogger(__file__)
@@ -193,9 +194,13 @@ class ExtendedConnection(graphene.Connection):
     edge_count = graphene.Int()
 
     def resolve_total_count(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return self.length
 
     def resolve_edge_count(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return len(self.edges)
 
 
