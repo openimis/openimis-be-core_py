@@ -746,8 +746,6 @@ class Query(graphene.ObjectType):
         # configuration is loaded before even the core module
         # the datetime is ALWAYS a Gregorian one
         # (whatever datetime is used in business modules)
-        if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
         if validity is None:
             validity = py_datetime.now()
         else:
