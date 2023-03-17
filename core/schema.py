@@ -476,7 +476,9 @@ class Query(graphene.ObjectType):
 
     substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
         OfficerGQLType,
-        officer_uuid=graphene.String(required=True),
+        villages_uuids=graphene.List(graphene.NonNull(graphene.String)),
+        officer_uuid=graphene.String(required=False),
+        search_string=graphene.String(required=False),
         str=graphene.String(
             description="Query that will return possible EO replacements."
         ),
@@ -554,12 +556,18 @@ class Query(graphene.ObjectType):
         ):
             raise PermissionError("Unauthorized")
 
-        current_officer = Officer.objects.get(uuid=kwargs['officer_uuid'])
-        current_officer_locations = set(current_officer.officer_allowed_locations)
+        search = kwargs.get("search_string")
+        current_villages_id_set = set(kwargs.get('villages_uuids'))
 
-        allowed_officers = Officer.objects.filter(validity_to__isnull=True).exclude(uuid=kwargs['officer_uuid'])
+        current_officer_id = kwargs.get('officer_uuid')
+        if current_officer_id:
+            allowed_officers = Officer.objects.filter(validity_to__isnull=True).exclude(uuid=current_officer_id)
+        else:
+            allowed_officers = Officer.objects.filter(validity_to__isnull=True)
+
         for officer in allowed_officers:
-            if not current_officer_locations.issubset(set(officer.officer_allowed_locations)):
+            if not current_villages_id_set.issubset(set([location.uuid for location in
+                                                         officer.officer_allowed_locations])):
                 allowed_officers = allowed_officers.exclude(uuid=officer.uuid)
 
         return allowed_officers
