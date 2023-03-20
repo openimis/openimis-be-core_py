@@ -12,6 +12,7 @@ MODULE_NAME = "core"
 this = sys.modules[MODULE_NAME]
 
 DEFAULT_CFG = {
+    "username_code_length": "8",  # cannot be bigger than 50 unless modified in env
     "auto_provisioning_user_group": "user",
     "calendar_package": "core",
     "calendar_module": ".calendars.ad_calendar",
@@ -53,6 +54,7 @@ DEFAULT_CFG = {
 class CoreConfig(AppConfig):
     default_auto_field = 'django.db.models.AutoField'  # Django 3.1+
     name = MODULE_NAME
+    username_code_length = 8
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
     gql_query_roles_perms = []
@@ -100,6 +102,9 @@ class CoreConfig(AppConfig):
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
+    def _configure_username_code_length(self, cfg):
+        self.username_code_length = int(cfg["username_code_length"])
+
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
 
@@ -123,7 +128,7 @@ class CoreConfig(AppConfig):
             g.permissions.add(p)
             g.save()
         except Exception as e:
-            logger.warning('Failed set auto_provisioning_user_group '+str(e))
+            logger.warning('Failed set auto_provisioning_user_group ' + str(e))
 
     def _configure_graphql(self, cfg):
         this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
@@ -156,6 +161,7 @@ class CoreConfig(AppConfig):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
+        self._configure_username_code_length(cfg)
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)

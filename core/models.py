@@ -21,6 +21,7 @@ from pandas import DataFrame
 from simple_history.models import HistoricalRecords
 
 import core
+from django.conf import settings
 from .fields import DateTimeField
 from .utils import filter_validity
 
@@ -231,7 +232,7 @@ class UserManager(BaseUserManager):
 
 class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=settings.USER_USERNAME_AND_CODE_LENGTH_LIMIT, unique=True)
     email = models.EmailField(blank=True, null=True)
     language = 'en'
     is_staff = models.BooleanField(default=False)
@@ -325,7 +326,7 @@ class InteractiveUser(VersionedModel):
     last_name = models.CharField(db_column="LastName", max_length=100)
     other_names = models.CharField(db_column="OtherNames", max_length=100)
     phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
-    login_name = models.CharField(db_column="LoginName", max_length=25)
+    login_name = models.CharField(db_column="LoginName", max_length=settings.USER_USERNAME_AND_CODE_LENGTH_LIMIT)
     last_login = models.DateTimeField(db_column="LastLogin", null=True)
     health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
@@ -491,7 +492,7 @@ class UserRole(VersionedModel):
 
 
 class User(UUIDModel, PermissionsMixin):
-    username = models.CharField(unique=True, max_length=25)
+    username = models.CharField(unique=True, max_length=settings.USER_USERNAME_AND_CODE_LENGTH_LIMIT)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
     officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
@@ -655,7 +656,7 @@ class Officer(VersionedModel):
     id = models.AutoField(db_column='OfficerID', primary_key=True)
     uuid = models.CharField(db_column='OfficerUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
-    code = models.CharField(db_column='Code', max_length=8)
+    code = models.CharField(db_column='Code', max_length=settings.USER_USERNAME_AND_CODE_LENGTH_LIMIT)
     last_name = models.CharField(db_column='LastName', max_length=100)
     other_names = models.CharField(db_column='OtherNames', max_length=100)
     dob = models.DateField(db_column='DOB', blank=True, null=True)
@@ -664,7 +665,8 @@ class Officer(VersionedModel):
     substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True,
                                              null=True)
     works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
-    veo_code = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
+    veo_code = models.CharField(db_column='VEOCode', max_length=settings.USER_USERNAME_AND_CODE_LENGTH_LIMIT,
+                                blank=True, null=True)
     veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
     veo_other_names = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
     veo_dob = models.DateField(db_column='VEODOB', blank=True, null=True)
