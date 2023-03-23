@@ -123,8 +123,9 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_roles(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        # PERMS ISSUE
+        # if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        #     raise PermissionDenied(_("unauthorized"))
         if self.user_roles:
             return Role.objects\
                 .filter(validity_to__isnull=True)\
@@ -133,8 +134,19 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_userdistrict_set(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        # PERMS ISSUE
+        # if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        #     raise PermissionDenied(_("unauthorized"))
+
+        ### POSSIBLE RIGHT PERM CHECK BELOW ###
+
+        # if info.context.user.is_anonymous:
+        #     raise NotImplementedError(
+        #         'Anonymous Users are not registered for districts')
+        # if not isinstance(info.context.user._u, InteractiveUser):
+        #     raise NotImplementedError(
+        #         'Only Interactive Users are registered for districts')
+
         if self.userdistrict_set:
             return self.userdistrict_set.filter(*filter_validity())
         else:
