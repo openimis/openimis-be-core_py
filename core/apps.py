@@ -12,7 +12,8 @@ MODULE_NAME = "core"
 this = sys.modules[MODULE_NAME]
 
 DEFAULT_CFG = {
-    "username_code_length": "8",  # cannot be bigger than 50 unless modified in env
+    "username_code_length": "8",  # cannot be bigger than 50 unless modified length limit
+    "user_username_and_code_length_limit": "50",
     "auto_provisioning_user_group": "user",
     "calendar_package": "core",
     "calendar_module": ".calendars.ad_calendar",
@@ -55,6 +56,7 @@ class CoreConfig(AppConfig):
     default_auto_field = 'django.db.models.AutoField'  # Django 3.1+
     name = MODULE_NAME
     username_code_length = 8
+    user_username_and_code_length_limit = 50
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
     gql_query_roles_perms = []
@@ -103,7 +105,10 @@ class CoreConfig(AppConfig):
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
     def _configure_username_code_length(self, cfg):
-        self.username_code_length = int(cfg["username_code_length"])
+        this.username_code_length = int(cfg["username_code_length"])
+
+    def _configure_user_username_and_code_length_limit(self, cfg):
+        this.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
 
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
@@ -162,6 +167,7 @@ class CoreConfig(AppConfig):
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_username_code_length(cfg)
+        self._configure_user_username_and_code_length_limit(cfg)
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)
