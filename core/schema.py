@@ -676,6 +676,13 @@ class Query(graphene.ObjectType):
         filters = []
         query = Role.objects
 
+        if not info.context.user.is_superuser:
+            user_roles = UserRole.objects.filter(
+                user=info.context.user.i_user.id,
+                validity_to__isnull=True
+            ).values_list('role')
+            filters.append(Q(id__in=user_roles))
+
         text_search = kwargs.get("str")
         if text_search:
             filters.append(Q(name__icontains=text_search))
