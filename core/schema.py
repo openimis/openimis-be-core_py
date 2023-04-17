@@ -1187,6 +1187,9 @@ def update_or_create_user(data, user):
 
     current_email = current_user.email if current_user else None
 
+    if incoming_email is not None and not check_email_validity(incoming_email):
+        raise ValidationError(_("mutation.user_email_not_valid"))
+
     if current_email != incoming_email:
         if not incoming_email:
             pass
@@ -1225,6 +1228,18 @@ def update_or_create_user(data, user):
     if client_mutation_id:
         UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
+
+
+def check_email_validity(email):
+    # checks if string is a valid email address
+    # https://stackabuse.com/python-validate-email-address-with-regular-expressions-regex/
+    import re
+    regex = re.compile(
+        r"([-!#-'*+/-9=?A-Z^-~]+(\.[-!#-'*+/-9=?A-Z^-~]+)*|\"([]!#-[^-~ \t]|(\\[\t -~]))+\")@([-!#-'*+/-9=?A-Z^-~]+"
+        r"(\.[-!#-'*+/-9=?A-Z^-~]+)*|\[[\t -Z^-~]*])")
+    if not re.fullmatch(regex, email):
+        return False
+    return True
 
 
 def set_user_deleted(user):
