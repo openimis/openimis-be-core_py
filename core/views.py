@@ -8,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import User, ExportableQueryModel
+from .scheduler import scheduler
 from .serializers import UserSerializer
 from django.utils.translation import ugettext as _
 
@@ -42,3 +43,13 @@ def fetch_export(request):
         content_type="text/csv",
         headers={'Content-Disposition': F'attachment; filename="{export_file_name}"'},
     )
+
+
+def _serialize_job(job):
+    return "name: %s, trigger: %s, next run: %s, handler: %s" % (
+        job.name, job.trigger, job.next_run_time, job.func)
+
+
+@api_view(['GET'])
+def get_scheduled_jobs(request):
+    return Response([_serialize_job(job) for job in scheduler.get_jobs()])
