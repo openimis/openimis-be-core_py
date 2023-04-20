@@ -192,9 +192,6 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
         user = User.objects.get(id=user_uuid)
         # There is no history to save for User
-        if user.username != username:
-            logger.warning("Ignored attempt to change the username of %s from %s to %s. This is not supported",
-                           user_uuid, user.username, username)
         created = False
     elif username:
         user = User.objects.filter(username=username).first()
@@ -206,7 +203,8 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
     if not user:
         user = User(username=username)
         created = True
-
+    if username:
+        user.username = username
     if i_user:
         user.i_user = i_user
     if t_user:

@@ -4,6 +4,8 @@ import logging
 import re
 import sys
 import uuid
+
+import graphene
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
@@ -346,6 +348,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
             connection, iterable, info, args
         )
@@ -497,6 +501,13 @@ class Query(graphene.ObjectType):
         role_name=graphene.String(required=True),
         description="Checks that the specified role name is unique."
     )
+
+    username_length = graphene.Int()
+
+    def resolve_username_length(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return CoreConfig.username_code_length
 
     def resolve_validate_role_name(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -710,7 +721,7 @@ class Query(graphene.ObjectType):
         excluded_app = [
             "health_check.cache", "health_check", "health_check.db",
             "test_without_migrations", "test_without_migrations",
-            "rules", "graphene_django", "rest_framework", "rest_framework_rules",
+            "rules", "graphene_django", "rest_framework",
             "health_check.storage", "channels", "graphql_jwt.refresh_token.apps.RefreshTokenConfig"
         ]
         all_apps = [app for app in settings.INSTALLED_APPS if not app.startswith("django") and app not in excluded_app]
@@ -762,6 +773,8 @@ class Query(graphene.ObjectType):
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
 
     def resolve_languages(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return Language.objects.order_by('sort_order').all()
 
 
@@ -1180,6 +1193,11 @@ def update_or_create_user(data, user):
         elif check_user_unique_email(user_email=data['email']):
             raise ValidationError(_("mutation.user_email_duplicated"))
 
+    username = data.get('username')
+
+    if len(username) > CoreConfig.username_code_length:
+        raise ValidationError(_("mutation.user_username_too_long"))
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
@@ -1202,7 +1220,7 @@ def update_or_create_user(data, user):
     else:
         claim_admin, claim_admin_created = None, False
     core_user, core_user_created = create_or_update_core_user(
-        user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
+        user_uuid=user_uuid, username=username, i_user=i_user, officer=officer, claim_admin=claim_admin)
 
     if client_mutation_id:
         UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
