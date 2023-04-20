@@ -459,6 +459,7 @@ class Query(graphene.ObjectType):
         birth_date_to=graphene.Date(),
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
+        showHistory=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -589,6 +590,12 @@ class Query(graphene.ObjectType):
 
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
+
+        show_history = kwargs.get('showHistory', False)
+        if not show_history and not kwargs.get('uuid', None):
+            active_users_ids = [user.id for user in user_query if user.is_active]
+            user_filters.append(Q(id__in=active_users_ids))
+
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
             user_filters.append(Q(username__icontains=text_search) |
