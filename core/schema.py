@@ -561,17 +561,20 @@ class Query(graphene.ObjectType):
 
         queryset = Officer.objects
 
-        if 'officer_uuid' in kwargs:
-            queryset = queryset.exclude(uuid=kwargs.get('officer_uuid'))
+        villages_uuids = kwargs.get('villages_uuids', None)
+        if not villages_uuids:
+            return []
 
-        if 'str' in kwargs:
-            query_str = kwargs.get('str')
+        officer_uuid = kwargs.get('officer_uuid', None)
+        if officer_uuid:
+            queryset = queryset.exclude(uuid=officer_uuid)
+
+        query_str = kwargs.get('str', None)
+        if query_str:
             queryset = queryset.filter(Q(code__istartswith=query_str)
                                        | Q(last_name__istartswith=query_str)
                                        | Q(other_names__istartswith=query_str)
                                        | Q(email__istartswith=query_str))
-
-        villages_uuids = kwargs.get('villages_uuids')
 
         return queryset.prefetch_related('officer_villages') \
             .annotate(nb_village=Count('officer_villages')) \
