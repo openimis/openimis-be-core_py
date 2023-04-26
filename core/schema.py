@@ -30,7 +30,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
@@ -479,6 +479,20 @@ class Query(graphene.ObjectType):
         ),
     )
 
+    substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
+        OfficerGQLType,
+        villages_uuids=graphene.List(
+            graphene.NonNull(graphene.String),
+            description="List of villages to be required for substituion officers"),
+        officer_uuid=graphene.String(
+            required=False,
+            description="Current officer uuid to be excluded from substitution list."),
+        str=graphene.String(
+            required=False,
+            description="Query that will return possible EO replacements."
+        ),
+    )
+
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
@@ -549,6 +563,38 @@ class Query(graphene.ObjectType):
                 ),
                 info,
             )
+
+    def resolve_substitution_enrolment_officers(self, info, **kwargs):
+        from .models import Officer
+
+        if not info.context.user.has_perms(
+                CoreConfig.gql_query_enrolment_officers_perms):
+            raise PermissionError("Unauthorized")
+
+        queryset = Officer.objects
+
+        villages_uuids = kwargs.get('villages_uuids', None)
+        if not villages_uuids:
+            return []
+
+        officer_uuid = kwargs.get('officer_uuid', None)
+        if officer_uuid:
+            queryset = queryset.exclude(uuid=officer_uuid)
+
+        query_str = kwargs.get('str', None)
+        if query_str:
+            queryset = queryset.filter(Q(code__istartswith=query_str)
+                                       | Q(last_name__istartswith=query_str)
+                                       | Q(other_names__istartswith=query_str)
+                                       | Q(email__istartswith=query_str))
+
+        return queryset.prefetch_related('officer_villages') \
+            .annotate(nb_village=Count('officer_villages')) \
+            .filter(nb_village__gte=len(villages_uuids),
+                    officer_villages__location__uuid__in=villages_uuids,
+                    validity_to__isnull=True,
+                    officer_villages__validity_to__isnull=True,
+                    officer_villages__location__validity_to__isnull=True)
 
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
