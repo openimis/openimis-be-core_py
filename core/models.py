@@ -482,8 +482,8 @@ class InteractiveUser(VersionedModel):
 class UserRole(VersionedModel):
     id = models.AutoField(db_column='UserRoleID', primary_key=True)
     user = models.ForeignKey(
-        InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="user_roles")
-    role = models.ForeignKey(Role, models.DO_NOTHING,
+        InteractiveUser, models.CASCADE, db_column='UserID', related_name="user_roles")
+    role = models.ForeignKey(Role, models.CASCADE,
                              db_column='RoleID', related_name="user_roles")
     audit_user_id = models.IntegerField(
         db_column='AudituserID', blank=True, null=True)
