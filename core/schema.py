@@ -1240,14 +1240,14 @@ def update_or_create_user(data, user):
 
     current_email = current_user.email if current_user else None
 
-    if incoming_email is not None and not check_email_validity(incoming_email):
-        raise ValidationError(_("mutation.user_email_not_valid"))
-
-    if current_email != incoming_email:
-        if not incoming_email:
-            pass
-        elif check_user_unique_email(user_email=data['email']):
-            raise ValidationError(_("mutation.user_email_duplicated"))
+    if incoming_email:
+        if not check_email_validity(incoming_email):
+            raise ValidationError(_("mutation.user_email_invalid"))
+        if current_email != incoming_email:
+            if check_user_unique_email(user_email=data['email']):
+                raise ValidationError(_("mutation.user_email_duplicated"))
+    else:
+        raise ValidationError(_("mutation.user_no_email_provided"))
 
     username = data.get('username')
 
