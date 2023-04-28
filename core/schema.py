@@ -1285,11 +1285,13 @@ def update_or_create_user(data, user):
 
 def check_email_validity(email):
     # checks if string is a valid email address
-    # https://stackabuse.com/python-validate-email-address-with-regular-expressions-regex/
+    # using regex provided in the HTML5 standard
+    # it omits some RFC recommendations by design
+    # https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
     import re
     regex = re.compile(
-        r"([-!#-'*+/-9=?A-Z^-~]+(\.[-!#-'*+/-9=?A-Z^-~]+)*|\"([]!#-[^-~ \t]|(\\[\t -~]))+\")@([-!#-'*+/-9=?A-Z^-~]+"
-        r"(\.[-!#-'*+/-9=?A-Z^-~]+)*|\[[\t -Z^-~]*])")
+        r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9]"
+        r"(?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
     if not re.fullmatch(regex, email):
         return False
     return True
