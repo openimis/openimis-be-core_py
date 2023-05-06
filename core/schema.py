@@ -41,6 +41,7 @@ from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
 from .gql_queries import *
+from .utils import flatten_dict
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 from .services.roleServices import check_role_unique_name
 from .services.userServices import check_user_unique_email
@@ -789,6 +790,7 @@ class Query(graphene.ObjectType):
                 else:
                     config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
+                config_dict = flatten_dict(config_dict)
                 for key, value in config_dict.items():
                     if key.endswith("_perms"):
                         if isinstance(value, list):
