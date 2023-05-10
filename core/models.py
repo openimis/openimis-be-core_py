@@ -654,7 +654,7 @@ class UserGroup(models.Model):
         unique_together = (('user', 'group'),)
 
 
-class Officer(VersionedModel):
+class Officer(VersionedModel, ExtendableModel):
     id = models.AutoField(db_column='OfficerID', primary_key=True)
     uuid = models.CharField(db_column='OfficerUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
