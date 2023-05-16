@@ -461,6 +461,7 @@ class Query(graphene.ObjectType):
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
         showHistory=graphene.Boolean(),
+        showDeleted=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
