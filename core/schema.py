@@ -30,7 +30,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
@@ -41,6 +41,7 @@ from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
 from .gql_queries import *
+from .utils import flatten_dict
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
 from .services.roleServices import check_role_unique_name
 from .services.userServices import check_user_unique_email
@@ -459,6 +460,7 @@ class Query(graphene.ObjectType):
         birth_date_to=graphene.Date(),
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
+        showHistory=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -475,6 +477,20 @@ class Query(graphene.ObjectType):
         OfficerGQLType,
         str=graphene.String(
             description="text search that will check username, last name, other names and email"
+        ),
+    )
+
+    substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
+        OfficerGQLType,
+        villages_uuids=graphene.List(
+            graphene.NonNull(graphene.String),
+            description="List of villages to be required for substituion officers"),
+        officer_uuid=graphene.String(
+            required=False,
+            description="Current officer uuid to be excluded from substitution list."),
+        str=graphene.String(
+            required=False,
+            description="Query that will return possible EO replacements."
         ),
     )
 
@@ -549,6 +565,38 @@ class Query(graphene.ObjectType):
                 info,
             )
 
+    def resolve_substitution_enrolment_officers(self, info, **kwargs):
+        from .models import Officer
+
+        if not info.context.user.has_perms(
+                CoreConfig.gql_query_enrolment_officers_perms):
+            raise PermissionError("Unauthorized")
+
+        queryset = Officer.objects
+
+        villages_uuids = kwargs.get('villages_uuids', None)
+        if not villages_uuids:
+            return []
+
+        officer_uuid = kwargs.get('officer_uuid', None)
+        if officer_uuid:
+            queryset = queryset.exclude(uuid=officer_uuid)
+
+        query_str = kwargs.get('str', None)
+        if query_str:
+            queryset = queryset.filter(Q(code__istartswith=query_str)
+                                       | Q(last_name__istartswith=query_str)
+                                       | Q(other_names__istartswith=query_str)
+                                       | Q(email__istartswith=query_str))
+
+        return queryset.prefetch_related('officer_villages') \
+            .annotate(nb_village=Count('officer_villages')) \
+            .filter(nb_village__gte=len(villages_uuids),
+                    officer_villages__location__uuid__in=villages_uuids,
+                    validity_to__isnull=True,
+                    officer_villages__validity_to__isnull=True,
+                    officer_villages__location__validity_to__isnull=True)
+
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
@@ -589,6 +637,12 @@ class Query(graphene.ObjectType):
 
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
+
+        show_history = kwargs.get('showHistory', False)
+        if not show_history and not kwargs.get('uuid', None):
+            active_users_ids = [user.id for user in user_query if user.is_active]
+            user_filters.append(Q(id__in=active_users_ids))
+
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
             user_filters.append(Q(username__icontains=text_search) |
@@ -736,6 +790,7 @@ class Query(graphene.ObjectType):
                 else:
                     config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
+                config_dict = flatten_dict(config_dict)
                 for key, value in config_dict.items():
                     if key.endswith("_perms"):
                         if isinstance(value, list):
@@ -1187,11 +1242,14 @@ def update_or_create_user(data, user):
 
     current_email = current_user.email if current_user else None
 
-    if current_email != incoming_email:
-        if not incoming_email:
-            pass
-        elif check_user_unique_email(user_email=data['email']):
-            raise ValidationError(_("mutation.user_email_duplicated"))
+    if incoming_email:
+        if not check_email_validity(incoming_email):
+            raise ValidationError(_("mutation.user_email_invalid"))
+        if current_email != incoming_email:
+            if check_user_unique_email(user_email=data['email']):
+                raise ValidationError(_("mutation.user_email_duplicated"))
+    else:
+        raise ValidationError(_("mutation.user_no_email_provided"))
 
     username = data.get('username')
 
@@ -1225,6 +1283,20 @@ def update_or_create_user(data, user):
     if client_mutation_id:
         UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
+
+
+def check_email_validity(email):
+    # checks if string is a valid email address
+    # using regex provided in the HTML5 standard
+    # it omits some RFC recommendations by design
+    # https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
+    import re
+    regex = re.compile(
+        r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9]"
+        r"(?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+    if not re.fullmatch(regex, email):
+        return False
+    return True
 
 
 def set_user_deleted(user):
