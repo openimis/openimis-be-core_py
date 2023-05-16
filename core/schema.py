@@ -1309,7 +1309,7 @@ def set_user_deleted(user):
             user.officer.delete_history()
         if user.claim_admin:
             user.claim_admin.delete_history()
-        user.delete()  # TODO: we might consider disabling Users instead of deleting entirely.
+        user.delete_history()  # TODO: we might consider disabling Users instead of deleting entirely.
         return []
     except Exception as exc:
         logger.info("role.mutation.failed_to_change_status_of_user" % {'user': str(user)})

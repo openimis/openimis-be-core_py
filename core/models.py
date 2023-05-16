@@ -493,7 +493,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -504,6 +504,16 @@ class User(UUIDModel, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    def save_history(self, **kwargs):
+        pass
+
+    def delete_history(self, **kwargs):
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
 
     @property
     def _u(self):
