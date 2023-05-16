@@ -506,6 +506,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     objects = UserManager()
 
     def save_history(self, **kwargs):
+        # Prevent from saving history. It would lead to error due to username uniqueness.
         pass
 
     def delete_history(self, **kwargs):
