@@ -179,7 +179,7 @@ class Language(models.Model):
         db_column='SortOrder', blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblLanguages'
 
 
@@ -294,7 +294,7 @@ class Role(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblRole'
 
 
@@ -317,7 +317,7 @@ class RoleRight(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblRoleRight'
 
 
@@ -475,7 +475,7 @@ class InteractiveUser(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblUsers'
 
 
@@ -489,7 +489,7 @@ class UserRole(VersionedModel):
         db_column='AudituserID', blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblUserRole'
 
 
@@ -649,8 +649,8 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = False
-        db_table = 'core_User_groups'
+        managed = True
+        db_table = 'Core_User_groups'
         unique_together = (('user', 'group'),)
 
 
@@ -748,7 +748,7 @@ class Officer(VersionedModel, ExtendableModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblOfficer'
 
 
