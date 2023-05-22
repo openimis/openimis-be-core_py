@@ -28,7 +28,7 @@ It is a required module of [openimis-be_py](https://github.com/openimis/openimis
 * tblOfficer > Officer (Known usages: policy.models.Policy and claim.models.Feedback)
 * core_TechnicalUser > TechnicalUser: backend-only users (external apps using FHIR API,...)
 * core_User > User: aggregate entity to bridge Django security on either InteractiveUser (i_user) or TechnicalUser (t_user)
-* core_User_groups > UserGroup: bridge of custom User model to Django permission model
+* core_User_groups_tbl > UserGroup: bridge of custom User model to Django permission model
 * core_Mutation_Log > MutationLog: the generic audit/tracking of any GraphQL mutation (payload as json)
 
 

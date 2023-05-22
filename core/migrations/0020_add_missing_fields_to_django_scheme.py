@@ -237,6 +237,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AlterModelTable(
             name='usergroup',
-            table='Core_User_groups',
+            table='Core_User_groups_tbl',
         ),
     ]
