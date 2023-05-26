@@ -461,6 +461,7 @@ class Query(graphene.ObjectType):
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
         showHistory=graphene.Boolean(),
+        showDeleted=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -641,8 +642,8 @@ class Query(graphene.ObjectType):
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
 
-        show_history = kwargs.get('showHistory', False)
-        if not show_history and not kwargs.get('uuid', None):
+        show_deleted = kwargs.get('showDeleted', False)
+        if not show_deleted and not kwargs.get('uuid', None):
             active_users_ids = [user.id for user in user_query if user.is_active]
             user_filters.append(Q(id__in=active_users_ids))
 
@@ -1320,7 +1321,7 @@ def set_user_deleted(user):
             user.officer.delete_history()
         if user.claim_admin:
             user.claim_admin.delete_history()
-        user.delete()  # TODO: we might consider disabling Users instead of deleting entirely.
+        user.delete_history()
         return []
     except Exception as exc:
         logger.info("role.mutation.failed_to_change_status_of_user" % {'user': str(user)})
