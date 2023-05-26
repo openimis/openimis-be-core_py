@@ -19,7 +19,7 @@ from django.test import TestCase
 from location.models import OfficerVillage
 
 logger = logging.getLogger(__file__)
-
+postgresql = "postgresql"
 
 class UserServicesTest(TestCase):
     claim_admin_class = None
@@ -472,7 +472,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(mail.outbox[0].subject == "[OpenIMIS] Reset Password")
 
         UserRole.objects.filter(user_id=i_user.id).delete()
-        if connection.vendor == "postgresql":
+        if connection.vendor == postgresql:
             UserRole.objects.filter(user_id=core_user.id).delete()
         core_user.delete()
         i_user.delete()
@@ -508,7 +508,7 @@ class UserServicesTest(TestCase):
             set_user_password(request, username, "TOKEN", "new_password")
 
         UserRole.objects.filter(user_id=i_user.id).delete()
-        if connection.vendor == "postgresql":
+        if connection.vendor == postgresql:
             UserRole.objects.filter(user_id=core_user.id).delete()
         core_user.delete()
         i_user.delete()
