@@ -468,7 +468,9 @@ class Query(graphene.ObjectType):
                     "on the setup. BEWARE, fetching these links is costly as there is no direct database link between"
                     "these entities and there are retrieved one by one. Do not fetch them for large lists if you can"
                     "avoid it. The showHistory is acting on the InteractiveUser, avoid mixing with Officer or "
-                    "ClaimAdmin."
+                    "ClaimAdmin.",
+        parent_location=graphene.String(),
+        parent_location_level=graphene.Int()
     )
 
     user = graphene.Field(UserGQLType)
@@ -631,7 +633,8 @@ class Query(graphene.ObjectType):
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
                       role_id=None, roles=None, health_facility_id=None, region_id=None,
                       district_id=None, municipality_id=None, birth_date_from=None, birth_date_to=None,
-                      user_types=None, language=None, village_id=None, region_ids=None, **kwargs):
+                      user_types=None, language=None, village_id=None, region_ids=None, parent_location=None,
+                      parent_location_level=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
 
@@ -698,18 +701,26 @@ class Query(graphene.ObjectType):
         if roles:
             user_filters.append(Q(i_user__user_roles__role_id__in=roles) &
                                 Q(i_user__user_roles__validity_to__isnull=True))
+        if parent_location and parent_location_level is not None:
+            location_filters = {
+                0: Q(i_user__userdistrict__location__parent__uuid=parent_location),
+                1: Q(i_user__userdistrict__location__uuid=parent_location),
+                2: Q(officer__officer_villages__location__parent__uuid=parent_location),
+                3: Q(officer__officer_villages__location__uuid=parent_location)
+            }
+            user_filters.append(location_filters.get(parent_location_level, None))
+        else:
+            if region_id:
+                user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+            elif region_ids:
+                user_filters.append(Q(i_user__userdistrict__location__parent_id__in=region_ids))
 
-        if region_id:
-            user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
-        elif region_ids:
-            user_filters.append(Q(i_user__userdistrict__location__parent_id__in=region_ids))
-
-        if district_id:
-            user_filters.append(Q(i_user__userdistrict__location_id=district_id))
-        if municipality_id:
-            user_filters.append(Q(officer__officer_villages__location__parent_id=municipality_id))
-        if village_id:
-            user_filters.append(Q(officer__officer_villages__location_id=village_id))
+            if district_id:
+                user_filters.append(Q(i_user__userdistrict__location_id=district_id))
+            if municipality_id:
+                user_filters.append(Q(officer__officer_villages__location__parent_id=municipality_id))
+            if village_id:
+                user_filters.append(Q(officer__officer_villages__location_id=village_id))
 
         if user_types:
             ut_conditions = {
