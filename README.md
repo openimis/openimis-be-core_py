@@ -368,13 +368,17 @@ to output the filter construction definition for the chosen object.
 * Within the module's configuration class, in the configuration loading section, include the following lines of code:
 ```
    # register custom filter
-   CustomFilterRegistryPoint.register_custom_filters(module_name=cls.name)
+   from social_protection.custom_filters import BenefitPlanCustomFilterWizard, BeneficiaryCustomFilterWizard
+   CustomFilterRegistryPoint.register_custom_filters(
+       module_name=cls.name,
+       custom_filter_class_list=[BenefitPlanCustomFilterWizard, BeneficiaryCustomFilterWizard]
+   )
 ``` 
 * After completing the above steps, the filter will be registered in the filter hub/storage and can be accessed 
 by invoking the wizard hub service. Here's an example using the Django shell:
 ```
    from core.custom_filters.custom_filter_wizard_storage import CustomFilterWizardStorage
-   CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'BenefitPlan')
+   CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'Beneficiary')
 ```
 
 
