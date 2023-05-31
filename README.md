@@ -352,6 +352,32 @@ CLASS_RULE_PARAM_VALIDATION = [
   - run_convert(instance, convert_to **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to). 'from_to' is deducted from instance. 
   - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
+## CustomFilters
+The module gives possibility to define the way of building custom filters.
+Module consists of such classes:
+* CustomFilterRegistryPoint: class responsible for registering particular module. 
+It is called in apps.py in particular module (see below) in order to have access to way how to 
+build filter for particular objects.
+* CustomFilterWizardInterface: Interface which defines the way how implementation of custom filtering wizard look. 
+Every module has different details of implementation of delivering desired output.  
+* CustomFilterWizardStorage: Class responsible for delivering service which connect to the hub of \
+registered filters in order to obtain definition of building filters for particular object.
+
+Such kind of mechanism could be added to the particular openIMIS module in such way:
+* Declare such import statement  ```from core.custom_filters import CustomFilterRegistryPoint``` on appp.py level
+* Add such lines of code in the config load part within module configuration class:
+```
+   # register custom filter
+   CustomFilterRegistryPoint.register_custom_filters(module_name=cls.name)
+``` 
+* after such step such filter should be registered in the filter hub/storage and could 
+be accesible by calling such wizard hub service (Django shell example):
+```
+   from core.custom_filters.custom_filter_wizard_storage import CustomFilterWizardStorage
+   CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'BenefitPlan')
+```
+
+
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
   user is auto-provisioned(default: "user")
