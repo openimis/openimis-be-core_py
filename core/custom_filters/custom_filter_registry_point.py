@@ -65,7 +65,7 @@ class CustomFilterRegistryPoint:
             logger.debug(f"{module_name} does not exist within openIMIS application")
             return False
         except Exception as exc:
-            logger.debug(f"{module_name}: unknown exception occurred during registering scheduled tasks: {exc}")
+            logger.debug(f"{module_name}: unknown exception occurred during registering custom filter: {exc}")
             return False
 
     @classmethod
