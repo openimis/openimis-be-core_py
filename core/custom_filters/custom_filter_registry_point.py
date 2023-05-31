@@ -11,23 +11,24 @@ logger = logging.getLogger(__name__)
 
 class CustomFilterRegistryPoint:
     """
-        Class reponsible for delivering methods to handle registering custom filters.
-        REGISTERED_CUSTOM_FILTER_WIZARDS - dictionary responsible for collecting registered implementation of custom
-        filter wizards. The example of structure is:
-          {
-              'policy': [],
-              'social_protection': [{
+    Class responsible for handling the registration of custom filters.
+
+    REGISTERED_CUSTOM_FILTER_WIZARDS:
+    A dictionary that collects registered implementations of custom filter wizards.
+    The structure of the dictionary is as follows:
+
+    {
+        'policy': [],
+        'social_protection': [
+            {
                 'class_reference': <class 'social_protection.custom_filters.BeneficiaryCustomFilterCreator'>,
                 'module': 'social_protection'
-            }]
-          }
-        __CLASS_SUBSTRING_NAME - constant responsible for checking if particual module contains
-        implementation of custom filter. The fixed value is 'CustomFilterWizard'.
+            }
+        ]
+    }
     """
 
     REGISTERED_CUSTOM_FILTER_WIZARDS = {}
-
-    __CLASS_SUBSTRING_NAME = "CustomFilterWizard"
 
     @classmethod
     def register_custom_filters(
@@ -36,12 +37,17 @@ class CustomFilterRegistryPoint:
         custom_filter_class_list: List[CustomFilterWizardInterface]
     ) -> None:
         """
-            Process registering the custom filters wizards for
-            particular module registered in openIMIS applicatiom
+            Register custom filter wizards for a specific module in the openIMIS application.
 
-            :param module_name: the name of module that is installed in openIMIS.
-            :param custom_filter_class_list: list of objects that need to be registered as a custom filter in hub.
-            :return: None (void method)
+            This method registers the provided list of objects as custom filters in the hub,
+            for the specified module in the openIMIS application.
+
+            Args:
+                module_name (str): The name of the module installed in openIMIS.
+                custom_filter_class_list (list): A list of objects representing the custom filter implementations.
+
+            Returns:
+                None: This method does not return anything.
         """
         logger.debug(F"registering custom filter in {module_name} module")
         for custom_filter_class in custom_filter_class_list:
@@ -55,15 +61,19 @@ class CustomFilterRegistryPoint:
         custom_filter_class: CustomFilterWizardInterface
     ) -> None:
         """
-            Gathering the presence of custom filter wizard class in particular module
-            There is additional check whether there is such kind of class within custom_filter.py
-            file. If yes then such filter wizard reference is added to the list of registered wizards
-            within openIMIS application
+            Gather the presence of a custom filter wizard class in a specific module and register it.
 
-            :param module_name: the name of module that is installed in openIMIS
-             where it is checked if there is filter wizard implementation.
-            :param custom_filter_class: object that need to be registered as a custom filter in hub
-            :return: None (void method)
+            This method checks the presence of a custom filter wizard class within the module.
+            If the class exists, the filter wizard reference is added to the list of registered wizards
+            within the openIMIS application.
+
+            Args:
+                module_name (str): The name of the module from which the custom filter objects originate.
+                custom_filter_class: An object that needs to be registered as a custom filter in the hub,
+                                     grouped under the specific module.
+
+            Returns:
+                None: This is a void method.
         """
         if module_name not in cls.REGISTERED_CUSTOM_FILTER_WIZARDS:
             cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"] = []

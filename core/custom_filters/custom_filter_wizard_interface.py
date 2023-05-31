@@ -5,22 +5,27 @@ from typing import List
 class CustomFilterWizardInterface:
     def get_type_of_object(self) -> str:
         """
-            Get the type of object from which we want to define
-            specific way of building filters
+            Get the type of object for which we want to define a specific way of building filters.
 
-            :return: str
+            Returns:
+                str: The type of the object.
         """
         pass
 
     def load_definition(self, tuple_type: type, **kwargs) -> List[namedtuple]:
         """
-            Load the definition how to create filters. The output is simply the list
-            of named tuple (from collections package). Such named tuple is built in such way:
-            <Type>(field=<str>, filter=<str>, value=<str>) for example:
-            BenefitPlan(field='income', filter='lt, gte, icontains, exact', value='')
+            Load the definition of how to create filters.
 
-            :param tuple_type: the type of tuple
-             
-            :return: List[namedtuple]
+            This method retrieves the definition of how to create filters and returns it as a list of named tuples.
+            Each named tuple is built with the provided `tuple_type` and has the fields `field`, `filter`, and `value`.
+
+            Example named tuple: <Type>(field=<str>, filter=<str>, value=<str>)
+            Example usage: BenefitPlan(field='income', filter='lt, gte, icontains, exact', value='')
+
+            Args:
+                tuple_type (type): The type of the named tuple.
+
+            Returns:
+                List[namedtuple]: A list of named tuples representing the definition of how to create filters.
         """
         pass

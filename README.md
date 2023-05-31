@@ -353,27 +353,25 @@ CLASS_RULE_PARAM_VALIDATION = [
   - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
 ## CustomFilters
-The module gives possibility to define the way of building custom filters.
-Module consists of such classes:
-* CustomFilterRegistryPoint: class responsible for registering particular module. 
-It is called in apps.py in particular module (see below) in order to have access to way how to 
-build filter for particular objects.
-* CustomFilterWizardInterface: Interface which defines the way how implementation of custom filtering wizard look. 
-Every module has different details of implementation of delivering desired output.  
-* CustomFilterWizardStorage: Class responsible for delivering service which connect to the hub of \
-registered filters in order to obtain definition of building filters for particular object.
+This module provides the ability to define custom filters and their construction. It includes the following classes:
+* ```CustomFilterRegistryPoint```: This class is responsible for registering a specific module. 
+It should be called in the apps.py file of the respective module (see below) to enable filter construction for specific objects.
+* ```CustomFilterWizardInterface```: This interface defines the implementation details of a custom filtering wizard. 
+Each module may have different implementations for delivering the desired output.
+* ```CustomFilterWizardStorage```: This class provides a service that connects to the registered filter hub, allowing 
+retrieval of the filter construction definition for specific objects.
 
-Such kind of mechanism could be added to the particular openIMIS module in such way:
-* (not obligatory, but without this nothing is loaded into hub) implement interface from core (CustomFilterWizardInterface)
-for particular chosen object to output the definition of building filters in custom_filters.py (if no such file, simply add this file in module)
-* Declare such import statement  ```from core.custom_filters import CustomFilterRegistryPoint``` on apps.py level
-* Add such lines of code in the config load part within module configuration class:
+To integrate this mechanism into an openIMIS module, follow these steps:
+* Implement the CustomFilterWizardInterface from the core module (if no custom_filters.py file exists, create one in the module) 
+to output the filter construction definition for the chosen object.
+* In the apps.py file of the module, add the following import statement: ```from core.custom_filters import CustomFilterRegistryPoint```.
+* Within the module's configuration class, in the configuration loading section, include the following lines of code:
 ```
    # register custom filter
    CustomFilterRegistryPoint.register_custom_filters(module_name=cls.name)
 ``` 
-* after such step such filter should be registered in the filter hub/storage and could 
-be accesible by calling such wizard hub service (Django shell example):
+* After completing the above steps, the filter will be registered in the filter hub/storage and can be accessed 
+by invoking the wizard hub service. Here's an example using the Django shell:
 ```
    from core.custom_filters.custom_filter_wizard_storage import CustomFilterWizardStorage
    CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'BenefitPlan')
