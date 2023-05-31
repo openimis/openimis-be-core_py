@@ -17,7 +17,6 @@ class CustomFilterRegistryPoint:
           {
               'policy': [],
               'social_protection': [{
-                'class_name': 'BeneficiaryCustomFilterCreator',
                 'class_reference': <class 'social_protection.custom_filters.BeneficiaryCustomFilterCreator'>,
                 'module': 'social_protection'
             }]
@@ -50,7 +49,11 @@ class CustomFilterRegistryPoint:
             logger.debug(F"Such module {module_name} provides custom filters wizards")
 
     @classmethod
-    def __collect_custom_filter_wizards(cls, module_name: str, custom_filter_class: CustomFilterWizardInterface) -> None:
+    def __collect_custom_filter_wizards(
+        cls,
+        module_name: str,
+        custom_filter_class: CustomFilterWizardInterface
+    ) -> None:
         """
             Gathering the presence of custom filter wizard class in particular module
             There is additional check whether there is such kind of class within custom_filter.py
@@ -62,7 +65,8 @@ class CustomFilterRegistryPoint:
             :param custom_filter_class: object that need to be registered as a custom filter in hub
             :return: None (void method)
         """
-        cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"] = []
+        if module_name not in cls.REGISTERED_CUSTOM_FILTER_WIZARDS:
+            cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"] = []
         cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"].append({
             "class_reference": custom_filter_class,
             "module": module_name
