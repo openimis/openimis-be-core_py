@@ -4,8 +4,6 @@ import importlib.util
 import logging
 import os
 
-from django.conf import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -32,19 +30,7 @@ class CustomFilterRegistryPoint:
     __CLASS_SUBSTRING_NAME = "CustomFilterWizard"
 
     @classmethod
-    def register_custom_filters(cls) -> None:
-        """
-            Process registering the custom filters wizards within application
-            for all modules presented in openIMIS applicatiom
-
-            :return: None (void method)
-        """
-        logger.debug("registering custom filters")
-        for app in settings.OPENIMIS_APPS:
-            cls._register_app_custom_filters(app)
-
-    @classmethod
-    def _register_app_custom_filters(cls, module_name: str) -> None:
+    def register_custom_filters(cls, module_name: str) -> None:
         """
             Process registering the custom filters wizards for
             particular module registered in openIMIS applicatiom
@@ -52,6 +38,7 @@ class CustomFilterRegistryPoint:
             :param module_name: the name of module that is installed in openIMIS.
             :return: None (void method)
         """
+        logger.debug(F"registering custom filter in {module_name} module")
         if cls.__check_module_file(module_name, 'custom_filters.py'):
             cls.__collect_custom_filter_wizards(module_name)
             logger.debug(F"Such module {module_name} provides custom filters wizards")
@@ -70,9 +57,16 @@ class CustomFilterRegistryPoint:
              is included in that particular module.
             :return: bool
         """
-        module_path = __import__(module_name).__file__
-        file_path = os.path.join(os.path.dirname(module_path), file_name)
-        return os.path.isfile(file_path)
+        try:
+            module_path = __import__(module_name).__file__
+            file_path = os.path.join(os.path.dirname(module_path), file_name)
+            return os.path.isfile(file_path)
+        except ModuleNotFoundError:
+            logger.debug(f"{module_name} does not exist within openIMIS application")
+            return False
+        except Exception as exc:
+            logger.debug(f"{module_name}: unknown exception occurred during registering scheduled tasks: {exc}")
+            return False
 
     @classmethod
     def __collect_custom_filter_wizards(cls, module_name: str) -> None:

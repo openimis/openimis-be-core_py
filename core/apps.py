@@ -5,7 +5,6 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 
-from core.custom_filters import CustomFilterRegistryPoint
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +174,6 @@ class CoreConfig(AppConfig):
         self._configure_graphql(cfg)
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
-        CustomFilterRegistryPoint.register_custom_filters()
 
         self.password_reset_template = cfg["password_reset_template"]
 
