@@ -366,7 +366,7 @@ registered filters in order to obtain definition of building filters for particu
 Such kind of mechanism could be added to the particular openIMIS module in such way:
 * (not obligatory, but without this nothing is loaded into hub) implement interface from core (CustomFilterWizardInterface)
 for particular chosen object to output the definition of building filters in custom_filters.py (if no such file, simply add this file in module)
-* Declare such import statement  ```from core.custom_filters import CustomFilterRegistryPoint``` on appp.py level
+* Declare such import statement  ```from core.custom_filters import CustomFilterRegistryPoint``` on apps.py level
 * Add such lines of code in the config load part within module configuration class:
 ```
    # register custom filter
