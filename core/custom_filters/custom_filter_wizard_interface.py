@@ -12,7 +12,7 @@ class CustomFilterWizardInterface:
         """
         pass
 
-    def load_definition(self, tuple_type: type) -> List[namedtuple]:
+    def load_definition(self, tuple_type: type, **kwargs) -> List[namedtuple]:
         """
             Load the definition how to create filters. The output is simply the list
             of named tuple (from collections package). Such named tuple is built in such way:

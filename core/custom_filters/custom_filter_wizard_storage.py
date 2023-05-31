@@ -28,7 +28,7 @@ class CustomFilterWizardStorage:
     __VALUE = 'value'
 
     @classmethod
-    def build_output_how_to_build_filter(cls, module_name: str, object_type: str) -> List[namedtuple]:
+    def build_output_how_to_build_filter(cls, module_name: str, object_type: str, **kwargs) -> List[namedtuple]:
         """
             Building the final outcome how to build filter based on the information provided
             by registered custom filter wizard based on the provided module name and type of object.
@@ -51,14 +51,15 @@ class CustomFilterWizardStorage:
                 if cls.__KEY_FOR_OBTAINING_CLASS in registered_filter_wizard:
                     wizard_filter_class = cls.__create_instance_of_wizard_class(registered_filter_wizard)
                     if cls.__check_object_type(wizard_filter_class, object_type):
-                        cls.__run_load_definition_object_in_wizard(wizard_filter_class, output_of_possible_filters)
+                        cls.__run_load_definition_object_in_wizard(wizard_filter_class, output_of_possible_filters, **kwargs)
         return output_of_possible_filters
 
     @classmethod
     def __run_load_definition_object_in_wizard(
         cls,
         wizard_filter_class: CustomFilterWizardInterface,
-        output_of_possible_filters: List[namedtuple]
+        output_of_possible_filters: List[namedtuple],
+        **kwargs
     ) -> None:
         """
             Method responsible for running loading definition of possible ways of
@@ -77,7 +78,7 @@ class CustomFilterWizardStorage:
             wizard_filter_class.get_type_of_object(),
             [cls.__FIELD, cls.__FILTER, cls.__VALUE]
         )
-        tuple_list_result = wizard_filter_class.load_definition(wizard_filter_tuple_type)
+        tuple_list_result = wizard_filter_class.load_definition(wizard_filter_tuple_type, **kwargs)
         output_of_possible_filters.extend(tuple_list_result)
 
     @classmethod
