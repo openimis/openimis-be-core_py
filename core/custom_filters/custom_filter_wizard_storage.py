@@ -27,7 +27,7 @@ class CustomFilterWizardStorage:
     __KEY_FOR_OBTAINING_CLASS = 'class_reference'
     __FIELD = 'field'
     __FILTER = 'filter'
-    __VALUE = 'value'
+    __TYPE = 'type'
 
     @classmethod
     def build_output_how_to_build_filter(cls, module_name: str, object_type: str, **kwargs) -> List[namedtuple]:
@@ -81,7 +81,7 @@ class CustomFilterWizardStorage:
         """
         wizard_filter_tuple_type = namedtuple(
             wizard_filter_class.get_type_of_object(),
-            [cls.__FIELD, cls.__FILTER, cls.__VALUE]
+            [cls.__FIELD, cls.__FILTER, cls.__TYPE]
         )
         tuple_list_result = wizard_filter_class.load_definition(wizard_filter_tuple_type, **kwargs)
         output_of_possible_filters.extend(tuple_list_result)

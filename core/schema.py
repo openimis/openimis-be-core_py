@@ -40,7 +40,6 @@ import graphql_jwt
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
-# custom filter implementation
 from .custom_filters import CustomFilterWizardStorage
 from .gql_queries import *
 from .utils import flatten_dict
@@ -499,7 +498,7 @@ class Query(graphene.ObjectType):
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
-    # custom filter implementation
+
     custom_filters = graphene.Field(
         CustomFilterGQLType,
         module_name=graphene.Argument(graphene.String, required=True),
@@ -814,7 +813,6 @@ class Query(graphene.ObjectType):
                 ))
         return ModulePermissionsListGQLType(list(config))
 
-    # TODO IN PROGRESS custom filters implementation
     def resolve_custom_filters(self, info, **kwargs):
         # TODO - add permission
         module_name, object_type_name, uuid_of_object = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
@@ -857,7 +855,7 @@ class Query(graphene.ObjectType):
                 CustomFilterOptionGQLType(
                     field=custom_filter.field,
                     filter=custom_filter.filter,
-                    value=custom_filter.value
+                    type=custom_filter.type
                 )
             )
         return possible_filters

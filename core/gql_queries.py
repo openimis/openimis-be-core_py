@@ -195,11 +195,10 @@ class ModulePermissionsListGQLType(graphene.ObjectType):
     module_perms_list = graphene.List(ModulePermissionGQLType)
 
 
-# custom filter implementation for graphQL schema
 class CustomFilterOptionGQLType(graphene.ObjectType):
     field = graphene.String()
-    filter = graphene.String()
-    value = graphene.String()
+    filter = graphene.List(graphene.String)
+    type = graphene.String()
 
 
 class CustomFilterGQLType(graphene.ObjectType):
