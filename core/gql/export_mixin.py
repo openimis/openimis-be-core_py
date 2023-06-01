@@ -67,13 +67,12 @@ class ExportableQueryMixin:
                 f"CSV export cannot be created")
 
         def exporter(cls, self, info, **kwargs):
-            export_fields = [cls._adjust_notation(f) for f in kwargs['fields']]
-            fields_mapping = json.loads(kwargs['fields_columns'])
-            column_names = [fields_mapping.get(column) or column for column in kwargs['fields']]
+            export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
+            fields_mapping = json.loads(kwargs.pop('fields_columns'))
             qs = default_resolve(None, info, **kwargs)
-
+            qs = qs.filter(**kwargs)
             export_file = ExportableQueryModel\
-                .create_csv_export(qs, export_fields, info.context.user, column_names=column_names,
+                .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
                                    patches=cls.get_patches_for_field(field_name))
 
             return export_file.name

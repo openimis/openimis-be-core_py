@@ -1118,7 +1118,7 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = column_names or values
+        content.columns = [column_names.get(column) or column for column in content.columns]
         filename = F"{uuid.uuid4()}.csv"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(
