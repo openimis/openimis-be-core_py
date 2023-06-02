@@ -5,6 +5,7 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 
+
 logger = logging.getLogger(__name__)
 
 MODULE_NAME = "core"
