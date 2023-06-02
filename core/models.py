@@ -432,6 +432,18 @@ class InteractiveUser(VersionedModel):
         else:
             return False
 
+    @property
+    def is_imis_admin(self):
+        # 64 is system number for IMIS Administrator
+        user_roles = UserRole.objects.filter(
+            user_id=self.id, validity_to__isnull=True
+        ).all()
+        role_ids = [user_role.role_id for user_role in user_roles]
+        is_system_values = Role.objects \
+            .filter(id__in=role_ids) \
+            .values_list('is_system', flat=True)
+        return True if 64 in is_system_values else False
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -493,7 +505,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -504,6 +516,17 @@ class User(UUIDModel, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    def save_history(self, **kwargs):
+        # Prevent from saving history. It would lead to error due to username uniqueness.
+        pass
+
+    def delete_history(self, **kwargs):
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
 
     @property
     def _u(self):
@@ -538,6 +561,18 @@ class User(UUIDModel, PermissionsMixin):
         if self.user and self.user.t_user:
             return self.user.t_user.is_superuser
         return False
+
+    @property
+    def is_imis_admin(self):
+        # 64 is system number for IMIS Administrator
+        user_roles = UserRole.objects.filter(
+            user_id=self.id, validity_to__isnull=True
+        ).all()
+        role_ids = [user_role.role_id for user_role in user_roles]
+        is_system_values = Role.objects \
+            .filter(id__in=role_ids) \
+            .values_list('is_system', flat=True)
+        return True if 64 in is_system_values else False
 
     @property
     def is_active(self):
@@ -1083,7 +1118,7 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = column_names or values
+        content.columns = [column_names.get(column) or column for column in content.columns]
         filename = F"{uuid.uuid4()}.csv"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(

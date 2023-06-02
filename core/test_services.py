@@ -1,10 +1,12 @@
 import importlib
 import logging
+
+from django.db import connection
 from django.test.client import RequestFactory
 from django.apps import apps
 
 import core
-from core.models import InteractiveUser, Officer
+from core.models import InteractiveUser, Officer, UserRole
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
@@ -17,7 +19,7 @@ from django.test import TestCase
 from location.models import OfficerVillage
 
 logger = logging.getLogger(__file__)
-
+postgresql = "postgresql"
 
 class UserServicesTest(TestCase):
     claim_admin_class = None
@@ -55,6 +57,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.user_roles.first().role_id, 11)
         self.assertEquals(i_user.language.code, "en")
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
         deleted_users = InteractiveUser.objects.filter(login_name=username).delete()
         logger.info(f"Deleted {deleted_users} users after test")
 
@@ -95,6 +98,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(i_user.check_password("foobar123"))
         self.assertFalse(i_user.check_password("wrong_password"))
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
         deleted_users = InteractiveUser.objects.filter(login_name=username).delete()
         logger.info(f"Deleted {deleted_users} users after test")
 
@@ -176,6 +180,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user2.email, f"{username}@updated.int")
         self.assertTrue(i_user2.check_password("updated"))
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
         core_user.delete()
         deleted_users = InteractiveUser.objects.filter(login_name=username).delete()
         logger.info(f"Deleted {deleted_users} users after test")
@@ -220,6 +225,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user2.last_name, "Last updated")
         self.assertEquals(i_user2.other_names, "Other updated")
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
         deleted_users = InteractiveUser.objects.filter(login_name=username).delete()
         logger.info(f"Deleted {deleted_users} users after test")
 
@@ -465,6 +471,9 @@ class UserServicesTest(TestCase):
         self.assertTrue(len(mail.outbox) == 1)
         self.assertTrue(mail.outbox[0].subject == "[OpenIMIS] Reset Password")
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
+        if connection.vendor == postgresql:
+            UserRole.objects.filter(user_id=core_user.id).delete()
         core_user.delete()
         i_user.delete()
 
@@ -489,7 +498,6 @@ class UserServicesTest(TestCase):
         )
         self.assertTrue(created)
         self.assertTrue(i_user.check_password("foobar123"))
-
         # Core user necessary for the update
         core_user, _ = create_or_update_core_user(None, username, i_user=i_user)
 
@@ -499,5 +507,8 @@ class UserServicesTest(TestCase):
         with self.assertRaises(ValidationError):
             set_user_password(request, username, "TOKEN", "new_password")
 
+        UserRole.objects.filter(user_id=i_user.id).delete()
+        if connection.vendor == postgresql:
+            UserRole.objects.filter(user_id=core_user.id).delete()
         core_user.delete()
         i_user.delete()
