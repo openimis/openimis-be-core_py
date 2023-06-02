@@ -37,17 +37,18 @@ class CustomFilterRegistryPoint:
         custom_filter_class_list: List[CustomFilterWizardInterface]
     ) -> None:
         """
-            Register custom filter wizards for a specific module in the openIMIS application.
+        Register custom filter wizards for a specific module in the openIMIS application.
 
-            This method registers the provided list of objects as custom filters in the hub,
-            for the specified module in the openIMIS application.
+        This method registers the provided list of objects as custom filters in the hub,
+        for the specified module in the openIMIS application.
 
-            Args:
-                module_name (str): The name of the module installed in openIMIS.
-                custom_filter_class_list (list): A list of objects representing the custom filter implementations.
+        :param module_name: The name of the module installed in openIMIS.
+        :type module_name: str
+        :param custom_filter_class_list: A list of objects representing the custom filter implementations.
+        :type custom_filter_class_list: list
 
-            Returns:
-                None: This method does not return anything.
+        :return: This method does not return anything.
+        :rtype: None
         """
         logger.debug(F"registering custom filter in {module_name} module")
         for custom_filter_class in custom_filter_class_list:
@@ -60,21 +61,6 @@ class CustomFilterRegistryPoint:
         module_name: str,
         custom_filter_class: CustomFilterWizardInterface
     ) -> None:
-        """
-            Gather the presence of a custom filter wizard class in a specific module and register it.
-
-            This method checks the presence of a custom filter wizard class within the module.
-            If the class exists, the filter wizard reference is added to the list of registered wizards
-            within the openIMIS application.
-
-            Args:
-                module_name (str): The name of the module from which the custom filter objects originate.
-                custom_filter_class: An object that needs to be registered as a custom filter in the hub,
-                                     grouped under the specific module.
-
-            Returns:
-                None: This is a void method.
-        """
         if module_name not in cls.REGISTERED_CUSTOM_FILTER_WIZARDS:
             cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"] = []
         cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"].append({

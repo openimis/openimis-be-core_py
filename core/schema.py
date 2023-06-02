@@ -841,7 +841,7 @@ class Query(graphene.ObjectType):
         kwargs = {}
         if uuid_of_object is not None:
             kwargs['uuid'] = uuid_of_object
-        return CustomFilterWizardStorage.build_output_how_to_build_filter(
+        return CustomFilterWizardStorage.build_custom_filters_definition(
             module_name=module_name,
             object_type=object_type_name,
             **kwargs

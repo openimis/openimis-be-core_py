@@ -30,89 +30,56 @@ class CustomFilterWizardStorage:
     __TYPE = 'type'
 
     @classmethod
-    def build_output_how_to_build_filter(cls, module_name: str, object_type: str, **kwargs) -> List[namedtuple]:
+    def build_custom_filters_definition(cls, module_name: str, object_type: str, **kwargs) -> List[namedtuple]:
         """
-            Build the final outcome for creating a filter based on the information provided by
-            a registered custom filter wizard for the specified module name and object type.
+        Build the final outcome for creating a filter based on the information provided by
+        a registered custom filter wizard for the specified module name and object type.
 
-            The output is a list of named tuples (from the collections package). Each named tuple is built
-            in the following format: <Type>(field=<str>, filter=<str>, value=<str>)
+        The output is a list of named tuples (from the collections package). Each named tuple is built
+        in the following format: <Type>(field=<str>, filter=<str>, type=<str>)
 
-            Example named tuple: BenefitPlan(field='income', filter='lt, gte, icontains, exact', value='')
+        Example named tuple: BenefitPlan(field='income', filter='lt, gte, icontains, exact', value='')
 
-            Args:
-                module_name (str): The name of the module installed in openIMIS, required to retrieve information
-                                   about the possible ways of building filters for that specific module.
-                object_type (str): The name of the object type for which the filter building information is needed.
+        :param module_name: The name of the module installed in openIMIS, required to retrieve information
+                            about the possible ways of building filters for that specific module.
+        :type module_name: str
+        :param object_type: The name of the object type for which the filter building information is needed.
+        :type object_type: str
 
-            Returns:
-                List[namedtuple]: A list of named tuples representing the final outcome for creating a filter.
+        :return: A list of named tuples representing the final outcome for creating a filter.
+        :rtype: List[namedtuple]
         """
         output_of_possible_filters = []
         registered_filter_wizards = CustomFilterRegistryPoint.REGISTERED_CUSTOM_FILTER_WIZARDS
         if module_name in registered_filter_wizards:
             for registered_filter_wizard in registered_filter_wizards[module_name]:
-                if cls.__KEY_FOR_OBTAINING_CLASS in registered_filter_wizard:
-                    wizard_filter_class = cls.__create_instance_of_wizard_class(registered_filter_wizard)
-                    if cls.__check_object_type(wizard_filter_class, object_type):
-                        cls.__run_load_definition_object_in_wizard(wizard_filter_class, output_of_possible_filters, **kwargs)
+                if cls.__KEY_FOR_OBTAINING_CLASS not in registered_filter_wizard:
+                    continue
+                wizard_filter_class = cls.__create_instance_of_wizard_class(registered_filter_wizard)
+                if not cls.__check_object_type(wizard_filter_class, object_type):
+                    continue
+                output_of_possible_filters.extend(
+                    cls.__run_load_definition_object_in_wizard(wizard_filter_class, **kwargs)
+                )
         return output_of_possible_filters
 
     @classmethod
     def __run_load_definition_object_in_wizard(
         cls,
         wizard_filter_class: CustomFilterWizardInterface,
-        output_of_possible_filters: List[namedtuple],
         **kwargs
-    ) -> None:
-        """
-        Run the loading of definitions for possible ways of building filters in the provided
-        custom filter wizard class.
-
-        Args:
-            wizard_filter_class (CustomFilterWizardInterface): An instance of the custom filter wizard class
-                                                              responsible for loading filter definitions.
-            output_of_possible_filters (list): A list that contains the definitions of how to build filters.
-                                              Any specific definitions for a particular field will be appended
-                                              to this list.
-
-        Returns:
-            None: This is a void method.
-        """
+    ) -> List[namedtuple]:
         wizard_filter_tuple_type = namedtuple(
             wizard_filter_class.get_type_of_object(),
             [cls.__FIELD, cls.__FILTER, cls.__TYPE]
         )
         tuple_list_result = wizard_filter_class.load_definition(wizard_filter_tuple_type, **kwargs)
-        output_of_possible_filters.extend(tuple_list_result)
+        return tuple_list_result
 
     @classmethod
     def __create_instance_of_wizard_class(cls, registered_filter_wizard: dict) -> CustomFilterWizardInterface:
-        """
-        Create an instance of the custom filter wizard class.
-
-        Args:
-            registered_filter_wizard (dict): A dictionary containing information about the particular
-                                             registered CustomWizardClass.
-
-        Returns:
-            CustomFilterWizardInterface: An instance of the custom filter wizard class.
-        """
         return registered_filter_wizard[cls.__KEY_FOR_OBTAINING_CLASS]()
 
     @classmethod
     def __check_object_type(cls, wizard_filter_class: CustomFilterWizardInterface, object_type: str) -> bool:
-        """
-        Verify if the object is matched to the object defined in the instance of the class responsible for
-        implementing the wizard interface in the given object type.
-
-        Args:
-            wizard_filter_class (CustomFilterWizardInterface): An instance of the class responsible for
-                                                              implementing the CustomFilterWizardInterface
-                                                              in the given object type.
-            object_type (str): The string representation of the object class that takes part in filtering customization.
-
-        Returns:
-            bool: True if the object is matched, False otherwise.
-        """
         return object_type == wizard_filter_class.get_type_of_object()
