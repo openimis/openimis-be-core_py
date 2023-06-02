@@ -15,6 +15,6 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunSQL(f'{mssql_code} NVARCHAR(MAX)'
                           if settings.MSSQL else psql_code,
-                          reverse_sql='ALTER TABLE [tblOfficer] ALTER COLUMN [JsonExt] TEXT'
+                          reverse_sql=f'{mssql_code} TEXT'
                           if settings.MSSQL else psql_code),
     ]
