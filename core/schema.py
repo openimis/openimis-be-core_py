@@ -826,7 +826,10 @@ class Query(graphene.ObjectType):
         return ModulePermissionsListGQLType(list(config))
 
     def resolve_custom_filters(self, info, **kwargs):
-        # TODO - add permission
+        user = info.context.user
+        if type(user) is AnonymousUser or not user.id:
+            raise PermissionError("Unauthorized")
+
         module_name, object_type_name, uuid_of_object = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
         custom_filter_list_output = Query._obtain_definition_of_custom_filter_from_hub(
             module_name, object_type_name, uuid_of_object
