@@ -3,6 +3,22 @@ from typing import List
 
 
 class CustomFilterWizardInterface:
+    """
+        Interface responsible for delivering signatures of methods for
+        building custom filters for a particular kind of object.
+
+        Constants:
+            FILTERS_BASED_ON_FIELD_TYPE: kind of mapper to indicate what kind of filters should be used
+            depends on the type of the particular field.
+    """
+
+    FILTERS_BASED_ON_FIELD_TYPE = {
+        "string": ["iexact", "istartswith", "icontains"],
+        "integer": ["exact", "lt", "lte", "gt", "gte"],
+        "decimal": ["exact", "lt", "lte", "gt", "gte"],
+        "date": ["exact", "lt", "lte", "gt", "gte"],
+        "boolean": ["exact"],
+    }
 
     def get_type_of_object(self) -> str:
         """

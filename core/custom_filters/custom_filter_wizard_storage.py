@@ -27,7 +27,7 @@ class CustomFilterWizardStorage:
     __KEY_FOR_OBTAINING_CLASS = 'class_reference'
     __FIELD = 'field'
     __FILTER = 'filter'
-    __VALUE = 'value'
+    __TYPE = 'type'
 
     @classmethod
     def build_custom_filters_definition(cls, module_name: str, object_type: str, **kwargs) -> List[namedtuple]:
@@ -36,7 +36,7 @@ class CustomFilterWizardStorage:
         a registered custom filter wizard for the specified module name and object type.
 
         The output is a list of named tuples (from the collections package). Each named tuple is built
-        in the following format: <Type>(field=<str>, filter=<str>, value=<str>)
+        in the following format: <Type>(field=<str>, filter=<str>, type=<str>)
 
         Example named tuple: BenefitPlan(field='income', filter='lt, gte, icontains, exact', value='')
 
@@ -71,7 +71,7 @@ class CustomFilterWizardStorage:
     ) -> List[namedtuple]:
         wizard_filter_tuple_type = namedtuple(
             wizard_filter_class.get_type_of_object(),
-            [cls.__FIELD, cls.__FILTER, cls.__VALUE]
+            [cls.__FIELD, cls.__FILTER, cls.__TYPE]
         )
         tuple_list_result = wizard_filter_class.load_definition(wizard_filter_tuple_type, **kwargs)
         return tuple_list_result

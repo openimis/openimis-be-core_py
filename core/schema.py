@@ -40,6 +40,7 @@ import graphql_jwt
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
+from .custom_filters import CustomFilterWizardStorage
 from .gql_queries import *
 from .utils import flatten_dict
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
@@ -501,6 +502,13 @@ class Query(graphene.ObjectType):
         ModulePermissionsListGQLType,
     )
 
+    custom_filters = graphene.Field(
+        CustomFilterGQLType,
+        module_name=graphene.Argument(graphene.String, required=True),
+        object_type_name=graphene.Argument(graphene.String, required=True),
+        uuid_of_object=graphene.Argument(graphene.String, required=False),
+    )
+
     languages = graphene.List(LanguageGQLType)
 
     validate_username = graphene.Field(
@@ -816,6 +824,56 @@ class Query(graphene.ObjectType):
                     permissions=permission,
                 ))
         return ModulePermissionsListGQLType(list(config))
+
+    def resolve_custom_filters(self, info, **kwargs):
+        user = info.context.user
+        if type(user) is AnonymousUser or not user.id:
+            raise PermissionError("Unauthorized")
+
+        module_name, object_type_name, uuid_of_object = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
+        custom_filter_list_output = Query._obtain_definition_of_custom_filter_from_hub(
+            module_name, object_type_name, uuid_of_object
+        )
+        possible_filters = Query._build_possible_custom_filter_options(custom_filter_list_output)
+        return CustomFilterGQLType(
+            type=object_type_name,
+            code=module_name,
+            object_class_name=object_type_name,
+            possible_filters=possible_filters
+        )
+
+    @staticmethod
+    def _obtain_params_from_custom_filter_graphql_query(**kwargs):
+        module_name = kwargs.get("module_name", None)
+        object_type_name = kwargs.get("object_type_name", None)
+        uuid_of_object = kwargs.get("uuid_of_object", None)
+        return module_name, object_type_name, uuid_of_object
+
+    @staticmethod
+    def _obtain_definition_of_custom_filter_from_hub(
+        module_name, object_type_name, uuid_of_object
+    ):
+        kwargs = {}
+        if uuid_of_object is not None:
+            kwargs['uuid'] = uuid_of_object
+        return CustomFilterWizardStorage.build_custom_filters_definition(
+            module_name=module_name,
+            object_type=object_type_name,
+            **kwargs
+        )
+
+    @staticmethod
+    def _build_possible_custom_filter_options(custom_filter_list_output):
+        possible_filters = []
+        for custom_filter in custom_filter_list_output:
+            possible_filters.append(
+                CustomFilterOptionGQLType(
+                    field=custom_filter.field,
+                    filter=custom_filter.filter,
+                    type=custom_filter.type
+                )
+            )
+        return possible_filters
 
     def resolve_module_configurations(self, info, **kwargs):
         validity = kwargs.get('validity')
