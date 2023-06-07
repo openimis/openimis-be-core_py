@@ -71,6 +71,7 @@ class CustomFilterWizardStorage:
             field, value_type = field.rsplit('__', 1)
             value = cls.__cast_value(value, value_type)
             filter_kwargs = {f"json_ext__{field}": value}
+            print(filter_kwargs)
             query = query.filter(**filter_kwargs)
         return query
 
@@ -100,7 +101,7 @@ class CustomFilterWizardStorage:
         if value_type == 'integer':
             return int(value)
         elif value_type == 'string':
-            return str(value)
+            return str(value[1:-1])
         elif value_type == 'numeric':
             return float(value)
         elif value_type == 'boolean':
