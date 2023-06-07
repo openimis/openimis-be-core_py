@@ -1,4 +1,5 @@
 import logging
+import re
 
 from collections import namedtuple
 from typing import List
@@ -64,6 +65,16 @@ class CustomFilterWizardStorage:
         return output_of_possible_filters
 
     @classmethod
+    def apply_filter_to_queryset(cls, custom_filters, query):
+        for filter_part in custom_filters:
+            field, value = filter_part.split('=')
+            field, value_type = field.rsplit('__', 1)
+            value = cls.__cast_value(value, value_type)
+            filter_kwargs = {f"json_ext__{field}": value}
+            query = query.filter(**filter_kwargs)
+        return query
+
+    @classmethod
     def __run_load_definition_object_in_wizard(
         cls,
         wizard_filter_class: CustomFilterWizardInterface,
@@ -83,3 +94,36 @@ class CustomFilterWizardStorage:
     @classmethod
     def __check_object_type(cls, wizard_filter_class: CustomFilterWizardInterface, object_type: str) -> bool:
         return object_type == wizard_filter_class.get_type_of_object()
+
+    @classmethod
+    def __cast_value(cls, value, value_type):
+        if value_type == 'integer':
+            return int(value)
+        elif value_type == 'string':
+            return str(value)
+        elif value_type == 'numeric':
+            return float(value)
+        elif value_type == 'boolean':
+            cleaned_value = cls.__remove_unexpected_chars(value)
+            if cleaned_value.lower() == 'true':
+                return True
+            elif cleaned_value.lower() == 'false':
+                return False
+        elif value_type == 'date':
+            # Perform date parsing logic here
+            # Assuming you have a specific date format, you can use datetime.strptime
+            # Example: return datetime.strptime(value, '%Y-%m-%d').date()
+            pass
+
+        # Return None if the value type is not recognized
+        return None
+
+    @classmethod
+    def __remove_unexpected_chars(cls, string):
+        # Define the pattern for unwanted characters
+        pattern = r'[^\w\s]'  # Remove any character that is not alphanumeric or whitespace
+
+        # Use re.sub() to remove the unwanted characters
+        cleaned_string = re.sub(pattern, '', string)
+
+        return cleaned_string
