@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
             ],
             options={
-                'db_table': 'Core_User_groups_tbl',
+                'db_table': 'core_User_groups',
                 'managed': True,
             },
         ),
