@@ -685,7 +685,7 @@ class UserGroup(models.Model):
 
     class Meta:
         managed = True
-        db_table = 'Core_User_groups_tbl'
+        db_table = 'Core_User_groups'
         unique_together = (('user', 'group'),)
 
 
