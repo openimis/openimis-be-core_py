@@ -1,4 +1,5 @@
 from collections import namedtuple
+from django.db.models.query import QuerySet
 from typing import List
 
 
@@ -46,3 +47,17 @@ class CustomFilterWizardInterface:
         :rtype: List[namedtuple]
         """
         pass
+
+    def apply_filter_to_queryset(self, custom_filters: List[namedtuple], query: QuerySet):
+        """
+        Apply custom filters to a queryset.
+
+        :param custom_filters: List of named tuples representing custom filters.
+        :type custom_filters: List[namedtuple]
+
+        :param query: The original queryset with filters.
+        :type query: django.db.models.query.QuerySet
+
+        :return: The updated queryset with additional filters applied.
+        :rtype: django.db.models.query.QuerySet
+        """
