@@ -61,3 +61,4 @@ class CustomFilterWizardInterface:
         :return: The updated queryset with additional filters applied.
         :rtype: django.db.models.query.QuerySet
         """
+        pass
