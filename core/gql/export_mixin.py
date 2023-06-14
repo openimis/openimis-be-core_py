@@ -97,7 +97,6 @@ class ExportableQueryMixin:
 
     @classmethod
     def __append_custom_filters(cls, custom_filters, queryset):
-        # new method protected or private
         if custom_filters:
             instance_custom_filter_wizard = cls.get_type_of_custom_filter_wizard()
             queryset = instance_custom_filter_wizard().apply_filter_to_queryset(custom_filters, queryset)
