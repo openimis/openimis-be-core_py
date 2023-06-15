@@ -12,14 +12,28 @@ from graphene.types.generic import GenericScalar
 from pandas import DataFrame
 
 from core import fields
+from core.custom_filters import CustomFilterWizardInterface
 from core.models import ExportableQueryModel
 from graphql.utils.ast_to_dict import ast_to_dict
+
 
 logger = logging.getLogger(__file__)
 
 
 class ExportableQueryMixin:
     export_patches: Dict[str, List[Callable[[DataFrame], DataFrame]]] = {}
+    type_of_custom_filter_wizard: CustomFilterWizardInterface
+
+    @classmethod
+    def get_type_of_custom_filter_wizard(cls) -> CustomFilterWizardInterface:
+        if not hasattr(cls, 'type_of_custom_filter_wizard') or getattr(cls, 'type_of_custom_filter_wizard') is None:
+            error_msg = (
+                "The class using `ExportableQueryMixin` must specify the `type_of_custom_filter_wizard` property "
+                "when the customFilters argument is specified. Please override the `type_of_custom_filter_wizard` "
+                "property in the Query schema to specify how to append custom filters for the specific object."
+            )
+            raise NotImplementedError(error_msg)
+        return cls.type_of_custom_filter_wizard
 
     @classmethod
     def get_exportable_fields(cls):
@@ -67,10 +81,12 @@ class ExportableQueryMixin:
                 f"CSV export cannot be created")
 
         def exporter(cls, self, info, **kwargs):
+            custom_filters = kwargs.pop("customFilters", None)
             export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
             fields_mapping = json.loads(kwargs.pop('fields_columns'))
             qs = default_resolve(None, info, **kwargs)
             qs = qs.filter(**kwargs)
+            qs = cls.__append_custom_filters(custom_filters, qs)
             export_file = ExportableQueryModel\
                 .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
                                    patches=cls.get_patches_for_field(field_name))
@@ -79,5 +95,9 @@ class ExportableQueryMixin:
 
         setattr(cls, new_function_name, types.MethodType(exporter, cls))
 
-
-
+    @classmethod
+    def __append_custom_filters(cls, custom_filters, queryset):
+        if custom_filters:
+            instance_custom_filter_wizard = cls.get_type_of_custom_filter_wizard()
+            queryset = instance_custom_filter_wizard().apply_filter_to_queryset(custom_filters, queryset)
+        return queryset
