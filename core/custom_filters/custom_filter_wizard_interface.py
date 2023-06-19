@@ -48,7 +48,7 @@ class CustomFilterWizardInterface:
         """
         pass
 
-    def apply_filter_to_queryset(self, custom_filters: List[namedtuple], query: QuerySet):
+    def apply_filter_to_queryset(self, custom_filters: List[namedtuple], query: QuerySet, relation=None):
         """
         Apply custom filters to a queryset.
 
@@ -57,6 +57,9 @@ class CustomFilterWizardInterface:
 
         :param query: The original queryset with filters.
         :type query: django.db.models.query.QuerySet
+
+        :param relation: The optional argument which defines the relation field in queryset for example 'beneficiary'
+        :type relation: str or None
 
         :return: The updated queryset with additional filters applied.
         :rtype: django.db.models.query.QuerySet

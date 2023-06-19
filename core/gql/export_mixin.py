@@ -12,7 +12,7 @@ from graphene.types.generic import GenericScalar
 from pandas import DataFrame
 
 from core import fields
-from core.custom_filters import CustomFilterWizardInterface
+from core.custom_filters import CustomFilterWizardStorage
 from core.models import ExportableQueryModel
 from graphql.utils.ast_to_dict import ast_to_dict
 
@@ -22,18 +22,37 @@ logger = logging.getLogger(__file__)
 
 class ExportableQueryMixin:
     export_patches: Dict[str, List[Callable[[DataFrame], DataFrame]]] = {}
-    type_of_custom_filter_wizard: CustomFilterWizardInterface
+    module_name: str
+    object_type: str
+    related_field: str
 
     @classmethod
-    def get_type_of_custom_filter_wizard(cls) -> CustomFilterWizardInterface:
-        if not hasattr(cls, 'type_of_custom_filter_wizard') or getattr(cls, 'type_of_custom_filter_wizard') is None:
+    def get_module_name(cls) -> str:
+        if not hasattr(cls, 'module_name') or getattr(cls, 'module_name') is None:
             error_msg = (
-                "The class using `ExportableQueryMixin` must specify the `type_of_custom_filter_wizard` property "
-                "when the customFilters argument is specified. Please override the `type_of_custom_filter_wizard` "
+                "The class using `ExportableQueryMixin` must specify the `module_name` property "
+                "when the customFilters argument is specified. Please override the `module_name` "
                 "property in the Query schema to specify how to append custom filters for the specific object."
             )
             raise NotImplementedError(error_msg)
-        return cls.type_of_custom_filter_wizard
+        return cls.module_name
+
+    @classmethod
+    def get_object_type(cls) -> str:
+        if not hasattr(cls, 'object_type') or getattr(cls, 'object_type') is None:
+            error_msg = (
+                "The class using `ExportableQueryMixin` must specify the `object_type` property "
+                "when the customFilters argument is specified. Please override the `object_type` "
+                "property in the Query schema to specify how to append custom filters for the specific object."
+            )
+            raise NotImplementedError(error_msg)
+        return cls.object_type
+
+    @classmethod
+    def get_related_field(cls):
+        if not hasattr(cls, 'related_field') or getattr(cls, 'related_field') is None:
+            return None
+        return cls.related_field
 
     @classmethod
     def get_exportable_fields(cls):
@@ -98,6 +117,14 @@ class ExportableQueryMixin:
     @classmethod
     def __append_custom_filters(cls, custom_filters, queryset):
         if custom_filters:
-            instance_custom_filter_wizard = cls.get_type_of_custom_filter_wizard()
-            queryset = instance_custom_filter_wizard().apply_filter_to_queryset(custom_filters, queryset)
+            module_name = cls.get_module_name()
+            object_type = cls.get_object_type()
+            related_field = cls.get_related_field()
+            queryset = CustomFilterWizardStorage.build_custom_filters_queryset(
+                module_name,
+                object_type,
+                custom_filters,
+                queryset,
+                relation=related_field
+            )
         return queryset
