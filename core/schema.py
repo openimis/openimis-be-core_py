@@ -1433,9 +1433,10 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         # consider auto-provisioning
         if username:
             # get_or_create will auto-provision from tblUsers if applicable
-            user = User.objects.get_or_create(username=username)
+            user, user_created = User.objects.get_or_create(username__iexact=username)
             if user:
-                logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+                logger.debug("Authentication with %s failed and could %s be fetched from tblUsers", username, "not" if not user else "")
+                kwargs["username"] = user.username  # use the username from tblUsers, especially for the case
         return super().mutate(cls, info, **kwargs)
 
 

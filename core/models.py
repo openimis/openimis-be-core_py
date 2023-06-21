@@ -210,11 +210,11 @@ class UserManager(BaseUserManager):
         # only auto-provision django user if registered as interactive user
         try:
             i_user = InteractiveUser.objects.get(
-                login_name=kwargs['username'],
+                login_name__iexact=kwargs['username'],
                 *filter_validity())
         except InteractiveUser.DoesNotExist:
             raise PermissionDenied
-        user = self._create_core_user(**kwargs)
+        user = self._create_core_user(**kwargs, username=i_user.login_name)  # Force username with correct case
         user.i_user = i_user
         user.save()
         if core.auto_provisioning_user_group:
@@ -230,6 +230,9 @@ class UserManager(BaseUserManager):
             return user, False
         except User.DoesNotExist:
             return self.auto_provision_user(**kwargs)
+        except User.MultipleObjectsReturned:
+            logger.error("Multiple users found for %s. This shouldn't happen and might be a security issue" % kwargs)
+            raise PermissionDenied("Multiple users found for these criteria, rejecting")
 
 
 class TechnicalUser(AbstractBaseUser):
