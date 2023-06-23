@@ -193,7 +193,7 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
     return claim_admin, created
 
 
-def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None):
+def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, task_group=None):
     if user_uuid:
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
         user = User.objects.get(id=user_uuid)
@@ -219,6 +219,8 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
         user.officer = officer
     if claim_admin:
         user.claim_admin = claim_admin
+    if task_group:
+        user.task_group = task_group
     user.save()
     return user, created
 

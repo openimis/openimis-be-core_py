@@ -511,6 +511,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
     officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
     claim_admin = models.ForeignKey("claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True)
+    task_group = models.ForeignKey("tasks_management.TaskGroup", models.DO_NOTHING, db_column="TaskGroupID", null=True)
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = []
