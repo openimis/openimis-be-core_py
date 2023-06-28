@@ -684,8 +684,8 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = True
-        db_table = 'Core_User_groups'
+        managed = False
+        db_table = 'core_User_groups'
         unique_together = (('user', 'group'),)
 
 
