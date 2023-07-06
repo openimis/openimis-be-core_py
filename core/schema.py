@@ -4,6 +4,9 @@ import logging
 import re
 import sys
 import uuid
+
+import graphene
+from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
 from functools import reduce
@@ -27,18 +30,21 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
 from .gql_queries import *
+from .utils import flatten_dict
 from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
+from .services.roleServices import check_role_unique_name
+from .services.userServices import check_user_unique_email
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
@@ -172,7 +178,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
-    def async_mutate(cls, user, **data) -> Optional[str]:
+    def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
         This method has to be overridden in the subclasses to implement the actual mutation.
         The response should contain a boolean for success and an error message that will be saved into the DB
@@ -263,8 +269,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         logger.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
                     else:
+                        exceptions = [message.pop("exc") for message in error_messages if "exc" in message]
                         errors_json = json.dumps(error_messages)
                         logger.error("[OpenIMISMutation %s] marked as failed: %s", mutation_log.id, errors_json)
+                        for exc in exceptions:
+                            logger.error("[OpenIMISMutation %s] Exception:", mutation_log.id, exc_info=exc)
                         mutation_log.mark_as_failed(errors_json)
                 except BaseException as exc:
                     error_messages = exc
@@ -340,6 +349,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
             connection, iterable, info, args
         )
@@ -441,6 +452,7 @@ class Query(graphene.ObjectType):
         roles=graphene.List(of_type=graphene.Int),
         health_facility_id=graphene.Int(description="Base health facility ID (not UUID!)"),
         region_id=graphene.Int(),
+        region_ids=graphene.List(of_type=graphene.Int),
         district_id=graphene.Int(),
         municipality_id=graphene.Int(),
         village_id=graphene.Int(),
@@ -448,6 +460,7 @@ class Query(graphene.ObjectType):
         birth_date_to=graphene.Date(),
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
+        showHistory=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -467,11 +480,70 @@ class Query(graphene.ObjectType):
         ),
     )
 
+    substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
+        OfficerGQLType,
+        villages_uuids=graphene.List(
+            graphene.NonNull(graphene.String),
+            description="List of villages to be required for substituion officers"),
+        officer_uuid=graphene.String(
+            required=False,
+            description="Current officer uuid to be excluded from substitution list."),
+        str=graphene.String(
+            required=False,
+            description="Query that will return possible EO replacements."
+        ),
+    )
+
     modules_permissions = graphene.Field(
         ModulePermissionsListGQLType,
     )
 
     languages = graphene.List(LanguageGQLType)
+
+    validate_username = graphene.Field(
+        graphene.Boolean,
+        username=graphene.String(required=True),
+        description="Checks that the specified username is unique."
+    )
+
+    validate_user_email = graphene.Field(
+        graphene.Boolean,
+        user_email=graphene.String(required=True),
+        description="Checks that the specified user email is unique."
+    )
+
+    validate_role_name = graphene.Field(
+        graphene.Boolean,
+        role_name=graphene.String(required=True),
+        description="Checks that the specified role name is unique."
+    )
+
+    username_length = graphene.Int()
+
+    def resolve_username_length(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return CoreConfig.username_code_length
+
+    def resolve_validate_role_name(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionDenied(_("unauthorized"))
+        errors = check_role_unique_name(name=kwargs['role_name'])
+        return False if errors else True
+
+    def resolve_validate_username(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        if User.objects.filter(username=kwargs['username']).exists():
+            return False
+        else:
+            return True
+
+    def resolve_validate_user_email(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        errors = check_user_unique_email(user_email=kwargs['user_email'])
+        return False if errors else True
 
     def resolve_enrolment_officers(self, info, **kwargs):
         from .models import Officer
@@ -492,6 +564,38 @@ class Query(graphene.ObjectType):
                 ),
                 info,
             )
+
+    def resolve_substitution_enrolment_officers(self, info, **kwargs):
+        from .models import Officer
+
+        if not info.context.user.has_perms(
+                CoreConfig.gql_query_enrolment_officers_perms):
+            raise PermissionError("Unauthorized")
+
+        queryset = Officer.objects
+
+        villages_uuids = kwargs.get('villages_uuids', None)
+        if not villages_uuids:
+            return []
+
+        officer_uuid = kwargs.get('officer_uuid', None)
+        if officer_uuid:
+            queryset = queryset.exclude(uuid=officer_uuid)
+
+        query_str = kwargs.get('str', None)
+        if query_str:
+            queryset = queryset.filter(Q(code__istartswith=query_str)
+                                       | Q(last_name__istartswith=query_str)
+                                       | Q(other_names__istartswith=query_str)
+                                       | Q(email__istartswith=query_str))
+
+        return queryset.prefetch_related('officer_villages') \
+            .annotate(nb_village=Count('officer_villages')) \
+            .filter(nb_village__gte=len(villages_uuids),
+                    officer_villages__location__uuid__in=villages_uuids,
+                    validity_to__isnull=True,
+                    officer_villages__validity_to__isnull=True,
+                    officer_villages__location__validity_to__isnull=True)
 
     def resolve_interactive_users(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
@@ -525,14 +629,20 @@ class Query(graphene.ObjectType):
         return None
 
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
-                      role_id=None, roles=None, health_facility_id=None, region_id=None, district_id=None,
-                      municipality_id=None, birth_date_from=None, birth_date_to=None, user_types=None, language=None,
-                      village_id=None, **kwargs):
+                      role_id=None, roles=None, health_facility_id=None, region_id=None,
+                      district_id=None, municipality_id=None, birth_date_from=None, birth_date_to=None,
+                      user_types=None, language=None, village_id=None, region_ids=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
 
         user_filters = []
         user_query = User.objects.exclude(t_user__isnull=False)
+
+        show_history = kwargs.get('showHistory', False)
+        if not show_history and not kwargs.get('uuid', None):
+            active_users_ids = [user.id for user in user_query if user.is_active]
+            user_filters.append(Q(id__in=active_users_ids))
+
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
             user_filters.append(Q(username__icontains=text_search) |
@@ -588,8 +698,12 @@ class Query(graphene.ObjectType):
         if roles:
             user_filters.append(Q(i_user__user_roles__role_id__in=roles) &
                                 Q(i_user__user_roles__validity_to__isnull=True))
+
         if region_id:
             user_filters.append(Q(i_user__userdistrict__location__parent_id=region_id))
+        elif region_ids:
+            user_filters.append(Q(i_user__userdistrict__location__parent_id__in=region_ids))
+
         if district_id:
             user_filters.append(Q(i_user__userdistrict__location_id=district_id))
         if municipality_id:
@@ -608,7 +722,7 @@ class Query(graphene.ObjectType):
 
         # Do NOT use the query optimizer here ! It would make the t_user, officer etc as deferred fields if they are not
         # explicitly requested in the GraphQL response. However, this prevents the dynamic remapping of the User object.
-        return user_query.filter(*user_filters)
+        return user_query.filter(*user_filters).distinct()
 
     def resolve_role(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
@@ -661,7 +775,7 @@ class Query(graphene.ObjectType):
         excluded_app = [
             "health_check.cache", "health_check", "health_check.db",
             "test_without_migrations", "test_without_migrations",
-            "rules", "graphene_django", "rest_framework", "rest_framework_rules",
+            "rules", "graphene_django", "rest_framework",
             "health_check.storage", "channels", "graphql_jwt.refresh_token.apps.RefreshTokenConfig"
         ]
         all_apps = [app for app in settings.INSTALLED_APPS if not app.startswith("django") and app not in excluded_app]
@@ -676,6 +790,7 @@ class Query(graphene.ObjectType):
                 else:
                     config_dict = ModuleConfiguration.get_or_default(f"{app}", apps.apps.DEFAULT_CFG)
                 permission = []
+                config_dict = flatten_dict(config_dict)
                 for key, value in config_dict.items():
                     if key.endswith("_perms"):
                         if isinstance(value, list):
@@ -713,6 +828,8 @@ class Query(graphene.ObjectType):
         return ModuleConfiguration.objects.prefetch_related('controls').filter(*crits)
 
     def resolve_languages(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return Language.objects.order_by('sort_order').all()
 
 
@@ -856,6 +973,8 @@ class CreateRoleMutation(OpenIMISMutation):
                 raise ValidationError("mutation.authentication_required")
             if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
                 raise PermissionDenied("unauthorized")
+            if check_role_unique_name(data.get('name', None)):
+                raise ValidationError("mutation.duplicate_of_role_name")
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
@@ -888,6 +1007,8 @@ class UpdateRoleMutation(OpenIMISMutation):
                 raise PermissionDenied("unauthorized")
             if 'uuid' not in data:
                 raise ValidationError("There is no uuid in updateMutation input!")
+            if check_role_unique_name(data.get('name', None), data['uuid']):
+                raise ValidationError("mutation.duplicate_of_role_name")
             data['audit_user_id'] = user.id_for_audit
             update_or_create_role(data, user)
             return None
@@ -935,7 +1056,7 @@ class DeleteRoleMutation(OpenIMISMutation):
                 errors.append({
                     'title': role,
                     'list': [{'message':
-                                  "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                              "role.validation.id_does_not_exist" % {'id': role_uuid}}]
                 })
                 continue
             errors += set_role_deleted(role)
@@ -1031,6 +1152,8 @@ class CreateUserMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
+            if User.objects.filter(username=data['username']).exists():
+                raise ValidationError("User with this user name already exists.")
             if not user.has_perms(CoreConfig.gql_mutation_create_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
@@ -1099,7 +1222,7 @@ class DeleteUserMutation(OpenIMISMutation):
                 errors.append({
                     'title': user,
                     'list': [{'message':
-                                  "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                              "user.validation.id_does_not_exist" % {'id': user_uuid}}]
                 })
                 continue
             errors += set_user_deleted(user)
@@ -1113,6 +1236,25 @@ class DeleteUserMutation(OpenIMISMutation):
 def update_or_create_user(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
+
+    incoming_email = data.get('email')
+    current_user = InteractiveUser.objects.filter(user__id=data['uuid']).first()
+
+    current_email = current_user.email if current_user else None
+
+    if incoming_email:
+        if not check_email_validity(incoming_email):
+            raise ValidationError(_("mutation.user_email_invalid"))
+        if current_email != incoming_email:
+            if check_user_unique_email(user_email=data['email']):
+                raise ValidationError(_("mutation.user_email_duplicated"))
+    else:
+        raise ValidationError(_("mutation.user_no_email_provided"))
+
+    username = data.get('username')
+
+    if len(username) > CoreConfig.username_code_length:
+        raise ValidationError(_("mutation.user_username_too_long"))
 
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
@@ -1136,11 +1278,25 @@ def update_or_create_user(data, user):
     else:
         claim_admin, claim_admin_created = None, False
     core_user, core_user_created = create_or_update_core_user(
-        user_uuid=user_uuid, username=data["username"], i_user=i_user, officer=officer, claim_admin=claim_admin)
+        user_uuid=user_uuid, username=username, i_user=i_user, officer=officer, claim_admin=claim_admin)
 
     if client_mutation_id:
         UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
+
+
+def check_email_validity(email):
+    # checks if string is a valid email address
+    # using regex provided in the HTML5 standard
+    # it omits some RFC recommendations by design
+    # https://html.spec.whatwg.org/multipage/input.html#valid-e-mail-address
+    import re
+    regex = re.compile(
+        r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9]"
+        r"(?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+    if not re.fullmatch(regex, email):
+        return False
+    return True
 
 
 def set_user_deleted(user):

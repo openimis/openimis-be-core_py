@@ -63,7 +63,7 @@ def mutation_on_uuids_from_filter(django_object: django.db.models.Model,
                 else:
                     uuids = base_query.values_list('uuid', flat=True).distinct()
                     data['uuids'] = uuids
-            async_mutate(cls, user, **data)
+            return async_mutate(cls, user, **data)
         return wrapper
     return inner_function
 
@@ -182,7 +182,7 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
                 else:
                     uuids = base_query.values_list('id', flat=True).distinct()
                     data['uuids'] = uuids
-            async_mutate(cls, user, **data)
+            return async_mutate(cls, user, **data)
         return wrapper
     return inner_function
 

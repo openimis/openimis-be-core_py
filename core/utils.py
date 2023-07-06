@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 import logging
 from django.apps import apps
+from django.core.exceptions import PermissionDenied
 
 
 logger = logging.getLogger(__file__)
@@ -126,6 +127,17 @@ def append_validity_filter(**kwargs):
     return filters
 
 
+def flatten_dict(d, parent_key='', sep='_'):
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
 def filter_is_deleted(arg='is_deleted', **kwargs):
     is_deleted = kwargs.get(arg)
     if is_deleted is None:
@@ -193,9 +205,13 @@ class ExtendedConnection(graphene.Connection):
     edge_count = graphene.Int()
 
     def resolve_total_count(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return self.length
 
     def resolve_edge_count(self, info, **kwargs):
+        if not info.context.user.is_authenticated:
+            raise PermissionDenied(_("unauthorized"))
         return len(self.edges)
 
 

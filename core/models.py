@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from copy import copy
-from datetime import datetime as py_datetime
+from datetime import datetime as py_datetime, timedelta
 
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
@@ -12,13 +12,18 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
+from django.core.files.base import ContentFile
 from django.db import models
 from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
+from pandas import DataFrame
 from simple_history.models import HistoricalRecords
 
 import core
+from django.conf import settings
+
+from .apps import CoreConfig
 from .fields import DateTimeField
 from .utils import filter_validity
 
@@ -174,7 +179,7 @@ class Language(models.Model):
         db_column='SortOrder', blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblLanguages'
 
 
@@ -229,7 +234,7 @@ class UserManager(BaseUserManager):
 
 class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=CoreConfig.user_username_and_code_length_limit, unique=True)
     email = models.EmailField(blank=True, null=True)
     language = 'en'
     is_staff = models.BooleanField(default=False)
@@ -289,7 +294,7 @@ class Role(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblRole'
 
 
@@ -312,7 +317,7 @@ class RoleRight(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblRoleRight'
 
 
@@ -323,7 +328,7 @@ class InteractiveUser(VersionedModel):
     last_name = models.CharField(db_column="LastName", max_length=100)
     other_names = models.CharField(db_column="OtherNames", max_length=100)
     phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
-    login_name = models.CharField(db_column="LoginName", max_length=25)
+    login_name = models.CharField(db_column="LoginName", max_length=CoreConfig.user_username_and_code_length_limit)
     last_login = models.DateTimeField(db_column="LastLogin", null=True)
     health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
@@ -372,6 +377,10 @@ class InteractiveUser(VersionedModel):
     def stored_password(self):
         return self.password
 
+    @property
+    def user(self):
+        return self.user_set.first()
+
     @stored_password.setter
     def stored_password(self, value):
         logger.warn(
@@ -385,6 +394,8 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_superuser(self):
+        if self.user and self.user.t_user:
+            return self.user.t_user.is_superuser
         return False
 
     @cached_property
@@ -409,6 +420,17 @@ class InteractiveUser(VersionedModel):
     def is_officer(self):
         return Officer.objects.filter(
             code=self.username, has_login=True, validity_to__isnull=True).exists()
+
+    @property
+    def is_claim_admin(self):
+        # Unlike Officer ClaimAdmin model was moved to the claim module,
+        # and it's not granted that the module is installed.
+        if 'claim' in sys.modules:
+            from claim.models import ClaimAdmin
+            return ClaimAdmin.objects.filter(
+                code=self.username, has_login=True, validity_to__isnull=True).exists()
+        else:
+            return False
 
     def set_password(self, raw_password):
         from hashlib import sha256
@@ -453,7 +475,7 @@ class InteractiveUser(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblUsers'
 
 
@@ -467,12 +489,12 @@ class UserRole(VersionedModel):
         db_column='AudituserID', blank=True, null=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblUserRole'
 
 
 class User(UUIDModel, PermissionsMixin):
-    username = models.CharField(unique=True, max_length=25)
+    username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
     officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
@@ -513,7 +535,9 @@ class User(UUIDModel, PermissionsMixin):
 
     @property
     def is_superuser(self):
-        return self._u.is_superuser
+        if self.user and self.user.t_user:
+            return self.user.t_user.is_superuser
+        return False
 
     @property
     def is_active(self):
@@ -529,11 +553,10 @@ class User(UUIDModel, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        return (
-            True
-            if i_user is not None and perm in i_user.rights_str
-            else super(User, self).has_perm(perm, obj)
-        )
+        if i_user is not None and (i_user.is_superuser or perm in i_user.rights_str):
+            return True
+        else:
+            return super(User, self).has_perm(perm, obj)
 
     @property
     def rights(self):
@@ -626,16 +649,16 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = False
-        db_table = 'core_User_groups'
+        managed = True
+        db_table = 'Core_User_groups'
         unique_together = (('user', 'group'),)
 
 
-class Officer(VersionedModel):
+class Officer(VersionedModel, ExtendableModel):
     id = models.AutoField(db_column='OfficerID', primary_key=True)
     uuid = models.CharField(db_column='OfficerUUID',
                             max_length=36, default=uuid.uuid4, unique=True)
-    code = models.CharField(db_column='Code', max_length=8)
+    code = models.CharField(db_column='Code', max_length=CoreConfig.user_username_and_code_length_limit)
     last_name = models.CharField(db_column='LastName', max_length=100)
     other_names = models.CharField(db_column='OtherNames', max_length=100)
     dob = models.DateField(db_column='DOB', blank=True, null=True)
@@ -644,7 +667,8 @@ class Officer(VersionedModel):
     substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True,
                                              null=True)
     works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
-    veo_code = models.CharField(db_column='VEOCode', max_length=8, blank=True, null=True)
+    veo_code = models.CharField(db_column='VEOCode', max_length=CoreConfig.user_username_and_code_length_limit,
+                                blank=True, null=True)
     veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
     veo_other_names = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
     veo_dob = models.DateField(db_column='VEODOB', blank=True, null=True)
@@ -702,7 +726,7 @@ class Officer(VersionedModel):
         """
         Returns uuid of all locations allowed for given officer
         """
-        from location.models import OfficerVillage
+        from location.models import OfficerVillage, Location
         villages = OfficerVillage.objects\
             .filter(officer=self, validity_to__isnull=True)
         all_allowed_uuids = []
@@ -713,7 +737,7 @@ class Officer(VersionedModel):
                 allowed_uuids.append(parent.uuid)
                 parent = parent.parent
             all_allowed_uuids.extend(allowed_uuids)
-        return all_allowed_uuids
+        return Location.objects.filter(uuid__in=all_allowed_uuids)
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -724,7 +748,7 @@ class Officer(VersionedModel):
         return queryset
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblOfficer'
 
 
@@ -1023,3 +1047,51 @@ class UserMutation(UUIDModel, ObjectMutation):
     class Meta:
         managed = True
         db_table = "core_UserMutation"
+
+
+def _get_default_expire_date():
+    return py_datetime.now() + timedelta(days=1)
+
+
+def _query_export_path(instance, filename):
+    # file will be uploaded to MEDIA_ROOT/user_<id>/<filename>
+    return F'query_exports/user_{instance.user.uuid}/{filename}'
+
+
+class ExportableQueryModel(models.Model):
+    name = models.CharField(max_length=255)
+    model = models.CharField(max_length=255)
+    content = models.FileField(upload_to=_query_export_path)
+
+    user = models.ForeignKey(
+        User, db_column="User", related_name='data_exports',
+        on_delete=models.deletion.DO_NOTHING, null=False)
+
+    sql_query = models.TextField()
+    create_date = DateTimeField(db_column='DateCreated', default=py_datetime.now)
+    expire_date = DateTimeField(db_column='DateExpiring', default=_get_default_expire_date)
+    is_deleted = models.BooleanField(default=False)
+
+    @staticmethod
+    def create_csv_export(qs, values, user, column_names=None,
+                          patches=None):
+        if patches is None:
+            patches = []
+        sql = qs.query.sql_with_params()
+        content = DataFrame.from_records(qs.values_list(*values))
+        content.columns = values
+        for patch in patches:
+            content = patch(content)
+
+        content.columns = column_names or values
+        filename = F"{uuid.uuid4()}.csv"
+        content = ContentFile(content.to_csv(), filename)
+        export = ExportableQueryModel(
+            name=filename,
+            model=qs.model,
+            content=content,
+            user=user,
+            sql_query=sql,
+        )
+        export.save()
+        return export
