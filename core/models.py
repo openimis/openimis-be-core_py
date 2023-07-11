@@ -434,15 +434,13 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_imis_admin(self):
-        # 64 is system number for IMIS Administrator
-        user_roles = UserRole.objects.filter(
-            user_id=self.id, validity_to__isnull=True
-        ).all()
-        role_ids = [user_role.role_id for user_role in user_roles]
-        is_system_values = Role.objects \
-            .filter(id__in=role_ids) \
-            .values_list('is_system', flat=True)
-        return True if 64 in is_system_values else False
+        return Role.objects.filter(
+                is_system=64,
+                user_roles__user=self,
+                validity_to__isnull=True,
+                user_roles__validity_to__isnull=True,
+                user_roles__user__validity_to__isnull=True
+            ).exists()
 
     def set_password(self, raw_password):
         from hashlib import sha256
@@ -565,14 +563,11 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     @property
     def is_imis_admin(self):
         # 64 is system number for IMIS Administrator
-        user_roles = UserRole.objects.filter(
-            user_id=self.id, validity_to__isnull=True
-        ).all()
-        role_ids = [user_role.role_id for user_role in user_roles]
-        is_system_values = Role.objects \
-            .filter(id__in=role_ids) \
-            .values_list('is_system', flat=True)
-        return True if 64 in is_system_values else False
+        user = self._u
+        if isinstance(user, InteractiveUser):
+            return user.is_imis_admin
+        else:
+            return False
 
     @property
     def is_active(self):
