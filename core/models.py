@@ -432,6 +432,16 @@ class InteractiveUser(VersionedModel):
         else:
             return False
 
+    @property
+    def is_imis_admin(self):
+        return Role.objects.filter(
+                is_system=64,
+                user_roles__user=self,
+                validity_to__isnull=True,
+                user_roles__validity_to__isnull=True,
+                user_roles__user__validity_to__isnull=True
+            ).exists()
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -538,6 +548,15 @@ class User(UUIDModel, PermissionsMixin):
         if self.user and self.user.t_user:
             return self.user.t_user.is_superuser
         return False
+
+    @property
+    def is_imis_admin(self):
+        # 64 is system number for IMIS Administrator
+        user = self._u
+        if isinstance(user, InteractiveUser):
+            return user.is_imis_admin
+        else:
+            return False
 
     @property
     def is_active(self):
