@@ -77,6 +77,6 @@ def get_generic_type(generic_type: Union[str, ContentType]):
     if isinstance(generic_type, ContentType):
         return generic_type
     elif isinstance(generic_type, str):
-        return ContentType.objects.get(model=generic_type.lower())
+        return ContentType.objects.get(model__iexact=generic_type.lower())
     else:
-        return ContentType.objects.get(model=str(generic_type).lower())
+        return ContentType.objects.get(model__iexact=str(generic_type).lower())
