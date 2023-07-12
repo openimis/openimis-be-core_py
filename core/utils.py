@@ -258,7 +258,7 @@ def get_first_or_default_language():
 def insert_role_right_for_system(system_role, right_id):
     RoleRight = apps.get_model("core", "RoleRight")
     Role = apps.get_model("core", "Role")
-    existing_role = Role.objects.filter(is_system=system_role).first()
+    existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
     if not existing_role:
         logger.warning("Migration requested a role_right for system role %s but couldn't find that role", system_role)
     role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
