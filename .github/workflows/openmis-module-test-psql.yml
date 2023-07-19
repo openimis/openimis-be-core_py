@@ -1,0 +1,80 @@
+name: POSTGRES - Automated CI testing
+# This workflow run automatically for every commit on github it checks the syntax and launch the tests.
+# | grep . | uniq -c filters out empty lines and then groups consecutive lines together with the number of occurrences
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      comment:
+        description: Just a simple comment to know the purpose of the manual build
+        required: false
+
+jobs:
+  run_test:
+    runs-on: ubuntu-20.04
+    services:
+      psql:
+        image: ghcr.io/openimis/openimis-pgsql:develop
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: IMIS
+          POSTGRES_USER: postgres
+        ports:
+          - 1433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Setup PostgreSQL
+        run: |
+          sudo apt-get -yqq install libpq-dev
+          python -m pip install psycopg2-binary
+      - name: Pull openIMIS Backend
+        run: |
+          rm ./openimis -rf
+          git clone --depth 1 --branch develop https://github.com/openimis/openimis-be_py.git ./openimis
+      - name: Copy Current branch
+        uses: actions/checkout@v2
+        with:
+          path: './current-module'
+      - name: Update the configuration
+        working-directory: ./openimis
+        run: |
+          export MODULE_NAME="$(echo $GITHUB_REPOSITORY | sed 's#^openimis/openimis-be-\(.*\)_py$#\1#')"
+          echo "the local module called $MODULE_NAME will be injected in openIMIS .json"
+          jq --arg name "$MODULE_NAME" 'if [.modules[].name  ==  ($name)]| max then (.modules[]  | select(.name == ($name)) | .pip)|="../current-module" else .modules |= .+ [{name:($name), pip:"../current-module"}] end' openimis.json
+          echo $(jq --arg name "$MODULE_NAME" 'if [.modules[].name  ==  ($name)]| max then (.modules[]  | select(.name == ($name)) | .pip)|="../current-module" else .modules |= .+ [{name:($name), pip:"../current-module"}] end' openimis.json)  > openimis.json
+      - name: Install openIMIS Python dependencies
+        working-directory: ./openimis
+        run: |
+          pip install -r requirements.txt
+          python modules-requirements.py openimis.json > modules-requirements.txt
+          cat modules-requirements.txt
+          pip install -r modules-requirements.txt
+      - name: Django tests
+        working-directory: ./openimis/openIMIS
+        run: |
+          export MODULE_NAME="$(echo $GITHUB_REPOSITORY | sed 's#^openimis/openimis-be-\(.*\)_py$#\1#')"
+          python manage.py migrate
+          python manage.py showmigrations
+          python init_test_db.py | grep . | uniq -c
+          python manage.py test --keep $MODULE_NAME
+        env:
+          SECRET_KEY: secret
+          DEBUG: true
+          #DJANGO_SETTINGS_MODULE: hat.settings
+          DB_HOST: localhost
+          DB_PORT: 1433
+          DB_NAME: IMIS
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          #DEV_SERVER: true
+          SITE_ROOT: api
+          REMOTE_USER_AUTHENTICATION: True
+          DB_ENGINE: django.db.backends.postgresql
