@@ -1,4 +1,5 @@
 import core
+import ast
 import graphene
 from django.db.models import Q
 from django.utils.translation import gettext as _
@@ -266,3 +267,11 @@ def insert_role_right_for_system(system_role, right_id):
         role_right = RoleRight.objects.create(role=existing_role, right_id=right_id)
 
     return role_right
+
+
+def convert_to_python_value(string):
+    try:
+        value = ast.literal_eval(string)
+        return value
+    except (SyntaxError, ValueError):
+        return string
