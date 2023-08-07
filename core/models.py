@@ -503,7 +503,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -514,6 +514,17 @@ class User(UUIDModel, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    def save_history(self, **kwargs):
+        # Prevent from saving history. It would lead to error due to username uniqueness.
+        pass
+
+    def delete_history(self, **kwargs):
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
 
     @property
     def _u(self):
@@ -668,8 +679,8 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = True
-        db_table = 'Core_User_groups'
+        managed = False
+        db_table = 'core_User_groups'
         unique_together = (('user', 'group'),)
 
 
@@ -1102,7 +1113,7 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = column_names or values
+        content.columns = [column_names.get(column) or column for column in content.columns]
         filename = F"{uuid.uuid4()}.csv"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(

@@ -12,14 +12,47 @@ from graphene.types.generic import GenericScalar
 from pandas import DataFrame
 
 from core import fields
+from core.custom_filters import CustomFilterWizardStorage
 from core.models import ExportableQueryModel
 from graphql.utils.ast_to_dict import ast_to_dict
+
 
 logger = logging.getLogger(__file__)
 
 
 class ExportableQueryMixin:
     export_patches: Dict[str, List[Callable[[DataFrame], DataFrame]]] = {}
+    module_name: str
+    object_type: str
+    related_field: str
+
+    @classmethod
+    def get_module_name(cls) -> str:
+        if not hasattr(cls, 'module_name') or getattr(cls, 'module_name') is None:
+            error_msg = (
+                "The class using `ExportableQueryMixin` must specify the `module_name` property "
+                "when the customFilters argument is specified. Please override the `module_name` "
+                "property in the Query schema to specify how to append custom filters for the specific object."
+            )
+            raise NotImplementedError(error_msg)
+        return cls.module_name
+
+    @classmethod
+    def get_object_type(cls) -> str:
+        if not hasattr(cls, 'object_type') or getattr(cls, 'object_type') is None:
+            error_msg = (
+                "The class using `ExportableQueryMixin` must specify the `object_type` property "
+                "when the customFilters argument is specified. Please override the `object_type` "
+                "property in the Query schema to specify how to append custom filters for the specific object."
+            )
+            raise NotImplementedError(error_msg)
+        return cls.object_type
+
+    @classmethod
+    def get_related_field(cls):
+        if not hasattr(cls, 'related_field') or getattr(cls, 'related_field') is None:
+            return None
+        return cls.related_field
 
     @classmethod
     def get_exportable_fields(cls):
@@ -67,18 +100,31 @@ class ExportableQueryMixin:
                 f"CSV export cannot be created")
 
         def exporter(cls, self, info, **kwargs):
-            export_fields = [cls._adjust_notation(f) for f in kwargs['fields']]
-            fields_mapping = json.loads(kwargs['fields_columns'])
-            column_names = [fields_mapping.get(column) or column for column in kwargs['fields']]
+            custom_filters = kwargs.pop("customFilters", None)
+            export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
+            fields_mapping = json.loads(kwargs.pop('fields_columns'))
             qs = default_resolve(None, info, **kwargs)
-
+            qs = qs.filter(**kwargs)
+            qs = cls.__append_custom_filters(custom_filters, qs)
             export_file = ExportableQueryModel\
-                .create_csv_export(qs, export_fields, info.context.user, column_names=column_names,
+                .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
                                    patches=cls.get_patches_for_field(field_name))
 
             return export_file.name
 
         setattr(cls, new_function_name, types.MethodType(exporter, cls))
 
-
-
+    @classmethod
+    def __append_custom_filters(cls, custom_filters, queryset):
+        if custom_filters:
+            module_name = cls.get_module_name()
+            object_type = cls.get_object_type()
+            related_field = cls.get_related_field()
+            queryset = CustomFilterWizardStorage.build_custom_filters_queryset(
+                module_name,
+                object_type,
+                custom_filters,
+                queryset,
+                relation=related_field
+            )
+        return queryset

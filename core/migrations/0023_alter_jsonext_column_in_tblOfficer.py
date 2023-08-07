@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     mssql_code = 'ALTER TABLE [tblOfficer] ALTER COLUMN [JsonExt]'
 
     dependencies = [
-        ('core', '0021_set_managed_to_true'),
+        ('core', '0022_auto_20230516_1742'),
     ]
 
     operations = [
