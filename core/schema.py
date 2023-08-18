@@ -263,9 +263,16 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 try:
                     mutation_data = data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                    error_messages = cls.async_mutate(
+                    messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
                         **mutation_data)
+                    # TODO this code is necessary for autogenerate functionality to work
+                    # TODO General mutation code should be reworked
+                    if mutation_data.get('autogenerate', False) and isinstance(messages, Dict):
+                        data.update(messages)
+                        error_messages = None
+                    else:
+                        error_messages = messages
                     if not error_messages:
                         logger.debug("[OpenIMISMutation %s] marked as successful", mutation_log.id)
                         mutation_log.mark_as_successful()
