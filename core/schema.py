@@ -658,7 +658,7 @@ class Query(graphene.ObjectType):
         user_query = User.objects.exclude(t_user__isnull=False)
 
         show_deleted = kwargs.get('showDeleted', False)
-        if not show_deleted and not kwargs.get('uuid', None):
+        if not show_deleted and not kwargs.get('id', None):
             active_users_ids = [user.id for user in user_query if user.is_active]
             user_filters.append(Q(id__in=active_users_ids))
 
