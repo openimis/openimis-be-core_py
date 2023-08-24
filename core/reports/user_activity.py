@@ -6,7 +6,7 @@ from django.db.models.functions import Coalesce
 from core.models import InteractiveUser, Officer
 from payer.models import Payer
 
-# If manually pasting from reportbro and you have test data, search and replace \" with \\"
+# If manually pasting from reportbro and you have test data, search and replace \" with '
 template = """
 {
     "docElements": [
@@ -768,7 +768,7 @@ template = """
                             "elementType": "table_text",
                             "id": 247,
                             "width": 90,
-                            "content": "'Inserted' if ${action} == \\"I\\" else ('Updated' if ${action} == \\"U\\" else ('Deleted' if ${action} == \\"D\\" else 'Other'))\n",
+                            "content": "'Inserted' if ${action} == 'I' else ('Updated' if ${action} == 'U' else ('Deleted' if ${action} == 'D' else 'Other'))\n",
                             "eval": true,
                             "colspan": "",
                             "styleId": "296",
@@ -2132,7 +2132,7 @@ template = """
                             "elementType": "table_text",
                             "id": 285,
                             "width": 260,
-                            "content": "\\"All entities\\" if ${entity} == 'ENTITY_ALL' else ${entity}",
+                            "content": "'All entities' if ${entity} == 'ENTITY_ALL' else ${entity}",
                             "eval": true,
                             "colspan": "",
                             "styleId": "34",
@@ -2238,7 +2238,7 @@ template = """
                             "elementType": "table_text",
                             "id": 312,
                             "width": 260,
-                            "content": "'Inserted' if ${action} == \\"I\\" else ('Updated' if ${action} == \\"U\\" else ('Deleted' if ${action} == \\"D\\" else ('All actions' if ${action} == \\"A\\" else 'Other')))",
+                            "content": "'Inserted' if ${action} == 'I' else ('Updated' if ${action} == 'U' else ('Deleted' if ${action} == 'D' else ('All actions' if ${action} == 'A' else 'Other')))",
                             "eval": true,
                             "colspan": "",
                             "styleId": "34",
