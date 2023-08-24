@@ -768,7 +768,7 @@ template = """
                             "elementType": "table_text",
                             "id": 247,
                             "width": 90,
-                            "content": "'Inserted' if ${action} == 'I' else ('Updated' if ${action} == 'U' else ('Deleted' if ${action} == 'D' else 'Other'))\n",
+                            "content": "'Inserted' if ${action} == 'I' else ('Updated' if ${action} == 'U' else ('Deleted' if ${action} == 'D' else 'Other'))",
                             "eval": true,
                             "colspan": "",
                             "styleId": "296",
