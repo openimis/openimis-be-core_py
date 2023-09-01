@@ -782,7 +782,7 @@ class Officer(VersionedModel, ExtendableModel):
         db_table = 'tblOfficer'
 
 
-class MutationLog(UUIDModel):
+class MutationLog(UUIDModel, ExtendableModel):
     """
     Maintains a log of every mutation requested along with its status. It is used to reply
     immediately to the client and have longer processing in the various backend modules.
