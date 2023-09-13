@@ -1,3 +1,4 @@
+name: Module CI
 on:
   pull_request:
 
