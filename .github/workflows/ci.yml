@@ -1,0 +1,7 @@
+name: Module CI
+on:
+  pull_request:
+
+jobs:
+  call:
+    uses: openimis/openimis-be_py/.github/workflows/ci_module.yml@develop
