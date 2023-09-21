@@ -50,6 +50,7 @@ DEFAULT_CFG = {
     "gql_mutation_delete_claim_administrator_perms": ["121604"],
     "fields_controls_user": {},
     "fields_controls_eo": {},
+    "is_valid_health_facility_contract_required": True
 }
 
 
@@ -81,6 +82,7 @@ class CoreConfig(AppConfig):
     gql_mutation_create_claim_administrator_perms = []
     gql_mutation_update_claim_administrator_perms = []
     gql_mutation_delete_claim_administrator_perms = []
+    is_valid_health_facility_contract_required = True
 
     fields_controls_user = {}
     fields_controls_eo = {}
