@@ -50,7 +50,7 @@ DEFAULT_CFG = {
     "gql_mutation_delete_claim_administrator_perms": ["121604"],
     "fields_controls_user": {},
     "fields_controls_eo": {},
-    "is_valid_health_facility_contract_required": True
+    "is_valid_health_facility_contract_required": False
 }
 
 
@@ -82,7 +82,7 @@ class CoreConfig(AppConfig):
     gql_mutation_create_claim_administrator_perms = []
     gql_mutation_update_claim_administrator_perms = []
     gql_mutation_delete_claim_administrator_perms = []
-    is_valid_health_facility_contract_required = True
+    is_valid_health_facility_contract_required = None
 
     fields_controls_user = {}
     fields_controls_eo = {}
@@ -165,6 +165,9 @@ class CoreConfig(AppConfig):
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
         CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
 
+    def _configure_additional_settings(self, cfg):
+        CoreConfig.is_valid_health_facility_contract_required = cfg["is_valid_health_facility_contract_required"]
+
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
@@ -176,6 +179,7 @@ class CoreConfig(AppConfig):
         self._configure_graphql(cfg)
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
+        self._configure_additional_settings(cfg)
 
         self.password_reset_template = cfg["password_reset_template"]
 

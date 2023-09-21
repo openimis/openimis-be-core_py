@@ -32,7 +32,8 @@ class JWTAuthentication(BaseAuthentication):
             raise exceptions.AuthenticationFailed(str(exc)) from exc
 
         if CoreConfig.is_valid_health_facility_contract_required:
-            if user.health_facility.contract_end_date < datetime.now():
+            if (hasattr(user, 'health_facility') and hasattr(user.health_facility, 'contract_end_date') and
+                    user.health_facility.contract_end_date > datetime.now()):
                 raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
 
         return user, None
