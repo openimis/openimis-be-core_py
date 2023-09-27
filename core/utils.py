@@ -1,12 +1,16 @@
 import core
+import qrcode
 import ast
+import logging
 import graphene
+
 from django.db.models import Q
 from django.utils.translation import gettext as _
-import logging
 from django.apps import apps
 from django.core.exceptions import PermissionDenied
 
+from io import BytesIO
+import qrcode.image.svg
 
 logger = logging.getLogger(__file__)
 
@@ -270,8 +274,48 @@ def insert_role_right_for_system(system_role, right_id):
 
 
 def convert_to_python_value(string):
+    """
+    Convert a string representation of a Python literal to its corresponding Python value.
+
+    Args:
+        string (str): The string to be evaluated.
+
+    Returns:
+        object: The Python value represented by the input string, or the input string itself
+                if it cannot be evaluated.
+
+    Example:
+        >>> convert_to_python_value("42")
+        42
+        >>> convert_to_python_value("[1, 2, 3]")
+        [1, 2, 3]
+        >>> convert_to_python_value("invalid")
+        'invalid'
+    """
     try:
         value = ast.literal_eval(string)
         return value
     except (SyntaxError, ValueError):
         return string
+
+
+# TODO: can be used in insuree_batch module for qr creation
+def generate_qr_code_svg(data):
+    """
+    Generate a QR code as an SVG image from the provided data.
+
+    Args:
+        data (str): The data to be encoded in the QR code.
+
+    Returns:
+        str: The SVG representation of the generated QR code.
+
+    Example:
+        >>> generate_qr_code_svg("https://www.example.com")
+        '<?xml version="1.0" ?> ... (SVG content)'
+    """
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(data, image_factory=factory, box_size=10, border=0)
+    stream = BytesIO()
+    img.save(stream)
+    return stream.getvalue().decode()
