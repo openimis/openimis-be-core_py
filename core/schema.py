@@ -1267,6 +1267,8 @@ class UpdateUserMutation(OpenIMISMutation):
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
             update_or_create_user(data, user)
+            cache.delete('user_disctrict_'+user.id)
+
             return None
         except Exception as exc:
             return [
