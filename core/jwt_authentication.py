@@ -5,9 +5,9 @@ from rest_framework import exceptions
 from graphql_jwt.utils import get_credentials
 from graphql_jwt.exceptions import JSONWebTokenError
 from graphql_jwt.shortcuts import get_user_by_token
-from .apps import CoreConfig
+from core.apps import CoreConfig
 
-from datetime import datetime
+from datetime import date
 import jwt
 import logging
 
@@ -33,7 +33,7 @@ class JWTAuthentication(BaseAuthentication):
 
         if CoreConfig.is_valid_health_facility_contract_required:
             if (hasattr(user, 'health_facility') and hasattr(user.health_facility, 'contract_end_date') and
-                    user.health_facility.contract_end_date > datetime.now()):
+                    user.health_facility.contract_end_date > date.today()):
                 raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
 
         return user, None
