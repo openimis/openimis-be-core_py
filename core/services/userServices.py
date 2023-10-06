@@ -8,7 +8,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
-
+from django.core.cache import cache
 from core.apps import CoreConfig
 from core.models import User, InteractiveUser, Officer, UserRole
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
@@ -36,7 +36,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         if i_user.validity_to is not None and i_user.validity_to:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
-        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"]).first()
+        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["username"] ).first()
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
@@ -90,6 +90,8 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
+    cache.delete('user_disctrict_'+str(user.id))
+
 
 
 def create_or_update_officer_villages(officer, village_ids, audit_user_id):
