@@ -36,7 +36,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         if i_user.validity_to is not None and i_user.validity_to:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
-        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["username"] ).first()
+        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"] ).first()
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
