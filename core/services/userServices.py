@@ -90,7 +90,7 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
-    cache.delete('user_disctrict_'+str(user.id))
+    cache.delete('user_disctrict_'+str(i_user.id))
 
 
 
