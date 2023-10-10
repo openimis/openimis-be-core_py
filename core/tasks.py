@@ -44,12 +44,10 @@ def openimis_mutation_async(mutation_id, module, class_name):
         raise exc
 
 
-@shared_task(name='sample_batch')
 def openimis_test_batch():
     logger.info("sample batch")
 
 
-@shared_task(name='sample_scheduling_method')
 def sample_method(scheduler, sample_param, sample_named=0):
     logger.info("Scheduling our own tasks from here")
     # scheduler.add_job(foo.bar, id="name", minutes=10)
