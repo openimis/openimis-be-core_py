@@ -1,19 +1,35 @@
 from core.models import Officer, InteractiveUser, User, TechnicalUser
 from core.services import create_or_update_user_roles
+from  uuid import uuid4
 
-
-def create_test_officer(valid=True, custom_props=None):
-    officer = Officer.objects.create(
-        **{
-            "code": "TSTOFF",
+def create_test_officer(valid=True, custom_props={}):
+    code = custom_props.pop('code', None)
+    uuid = custom_props.pop('uuid', None)
+    qs_eo = Officer.objects
+    eo = None
+    data = {
+            "code":  code or "TSTOFF",
+            "uuid":uuid,
             "last_name": "Officer",
             "other_names": "Test",
             "validity_to": None if valid else "2019-06-01",
             "audit_user_id": -1,
             **(custom_props if custom_props else {})
         }
-    )
-    return officer
+    if code:
+        qs_eo = qs_eo.filter(code=code)
+    if uuid:
+        qs_eo = qs_eo.filter(uuid=uuid)
+            
+    if code or uuid:
+        eo = qs_eo.first()
+    if eo:
+        data['uuid']=eo.uuid
+        eo.update(data)
+        return eo
+    else:
+        data['uuid']=uuid4()
+        return  Officer.objects.create(**data)
 
 
 def create_test_interactive_user(username='TestInteractiveTest', password="Test1234", roles=None, custom_props=None):

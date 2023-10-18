@@ -514,6 +514,7 @@ class Query(graphene.ObjectType):
         module_name=graphene.Argument(graphene.String, required=True),
         object_type_name=graphene.Argument(graphene.String, required=True),
         uuid_of_object=graphene.Argument(graphene.String, required=False),
+        additional_params=graphene.Argument(graphene.JSONString, required=False),
     )
 
     languages = graphene.List(LanguageGQLType)
@@ -837,9 +838,9 @@ class Query(graphene.ObjectType):
         if type(user) is AnonymousUser or not user.id:
             raise PermissionError("Unauthorized")
 
-        module_name, object_type_name, uuid_of_object = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
+        module_name, object_type_name, uuid_of_object, additional_params = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
         custom_filter_list_output = Query._obtain_definition_of_custom_filter_from_hub(
-            module_name, object_type_name, uuid_of_object
+            module_name, object_type_name, uuid_of_object, additional_params
         )
         possible_filters = Query._build_possible_custom_filter_options(custom_filter_list_output)
         return CustomFilterGQLType(
@@ -854,15 +855,18 @@ class Query(graphene.ObjectType):
         module_name = kwargs.get("module_name", None)
         object_type_name = kwargs.get("object_type_name", None)
         uuid_of_object = kwargs.get("uuid_of_object", None)
-        return module_name, object_type_name, uuid_of_object
+        additional_params = kwargs.get("additional_params", None)
+        return module_name, object_type_name, uuid_of_object, additional_params
 
     @staticmethod
     def _obtain_definition_of_custom_filter_from_hub(
-        module_name, object_type_name, uuid_of_object
+        module_name, object_type_name, uuid_of_object, additional_params
     ):
         kwargs = {}
         if uuid_of_object is not None:
             kwargs['uuid'] = uuid_of_object
+        if additional_params is not None:
+            kwargs['additional_params'] = additional_params
         return CustomFilterWizardStorage.build_custom_filters_definition(
             module_name=module_name,
             object_type=object_type_name,
@@ -1267,6 +1271,7 @@ class UpdateUserMutation(OpenIMISMutation):
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
             update_or_create_user(data, user)
+
             return None
         except Exception as exc:
             return [

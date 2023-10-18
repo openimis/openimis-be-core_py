@@ -8,7 +8,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
-
+from django.core.cache import cache
 from core.apps import CoreConfig
 from core.models import User, InteractiveUser, Officer, UserRole
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
@@ -36,7 +36,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         if i_user.validity_to is not None and i_user.validity_to:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
-        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"]).first()
+        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"] ).first()
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
@@ -72,6 +72,8 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
         UserRole.objects.create(
             user=i_user, role_id=role_id, audit_user_id=audit_user_id
         )
+    cache.delete('rights_'+str(i_user.id))
+    cache.delete('is_admin_'+str(i_user.id))
 
 
 # TODO move to location module ?
@@ -90,6 +92,8 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
+    cache.delete('q_allowed_locations_'+str(i_user.id))
+
 
 
 def create_or_update_officer_villages(officer, village_ids, audit_user_id):
@@ -133,7 +137,7 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
         officer = Officer.objects.filter(
             validity_to__isnull=True, user__id=user_id
         ).first()
-        if officer.validity_to is not None and officer.validity_to:
+        if officer is not None and officer.validity_to is not None:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
         officer = Officer.objects.filter(
@@ -175,7 +179,7 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         claim_admin = claim_admin_class.objects.filter(validity_to__isnull=True, user__id=user_id).first()
-        if claim_admin.validity_to is not None and claim_admin.validity_to:
+        if claim_admin is not None and claim_admin.validity_to is not None:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
         claim_admin = claim_admin_class.objects.filter(code=data_subset["code"], validity_to__isnull=True).first()
