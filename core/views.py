@@ -31,6 +31,7 @@ class UserViewSet(viewsets.ModelViewSet):
 @require_GET
 def fetch_export(request):
     requested_export = request.query_params.get('export')
+    print('xxxx')
     export = ExportableQueryModel.objects.filter(name=requested_export).first()
     if not export:
         raise Http404
@@ -53,5 +54,6 @@ def _serialize_job(job):
 
 
 @api_view(['GET'])
+@require_GET
 def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])
