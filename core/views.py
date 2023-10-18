@@ -1,6 +1,7 @@
 import csv
 
 from django.http import Http404, StreamingHttpResponse
+from django.views.decorators.http import require_GET
 from isodate import strftime
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
@@ -27,6 +28,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET'])
+@require_GET
 def fetch_export(request):
     requested_export = request.query_params.get('export')
     export = ExportableQueryModel.objects.filter(name=requested_export).first()
