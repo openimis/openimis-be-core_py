@@ -31,7 +31,6 @@ class UserViewSet(viewsets.ModelViewSet):
 @require_GET
 def fetch_export(request):
     requested_export = request.query_params.get('export')
-    print('xxxx')
     export = ExportableQueryModel.objects.filter(name=requested_export).first()
     if not export:
         raise Http404
