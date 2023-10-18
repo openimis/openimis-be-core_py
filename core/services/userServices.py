@@ -72,6 +72,8 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
         UserRole.objects.create(
             user=i_user, role_id=role_id, audit_user_id=audit_user_id
         )
+    cache.delete('rights_'+str(i_user.id))
+    cache.delete('is_admin_'+str(i_user.id))
 
 
 # TODO move to location module ?
@@ -90,7 +92,7 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
-    cache.delete('user_disctrict_'+str(i_user.id))
+    cache.delete('q_allowed_locations_'+str(i_user.id))
 
 
 
