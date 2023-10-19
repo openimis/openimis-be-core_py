@@ -72,7 +72,7 @@ class GQLTest(TestCase):
         #self.assertEquals(self.user.lastName, "Manal")
         
     def to_camel_case_key(self, input):
-        pattern = re.compile(r'(?<!^)(?=[A-Z]|[0-9]+)')
+        pattern = re.compile(r'(?<=[a-z0-9])(?=[A-Z])')
         if isinstance(input, list):
             res = []
             for elm in input:
