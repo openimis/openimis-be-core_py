@@ -503,7 +503,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
