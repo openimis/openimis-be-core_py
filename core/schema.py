@@ -24,6 +24,7 @@ from core.services import (
     set_user_password,
 )
 from core.tasks import openimis_mutation_async
+from core import filter_validity
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -660,8 +661,9 @@ class Query(graphene.ObjectType):
 
         show_deleted = kwargs.get('showDeleted', False)
         if not show_deleted and not kwargs.get('id', None):
-            active_users_ids = [user.id for user in user_query if user.is_active]
-            user_filters.append(Q(id__in=active_users_ids))
+            
+            #active_users_ids = [user.id for user in user_query if user.is_active]
+            user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user')))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
