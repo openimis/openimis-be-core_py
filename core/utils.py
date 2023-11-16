@@ -64,12 +64,12 @@ def filter_validity(arg="validity", prefix = '', **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
         return (
-            Q(**{f'{prefix}legacy_id__isnull':True}),
-            Q(**{f'{prefix}validity_to__isnull':True})
+            Q(**{f'{prefix}__legacy_id__isnull':True}),
+            Q(**{f'{prefix}__validity_to__isnull':True})
         )
     return (
-        Q(**{f'{prefix}validity_from__lte':validity}),
-        Q(**{f'{prefix}validity_to__isnull':True}) | Q(**{f'{prefix}validity_to__gte':validity})
+        Q(**{f'{prefix}__validity_from__lte':validity}),
+        Q(**{f'{prefix}__validity_to__isnull':True}) | Q(**{f'{prefix}__validity_to__gte':validity})
     )
 
 
