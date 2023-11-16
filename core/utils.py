@@ -60,16 +60,16 @@ def comparable(cls):
     return cls
 
 
-def filter_validity(arg="validity", **kwargs):
+def filter_validity(arg="validity", prefix = '', **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
         return (
-            Q(legacy_id__isnull=True),
-            Q(validity_to__isnull=True),
+            Q(**{f'{prefix}legacy_id__isnull':True}),
+            Q(**{f'{prefix}validity_to__isnull':True})
         )
     return (
-       Q(validity_from__lte=validity),
-        Q(validity_to__isnull=True) | Q(validity_to__gte=validity),
+        Q(**{f'{prefix}validity_from__lte':validity}),
+        Q(**{f'{prefix}validity_to__isnull':True}) | Q(**{f'{prefix}validity_to__gte':validity})
     )
 
 
