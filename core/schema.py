@@ -663,7 +663,8 @@ class Query(graphene.ObjectType):
         if not show_deleted and not kwargs.get('id', None):
             
             #active_users_ids = [user.id for user in user_query if user.is_active]
-            user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user')))
+
+            user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user__')))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
@@ -1430,7 +1431,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
     def mutate_and_get_payload(
             cls, root, info, new_password, old_password=None, username=None, **input
     ):
-        try:
+        try:    git push --set-upstream origin admin-overwrite
             user = info.context.user
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
