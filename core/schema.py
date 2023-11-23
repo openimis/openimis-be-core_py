@@ -1431,7 +1431,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
     def mutate_and_get_payload(
             cls, root, info, new_password, old_password=None, username=None, **input
     ):
-        try:    git push --set-upstream origin admin-overwrite
+        try:
             user = info.context.user
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
