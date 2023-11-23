@@ -540,6 +540,12 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     def _u(self):
         return self.i_user or self.officer or self.claim_admin or self.t_user
 
+    def has_perms(self, perm_list, obj=None):
+        if self.is_imis_admin:
+            return True
+        else:
+            return super().has_perms( perm_list, obj)
+
     @property
     def id_for_audit(self):
         return self._u.id
