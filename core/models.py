@@ -241,7 +241,7 @@ class TechnicalUser(AbstractBaseUser):
     is_superuser = models.BooleanField(default=False)
     validity_from = models.DateTimeField(blank=True, null=True)
     validity_to = models.DateTimeField(blank=True, null=True)
-
+    is_imis_admin = False
     @property
     def id_for_audit(self):
         return -1
