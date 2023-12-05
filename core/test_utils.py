@@ -4,7 +4,8 @@ from django.db import connections
 from django.test.runner import DiscoverRunner
 from django.test.utils import get_unique_databases_and_mirrors
 
-from .utils import full_class_name, comparable
+from .utils import full_class_name, comparable,\
+    generate_qr_code_svg, convert_to_python_value
 
 
 class ComparableTest(TestCase):
@@ -41,3 +42,7 @@ class UtilsTestCase(TestCase):
 
         self.assertEquals(full_class_name(
             1), 'int')
+        
+    def test_svg(self):
+        QR = generate_qr_code_svg(convert_to_python_value('MysuperTest'))
+        self.assertNotEqual(QR, None)
