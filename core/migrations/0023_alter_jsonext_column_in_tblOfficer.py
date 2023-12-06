@@ -18,3 +18,4 @@ class Migration(migrations.Migration):
                           reverse_sql=f'{mssql_code} TEXT'
                           if settings.MSSQL else psql_code),
     ]
+
