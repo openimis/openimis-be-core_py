@@ -241,7 +241,7 @@ class TechnicalUser(AbstractBaseUser):
     is_superuser = models.BooleanField(default=False)
     validity_from = models.DateTimeField(blank=True, null=True)
     validity_to = models.DateTimeField(blank=True, null=True)
-
+    is_imis_admin = False
     @property
     def id_for_audit(self):
         return -1
@@ -539,6 +539,12 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     @property
     def _u(self):
         return self.i_user or self.officer or self.claim_admin or self.t_user
+
+    def has_perms(self, perm_list, obj=None):
+        if self.is_imis_admin:
+            return True
+        else:
+            return super().has_perms( perm_list, obj)
 
     @property
     def id_for_audit(self):

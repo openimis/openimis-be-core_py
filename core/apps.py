@@ -50,7 +50,8 @@ DEFAULT_CFG = {
     "gql_mutation_delete_claim_administrator_perms": ["121604"],
     "fields_controls_user": {},
     "fields_controls_eo": {},
-    "is_valid_health_facility_contract_required": False
+    "is_valid_health_facility_contract_required": False,
+    "secondary_calendar": None
 }
 
 
@@ -86,6 +87,7 @@ class CoreConfig(AppConfig):
 
     fields_controls_user = {}
     fields_controls_eo = {}
+    secondary_calendar = None
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -167,6 +169,7 @@ class CoreConfig(AppConfig):
 
     def _configure_additional_settings(self, cfg):
         CoreConfig.is_valid_health_facility_contract_required = cfg["is_valid_health_facility_contract_required"]
+        CoreConfig.secondary_calendar = cfg["secondary_calendar"]
 
     def ready(self):
         from .models import ModuleConfiguration
