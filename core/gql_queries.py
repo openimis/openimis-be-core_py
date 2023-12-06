@@ -195,6 +195,19 @@ class ModulePermissionsListGQLType(graphene.ObjectType):
     module_perms_list = graphene.List(ModulePermissionGQLType)
 
 
+class CustomFilterOptionGQLType(graphene.ObjectType):
+    field = graphene.String()
+    filter = graphene.List(graphene.String)
+    type = graphene.String()
+
+
+class CustomFilterGQLType(graphene.ObjectType):
+    object_class_name = graphene.String()
+    code = graphene.String()
+    type = graphene.String()
+    possible_filters = graphene.List(CustomFilterOptionGQLType)
+
+
 class UserMutationGQLType(DjangoObjectType):
     """
     This intermediate object links Mutations to Users. Beware of the confusion between the user performing the mutation

@@ -5,7 +5,7 @@ import sys
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime, timedelta
-
+from django.core.cache import cache
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
 from django.apps import apps
@@ -351,6 +351,7 @@ class InteractiveUser(VersionedModel):
         null=True,
         help_text="By default a SHA256 of the private key (salt) and password",
     )
+
     password_validity = models.DateTimeField(
         db_column="PasswordValidity", blank=True, null=True
     )
@@ -398,15 +399,20 @@ class InteractiveUser(VersionedModel):
             return self.user.t_user.is_superuser
         return False
 
-    @cached_property
+    @property
     def rights(self):
-        return [rr.right_id for rr in RoleRight.filter_queryset().filter(
-            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
-                user_id=self.id)]).distinct()]
+        rights =  [rr.right_id for rr in RoleRight.filter_queryset().filter(
+                role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
+                    user_id=self.id)]).distinct()]
+        return rights
 
-    @cached_property
+    @property
     def rights_str(self):
-        return [str(r) for r in self.rights]
+        rights = cache.get('rights_'+str(self.id))
+        if rights is None:
+            rights =  [str(r) for r in self.rights]
+            cache.set('rights_'+str(self.id),rights,600)
+        return rights
 
     @cached_property
     def health_facility(self):
@@ -431,6 +437,20 @@ class InteractiveUser(VersionedModel):
                 code=self.username, has_login=True, validity_to__isnull=True).exists()
         else:
             return False
+
+    @property
+    def is_imis_admin(self):
+        is_admin = cache.get('is_admin_'+str(self.id))
+        if is_admin is  None:
+            is_admin = Role.objects.filter(
+                is_system=64,
+                user_roles__user=self,
+                validity_to__isnull=True,
+                user_roles__validity_to__isnull=True,
+                user_roles__user__validity_to__isnull=True
+            ).exists()
+            cache.set('is_admin_'+str(self.id),is_admin,600)
+        return is_admin
 
     def set_password(self, raw_password):
         from hashlib import sha256
@@ -493,7 +513,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -504,6 +524,17 @@ class User(UUIDModel, PermissionsMixin):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    def save_history(self, **kwargs):
+        # Prevent from saving history. It would lead to error due to username uniqueness.
+        pass
+
+    def delete_history(self, **kwargs):
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
 
     @property
     def _u(self):
@@ -538,6 +569,15 @@ class User(UUIDModel, PermissionsMixin):
         if self.user and self.user.t_user:
             return self.user.t_user.is_superuser
         return False
+
+    @property
+    def is_imis_admin(self):
+        # 64 is system number for IMIS Administrator
+        user = self._u
+        if isinstance(user, InteractiveUser):
+            return user.is_imis_admin
+        else:
+            return False
 
     @property
     def is_active(self):
@@ -649,8 +689,8 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = True
-        db_table = 'Core_User_groups'
+        managed = False
+        db_table = 'core_User_groups'
         unique_together = (('user', 'group'),)
 
 
@@ -752,7 +792,7 @@ class Officer(VersionedModel, ExtendableModel):
         db_table = 'tblOfficer'
 
 
-class MutationLog(UUIDModel):
+class MutationLog(UUIDModel, ExtendableModel):
     """
     Maintains a log of every mutation requested along with its status. It is used to reply
     immediately to the client and have longer processing in the various backend modules.
@@ -1083,7 +1123,7 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = column_names or values
+        content.columns = [column_names.get(column) or column for column in content.columns]
         filename = F"{uuid.uuid4()}.csv"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(

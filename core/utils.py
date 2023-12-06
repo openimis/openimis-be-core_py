@@ -1,4 +1,5 @@
 import core
+import ast
 import graphene
 from django.db.models import Q
 from django.utils.translation import gettext as _
@@ -59,16 +60,16 @@ def comparable(cls):
     return cls
 
 
-def filter_validity(arg="validity", **kwargs):
+def filter_validity(arg="validity", prefix = '', **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
         return (
-            Q(legacy_id__isnull=True),
-            Q(validity_to__isnull=True),
+            Q(**{f'{prefix}legacy_id__isnull':True}),
+            Q(**{f'{prefix}validity_to__isnull':True})
         )
     return (
-       Q(validity_from__lte=validity),
-        Q(validity_to__isnull=True) | Q(validity_to__gte=validity),
+        Q(**{f'{prefix}validity_from__lte':validity}),
+        Q(**{f'{prefix}validity_to__isnull':True}) | Q(**{f'{prefix}validity_to__gte':validity})
     )
 
 
@@ -258,7 +259,7 @@ def get_first_or_default_language():
 def insert_role_right_for_system(system_role, right_id):
     RoleRight = apps.get_model("core", "RoleRight")
     Role = apps.get_model("core", "Role")
-    existing_role = Role.objects.filter(is_system=system_role).first()
+    existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
     if not existing_role:
         logger.warning("Migration requested a role_right for system role %s but couldn't find that role", system_role)
     role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
@@ -266,3 +267,25 @@ def insert_role_right_for_system(system_role, right_id):
         role_right = RoleRight.objects.create(role=existing_role, right_id=right_id)
 
     return role_right
+
+
+def remove_role_right_for_system(system_role, right_id):
+    RoleRight = apps.get_model("core", "RoleRight")
+    Role = apps.get_model("core", "Role")
+    existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
+    if not existing_role:
+        logger.warning("Migration requested to remove a role_right for system role %s but couldn't find that role", system_role)
+    role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
+    if role_right:
+        role_right.delete()
+        logger.info("Role right removed for system role %s and right ID %s", system_role, right_id)
+    else:
+        logger.warning("Role right not found for system role %s and right ID %s", system_role, right_id)
+
+
+def convert_to_python_value(string):
+    try:
+        value = ast.literal_eval(string)
+        return value
+    except (SyntaxError, ValueError):
+        return string
