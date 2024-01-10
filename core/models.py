@@ -5,7 +5,7 @@ import sys
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime, timedelta
-
+from django.core.cache import cache
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
 from django.apps import apps
@@ -241,7 +241,7 @@ class TechnicalUser(AbstractBaseUser):
     is_superuser = models.BooleanField(default=False)
     validity_from = models.DateTimeField(blank=True, null=True)
     validity_to = models.DateTimeField(blank=True, null=True)
-
+    is_imis_admin = False
     @property
     def id_for_audit(self):
         return -1
@@ -351,6 +351,7 @@ class InteractiveUser(VersionedModel):
         null=True,
         help_text="By default a SHA256 of the private key (salt) and password",
     )
+
     password_validity = models.DateTimeField(
         db_column="PasswordValidity", blank=True, null=True
     )
@@ -398,15 +399,20 @@ class InteractiveUser(VersionedModel):
             return self.user.t_user.is_superuser
         return False
 
-    @cached_property
+    @property
     def rights(self):
-        return [rr.right_id for rr in RoleRight.filter_queryset().filter(
-            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
-                user_id=self.id)]).distinct()]
+        rights =  [rr.right_id for rr in RoleRight.filter_queryset().filter(
+                role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
+                    user_id=self.id)]).distinct()]
+        return rights
 
-    @cached_property
+    @property
     def rights_str(self):
-        return [str(r) for r in self.rights]
+        rights = cache.get('rights_'+str(self.id))
+        if rights is None:
+            rights =  [str(r) for r in self.rights]
+            cache.set('rights_'+str(self.id),rights,600)
+        return rights
 
     @cached_property
     def health_facility(self):
@@ -434,13 +440,17 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_imis_admin(self):
-        return Role.objects.filter(
+        is_admin = cache.get('is_admin_'+str(self.id))
+        if is_admin is  None:
+            is_admin = Role.objects.filter(
                 is_system=64,
                 user_roles__user=self,
                 validity_to__isnull=True,
                 user_roles__validity_to__isnull=True,
                 user_roles__user__validity_to__isnull=True
             ).exists()
+            cache.set('is_admin_'+str(self.id),is_admin,600)
+        return is_admin
 
     def set_password(self, raw_password):
         from hashlib import sha256
@@ -529,6 +539,12 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     @property
     def _u(self):
         return self.i_user or self.officer or self.claim_admin or self.t_user
+
+    def has_perms(self, perm_list, obj=None):
+        if self.is_imis_admin:
+            return True
+        else:
+            return super().has_perms( perm_list, obj)
 
     @property
     def id_for_audit(self):
