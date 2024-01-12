@@ -661,8 +661,8 @@ class Query(graphene.ObjectType):
 
         show_deleted = kwargs.get('showDeleted', False)
         if not show_deleted and not kwargs.get('id', None):
-            
-            #active_users_ids = [user.id for user in user_query if user.is_active]
+
+            # active_users_ids = [user.id for user in user_query if user.is_active]
             user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user__')))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
@@ -840,7 +840,8 @@ class Query(graphene.ObjectType):
         if type(user) is AnonymousUser or not user.id:
             raise PermissionError("Unauthorized")
 
-        module_name, object_type_name, uuid_of_object, additional_params = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
+        module_name, object_type_name, uuid_of_object, additional_params = Query._obtain_params_from_custom_filter_graphql_query(
+            **kwargs)
         custom_filter_list_output = Query._obtain_definition_of_custom_filter_from_hub(
             module_name, object_type_name, uuid_of_object, additional_params
         )
@@ -1518,8 +1519,11 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         if username:
             # get_or_create will auto-provision from tblUsers if applicable
             user = User.objects.get_or_create(username=username)
-            if user:
+            if not user:
                 logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+            else:
+                kwargs[User.USERNAME_FIELD] = user[0].username
+
         return super().mutate(cls, info, **kwargs)
 
 
