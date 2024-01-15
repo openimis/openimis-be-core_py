@@ -226,7 +226,7 @@ class UserManager(BaseUserManager):
 
     def get_or_create(self, **kwargs):
         try:
-            user = User.objects.get(**kwargs)
+            user = User.objects.get(username__iexact=kwargs.get("username"))
             return user, False
         except User.DoesNotExist:
             return self.auto_provision_user(**kwargs)
@@ -401,17 +401,17 @@ class InteractiveUser(VersionedModel):
 
     @property
     def rights(self):
-        rights =  [rr.right_id for rr in RoleRight.filter_queryset().filter(
-                role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
-                    user_id=self.id)]).distinct()]
+        rights = [rr.right_id for rr in RoleRight.filter_queryset().filter(
+            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
+                user_id=self.id)]).distinct()]
         return rights
 
     @property
     def rights_str(self):
-        rights = cache.get('rights_'+str(self.id))
+        rights = cache.get('rights_' + str(self.id))
         if rights is None:
-            rights =  [str(r) for r in self.rights]
-            cache.set('rights_'+str(self.id),rights,600)
+            rights = [str(r) for r in self.rights]
+            cache.set('rights_' + str(self.id), rights, 600)
         return rights
 
     @cached_property
@@ -440,8 +440,8 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_imis_admin(self):
-        is_admin = cache.get('is_admin_'+str(self.id))
-        if is_admin is  None:
+        is_admin = cache.get('is_admin_' + str(self.id))
+        if is_admin is None:
             is_admin = Role.objects.filter(
                 is_system=64,
                 user_roles__user=self,
@@ -449,7 +449,7 @@ class InteractiveUser(VersionedModel):
                 user_roles__validity_to__isnull=True,
                 user_roles__user__validity_to__isnull=True
             ).exists()
-            cache.set('is_admin_'+str(self.id),is_admin,600)
+            cache.set('is_admin_' + str(self.id), is_admin, 600)
         return is_admin
 
     def set_password(self, raw_password):
@@ -544,7 +544,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
         if self.is_imis_admin:
             return True
         else:
-            return super().has_perms( perm_list, obj)
+            return super().has_perms(perm_list, obj)
 
     @property
     def id_for_audit(self):
@@ -887,10 +887,10 @@ class ObjectMutation:
                 cls.objects.get_or_create(mutation_id=mutation_log_id, **args_models)
             elif client_mutation_id:
                 mutations = MutationLog.objects \
-                                .filter(client_mutation_id=client_mutation_id) \
-                                .filter(user=user) \
-                                .values_list("id", flat=True) \
-                                .order_by("-request_date_time")[:2]  # Only ask for 2 for the warning, we'll only use 1
+                    .filter(client_mutation_id=client_mutation_id) \
+                    .filter(user=user) \
+                    .values_list("id", flat=True) \
+                    .order_by("-request_date_time")[:2]  # Only ask for 2 for the warning, we'll only use 1
                 if len(mutations) == 2:
                     # Warning because if done too often, this would cause performance issues in this query
                     logger.warning("Two or more mutations found for id %s, using the most recent one",
