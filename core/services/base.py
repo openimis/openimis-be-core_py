@@ -18,7 +18,7 @@ class BaseService(ABC):
         """
         raise NotImplementedError("Class has to define OBJECT_TYPE for service.")
 
-    def __init__(self, user, validation_class: BaseModelValidation):
+    def __init__(self, user, validation_class: Type[BaseModelValidation] = BaseModelValidation):
         self.user = user
         self.validation_class = validation_class
 

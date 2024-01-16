@@ -352,6 +352,35 @@ CLASS_RULE_PARAM_VALIDATION = [
   - run_convert(instance, convert_to **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to). 'from_to' is deducted from instance. 
   - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
+## CustomFilters
+This module provides the ability to define custom filters and their construction. It includes the following classes:
+* ```CustomFilterRegistryPoint```: This class is responsible for registering filters from a specific module. 
+* ```CustomFilterWizardInterface```: This interface defines the implementation details of a custom filtering wizard.
+It should be called in the apps.py file of the respective module (see example below) to enable filter construction for specific objects.
+* ```CustomFilterWizardStorage```: This class provides a service that connects to the registered filter hub, allowing 
+retrieval of the filter construction definition for specific objects.
+
+To integrate this mechanism into an openIMIS module, follow these steps:
+* Implement the CustomFilterWizardInterface from the core module
+to output the filter construction definition for the chosen object.
+* In the apps.py file of the module, add the following import statement: ```from core.custom_filters import CustomFilterRegistryPoint```.
+* Invoke such example code somewhere in ready() method in apps.py file:
+```
+   # register custom filter
+   from social_protection.custom_filters import BenefitPlanCustomFilterWizard, BeneficiaryCustomFilterWizard
+   CustomFilterRegistryPoint.register_custom_filters(
+       module_name=cls.name,
+       custom_filter_class_list=[BenefitPlanCustomFilterWizard, BeneficiaryCustomFilterWizard]
+   )
+``` 
+* After completing the above steps, the filter will be registered in the filter hub/storage and can be accessed 
+by invoking the wizard hub service. Here's an example using the Django shell:
+```
+   from core.custom_filters.custom_filter_wizard_storage import CustomFilterWizardStorage
+   CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'Beneficiary')
+```
+
+
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
   user is auto-provisioned(default: "user")
