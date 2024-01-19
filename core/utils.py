@@ -1,3 +1,5 @@
+import uuid
+
 import core
 import ast
 import graphene
@@ -289,3 +291,11 @@ def convert_to_python_value(string):
         return value
     except (SyntaxError, ValueError):
         return string
+
+
+def is_valid_uuid(string):
+    try:
+        uuid_obj = uuid.UUID(str(string))
+        return True
+    except ValueError:
+        return False
