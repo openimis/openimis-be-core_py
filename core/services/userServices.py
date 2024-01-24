@@ -49,7 +49,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
             i_user.set_password(data["password"])
         else:
             # No password provided for creation, will have to be set later.
-            i_user.stored_password = "locked"
+            i_user.stored_password = CoreConfig.locked_user_password_hash
         created = True
 
     i_user.save()
