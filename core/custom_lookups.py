@@ -2,7 +2,6 @@ from django.db.models import Lookup, JSONField
 from django.db.models.lookups import Contains
 
 
-@JSONField.register_lookup
 class JsonContains(Lookup):
     lookup_name = 'jsoncontains'
 
@@ -41,7 +40,6 @@ class JsonContains(Lookup):
         return conditions
 
 
-@JSONField.register_lookup
 class JsonContainsKey(Contains):
     lookup_name = 'jsoncontainskey'
 
