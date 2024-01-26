@@ -1141,3 +1141,19 @@ class ExportableQueryModel(models.Model):
         )
         export.save()
         return export
+
+    def resolved_id_reference(instance, data):
+        out = {}
+        for k, v in data.items():
+            found = False
+            if k.endswith('_id'):
+                if hasattr(instance, k[:-3]):
+                    field = instance._meta.get_field( k[:-3])
+                    try:
+                        out[k[:-3]] = field.remote_field.model.objects.get(pk=v)
+                        found= True
+                    except:
+                        raise Exception(f"{instance.__name__}: relationship from {field.remote_field.model.__name__} : {v} not found ")
+            if not found:
+                out[k]=v
+        return out
