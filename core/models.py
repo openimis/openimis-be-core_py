@@ -5,6 +5,7 @@ import sys
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime, timedelta
+import datetime as base_datetime
 from django.core.cache import cache
 from cached_property import cached_property
 from dirtyfields import DirtyFieldsMixin
@@ -18,8 +19,9 @@ from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 from pandas import DataFrame
-from simple_history.models import HistoricalRecords
-
+from simple_history.models import HistoricalRecords, HistoricalChanges
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 import core
 from django.conf import settings
 
@@ -29,6 +31,16 @@ from .utils import filter_validity
 
 logger = logging.getLogger(__name__)
 
+
+# enforce object validation on every save
+@receiver(pre_save)
+def validator(sender, instance, **kwargs):
+    for f in  instance._meta.get_fields():
+        if hasattr(f,'default') and not f.default == models.fields.NOT_PROVIDED and not getattr(instance, f.name):
+            setattr(instance, f.name, f.default() if callable(f.default) else f.default )
+    
+    if not issubclass(sender, HistoricalChanges):
+        instance.full_clean()
 
 class UUIDModel(models.Model):
     """
@@ -329,7 +341,7 @@ class InteractiveUser(VersionedModel):
     other_names = models.CharField(db_column="OtherNames", max_length=100)
     phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
     login_name = models.CharField(db_column="LoginName", max_length=CoreConfig.user_username_and_code_length_limit)
-    last_login = models.DateTimeField(db_column="LastLogin", null=True)
+    last_login = models.DateTimeField(db_column="LastLogin", null=True, blank=True)
     health_facility_id = models.IntegerField(db_column="HFID", blank=True, null=True)
 
     audit_user_id = models.IntegerField(db_column="AuditUserID")
@@ -932,6 +944,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         inherit=True,
     )
 
+
     @property
     def uuid(self):
         return self.id
@@ -1155,5 +1168,8 @@ def resolved_id_reference(instance, data):
                 except:
                     raise Exception(f"{instance.__name__}: relationship from {field.remote_field.model.__name__} : {v} not found ")
         if not found:
+            if isinstance(field.remote_field.model,(base_datetime.date, base_datetime.datetime)):
+                v = py_datetime.strptime(date_string, "%Y-%m-%d")
             out[k]=v
     return out
+
