@@ -234,7 +234,8 @@ def change_user_password(logged_user, username_to_update=None, old_password=None
         user_to_update = User.objects.get(username=username_to_update)
     else:
         user_to_update = logged_user
-        if not old_password or not user_to_update.check_password(old_password):
+        old_password_match = old_password and user_to_update.check_password(old_password)
+        if not (old_password_match or user_to_update.stored_password == CoreConfig.locked_user_password_hash):
             raise ValidationError(_("core.wrong_old_password"))
 
     user_to_update.set_password(new_password)
