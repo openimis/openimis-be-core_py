@@ -113,14 +113,24 @@ class AdDatetime(py_datetime.datetime):
     def to_ad_datetime(self):
         return self
 
-    def __eq__(self, other):
+    def _date_operation(self, operation, other):
+
         if not other :
-            return super(AdDatetime, self).__eq__(other)
+            return operation(other)
         if isinstance(other, py_datetime.datetime):
-            return super(AdDatetime, self).__eq__(other)
+            return operation(other)
         if isinstance(other, py_datetime.date):
-            return super(AdDatetime, self).__eq__(AdDatetime.from_ad_date(other))
-        return self - other == datetimedelta()
+            return operation(AdDatetime.from_ad_date(other))
+    
+    def __eq__(self, other):
+        result = self._date_operation(super(AdDatetime, self).__eq__,other)
+        return result if result else self - other ==  datetimedelta()
+    
+    def __gt__(self, other):
+        return self._date_operation(super(AdDatetime, self).__gt__,other)
+    def __lt__(self, other):
+        return self._date_operation(super(AdDatetime, self).__lt__,other)
+
 
     @classmethod
     def _convert_op_res(cls, res):
