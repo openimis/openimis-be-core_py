@@ -40,6 +40,11 @@ def validator(sender, instance, **kwargs):
             setattr(instance, f.name, f.default() if callable(f.default) else f.default )
         elif isinstance(f, models.DecimalField) and f.decimal_places and getattr(instance, f.name):
             setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(getattr(instance, f.name))))
+        elif isinstance(f, models.IntegerField) and isinstance(getattr(instance, f.name), str):
+            setattr(instance, f.name, int(getattr(instance, f.name)))
+        elif isinstance(f, models.DateField) and isinstance(getattr(instance, f.name), str):
+            setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name), "%Y-%m-%d"))   
+
 #    if not issubclass(sender, HistoricalChanges):
 #        instance.full_clean()
 
