@@ -38,9 +38,10 @@ def validator(sender, instance, **kwargs):
     for f in  instance._meta.get_fields():
         if hasattr(f,'default') and not f.default == models.fields.NOT_PROVIDED and not getattr(instance, f.name):
             setattr(instance, f.name, f.default() if callable(f.default) else f.default )
-    
-    if not issubclass(sender, HistoricalChanges):
-        instance.full_clean()
+        elif isinstance(f, models.DecimalField) and f.decimal_places and getattr(instance, f.name):
+            setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(getattr(instance, f.name))))
+#    if not issubclass(sender, HistoricalChanges):
+#        instance.full_clean()
 
 class UUIDModel(models.Model):
     """
@@ -1030,7 +1031,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
 class HistoryBusinessModel(HistoryModel):
     date_valid_from = DateTimeField(db_column="DateValidFrom", default=py_datetime.now)
     date_valid_to = DateTimeField(db_column="DateValidTo", blank=True, null=True)
-    replacement_uuid = models.UUIDField(db_column="ReplacementUUID", null=True)
+    replacement_uuid = models.UUIDField(db_column="ReplacementUUID", blank=True, null=True)
 
     def replace_object(self, data, **kwargs):
         # check if object was created and saved in database (having date_created field)
