@@ -1135,7 +1135,7 @@ class ExportableQueryModel(models.Model):
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(
             name=filename,
-            model=qs.model,
+            model=qs.model.__name__,
             content=content,
             user=user,
             sql_query=sql,
