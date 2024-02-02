@@ -1,8 +1,11 @@
-from core.models import Officer, InteractiveUser, User, TechnicalUser
+from core.models import Officer, InteractiveUser, User, TechnicalUser, filter_validity
+from core.services.userServices import create_or_update_officer_villages
 from core.services import create_or_update_user_roles
+from location.models import Location
 from  uuid import uuid4
 
-def create_test_officer(valid=True, custom_props={}):
+def create_test_officer(valid=True, custom_props={}, villages = []):
+
     code = custom_props.pop('code', None)
     uuid = custom_props.pop('uuid', None)
     qs_eo = Officer.objects
@@ -14,23 +17,27 @@ def create_test_officer(valid=True, custom_props={}):
             "other_names": "Test",
             "validity_to": None if valid else "2019-06-01",
             "audit_user_id": -1,
+            "phone": "0000110100",
             **(custom_props if custom_props else {})
         }
     if code:
         qs_eo = qs_eo.filter(code=code)
     if uuid:
         qs_eo = qs_eo.filter(uuid=uuid)
-            
+    eo = None        
     if code or uuid:
         eo = qs_eo.first()
     if eo:
         data['uuid']=eo.uuid
         eo.update(data)
-        return eo
     else:
         data['uuid']=uuid4()
-        return  Officer.objects.create(**data)
-
+        eo =   Officer.objects.create(**data)
+    if villages == []:
+        villages == Location.objects.filter(*filter_validity(), type = 'V').first()
+    if eo:
+        result = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
+        return eo
 
 def create_test_interactive_user(username='TestInteractiveTest', password="Test1234", roles=None, custom_props=None):
     if roles is None:

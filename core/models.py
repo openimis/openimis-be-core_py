@@ -29,6 +29,7 @@ from .apps import CoreConfig
 from .fields import DateTimeField
 from .utils import filter_validity
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -1163,7 +1164,6 @@ class ExportableQueryModel(models.Model):
         export.save()
         return export
     
-@deprecated
 def resolved_id_reference(instance, data):
     return resolve_id_reference(instance, data)
 
