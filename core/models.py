@@ -1162,12 +1162,16 @@ class ExportableQueryModel(models.Model):
         )
         export.save()
         return export
-
+    
+@deprecated
 def resolved_id_reference(instance, data):
+    return resolve_id_reference(instance, data)
+
+def resolve_id_reference(instance, data):
     out = {}
     for k, v in data.items():
         found = False
-        if k.endswith('_id'):
+        if k.endswith('_id') and v:
             if hasattr(instance, k[:-3]):
                 field = instance._meta.get_field( k[:-3])
                 try:
