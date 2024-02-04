@@ -1,4 +1,6 @@
 import uuid
+import json
+import jsonschema
 
 import core
 import ast
@@ -299,3 +301,20 @@ def is_valid_uuid(string):
         return True
     except ValueError:
         return False
+
+
+def validate_json_schema(schema):
+    try:
+        if not isinstance(schema, dict):
+            schema = json.loads(schema)
+        jsonschema.Draft7Validator.check_schema(schema)
+        return []
+    except jsonschema.exceptions.SchemaError as schema_error:
+        return [{"message": _("core.utils.schema_validation.invalid_schema" % {
+            'error': str(schema_error)
+        })}]
+    except ValueError as json_error:
+        return [{"message": _("core.utils.schema_validation.invalid_json" % {
+            'error': str(json_error)
+        })}]
+

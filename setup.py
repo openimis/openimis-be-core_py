@@ -28,6 +28,7 @@ setup(
         'django-simple-history',
         'django-dirtyfields',
         'websocket-client'
+        'jsonschema',
     ],
     classifiers=[
         'Environment :: Web Environment',
