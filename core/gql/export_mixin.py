@@ -103,8 +103,12 @@ class ExportableQueryMixin:
             custom_filters = kwargs.pop("customFilters", None)
             export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
             fields_mapping = json.loads(kwargs.pop('fields_columns'))
+
+            source_field = getattr(cls, field_name)
+            filter_kwargs = {k: v for k, v in kwargs.items() if k in source_field.filtering_args}
+
             qs = default_resolve(None, info, **kwargs)
-            qs = qs.filter(**kwargs)
+            qs = qs.filter(**filter_kwargs)
             qs = cls.__append_custom_filters(custom_filters, qs)
             export_file = ExportableQueryModel\
                 .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
