@@ -85,3 +85,9 @@ msgstr ""
 #: core/views.py:35 core/views.py:35
 msgid "Only user requesting export can fetch request"
 msgstr ""
+
+msgid "core.utils.schema_validation.invalid_schema"
+msgstr "Schema is not valid %(error)"
+
+msgid "core.utils.schema_validation.invalid_json"
+msgstr "Schema json is not valid %(error)"
