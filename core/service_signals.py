@@ -31,8 +31,8 @@ class RegisteredServiceSignal:
             self.__before_service_signal = None
             self.__after_service_signal = None
         else:
-            self.__before_service_signal = dispatch.Signal(providing_args=providing_args)
-            self.__after_service_signal = dispatch.Signal(providing_args=providing_args + ['result'])
+            self.__before_service_signal = dispatch.Signal(providing_args)
+            self.__after_service_signal = dispatch.Signal(providing_args + ['result'])
 
     @property
     def connected_signals(self):
@@ -71,8 +71,8 @@ class RegisteredServiceSignal:
         if self.is_signal_registered():
             raise ValueError(f"Signal {self} already registered.")
 
-        self.__before_service_signal = dispatch.Signal(providing_args=providing_args)
-        self.__after_service_signal = dispatch.Signal(providing_args=providing_args + ['result'])
+        self.__before_service_signal = dispatch.Signal(providing_args)
+        self.__after_service_signal = dispatch.Signal(providing_args + ['result'])
         self._connect_queued()
 
     def is_signal_registered(self):
