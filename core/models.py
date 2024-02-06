@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from copy import copy
-from datetime import datetime as timedelta
+from datetime import datetime as timedelta, datetime as py_datetime
 import datetime as base_datetime
 from django.core.cache import cache
 from cached_property import cached_property
@@ -23,7 +23,7 @@ from simple_history.models import HistoricalRecords, HistoricalChanges
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
 import core
-from core.datetimes.ad_datetime import datetime as py_datetime
+#from core.datetimes.ad_datetime import datetime as py_datetime
 from django.conf import settings
 
 from .apps import CoreConfig
@@ -972,6 +972,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         # get the user data so as to assign later his uuid id in fields user_updated etc
         if 'username' in kwargs:
             user = User.objects.get(username=kwargs.pop('username'))
+        elif 'user' in kwargs and isinstance(kwargs.get('user', None), User):
+            user = kwargs.pop('user', None)
         else:
             raise ValidationError('Save error! Provide the username of the current user in `username` argument')
         now = py_datetime.now()
@@ -985,6 +987,12 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             self.date_updated = now
             return super(HistoryModel, self).save(*args, **kwargs)
         if self.is_dirty(check_relationship=True):
+            if not self.user_created:
+                past= self.objects.filter(pk=self.id).first()
+                if not past:
+                    self.user_created = user #TODO this could erase a instance, version check might be too light
+                elif not self.version == past.version:
+                    raise ValidationError('Record has not be updated - the version don\'t match with existing record')
             self.date_updated = now
             self.user_updated = user
             self.version = self.version + 1
@@ -1073,7 +1081,7 @@ class HistoryBusinessModel(HistoryModel):
     def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
         """2 step - update the fields for the entity to be replaced"""
         # convert to datetime if the date_valid_from from new entity is date
-        if not isinstance(date_valid_from_new_entity, base_datetime):
+        if not isinstance(date_valid_from_new_entity, base_datetime.datetime):
             date_valid_from_new_entity = base_datetime.combine(
                 date_valid_from_new_entity,
                 base_datetime.min.time()
