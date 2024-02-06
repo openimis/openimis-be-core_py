@@ -39,7 +39,7 @@ def fetch_export(request):
     elif export.is_deleted:
         return Response(data='Export csv file was removed from server.', status=status.HTTP_410_GONE)
 
-    export_file_name = F"export_{export.model}_{strftime(export.create_date, '%d/%m/%Y')}.csv"
+    export_file_name = F"export_{export.model}_{strftime(export.create_date, '%d_%m_%Y')}.csv"
     return StreamingHttpResponse(
         (row for row in export.content.file.readlines()),
         content_type="text/csv",

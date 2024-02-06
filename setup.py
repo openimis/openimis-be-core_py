@@ -27,7 +27,8 @@ setup(
         'nepalicalendar',
         'django-simple-history',
         'django-dirtyfields',
-        'websocket-client'
+        'websocket-client',
+        'jsonschema',
     ],
     classifiers=[
         'Environment :: Web Environment',

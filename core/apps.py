@@ -186,8 +186,8 @@ class CoreConfig(AppConfig):
         self._configure_permissions(cfg)
         self._configure_additional_settings(cfg)
 
-        self.password_reset_template = cfg["password_reset_template"]
-        self.locked_user_password_hash = cfg["locked_user_password_hash"]
+        CoreConfig.password_reset_template = cfg["password_reset_template"]
+        CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler
