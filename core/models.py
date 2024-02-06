@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from copy import copy
-from datetime import datetime as py_datetime, timedelta
+from datetime import datetime as timedelta
 import datetime as base_datetime
 from django.core.cache import cache
 from cached_property import cached_property
@@ -23,6 +23,7 @@ from simple_history.models import HistoricalRecords, HistoricalChanges
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
 import core
+from core.datetimes.ad_datetime import datetime as py_datetime
 from django.conf import settings
 
 from .apps import CoreConfig
@@ -260,7 +261,7 @@ class TechnicalUser(AbstractBaseUser):
     language = 'en'
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    validity_from = models.DateTimeField(blank=True, null=True)
+    validity_from = models.DateTimeField(blank=True, null=True, default = py_datetime.now)
     validity_to = models.DateTimeField(blank=True, null=True)
     is_imis_admin = False
     @property
@@ -552,7 +553,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     def delete_history(self, **kwargs):
         from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         self.validity_from = now
         self.validity_to = now
         self.save()
@@ -610,8 +611,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     def is_active(self):
         if self._u.validity_from is None and self._u.validity_to is None:
             return True
-        from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         if not self._u.validity_from is None and self._u.validity_from > now:
             return False
         if not self._u.validity_to is None and self._u.validity_to < now:
@@ -942,8 +942,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     objects = HistoryModelManager()
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)
     json_ext = models.JSONField(db_column="Json_ext", blank=True, null=True)
-    date_created = DateTimeField(db_column="DateCreated", null=True)
-    date_updated = DateTimeField(db_column="DateUpdated", null=True)
+    date_created = DateTimeField(db_column="DateCreated", null=True, default=py_datetime.now)
+    date_updated = DateTimeField(db_column="DateUpdated", null=True, default=py_datetime.now)
     user_created = models.ForeignKey(User, db_column="UserCreatedUUID", related_name='%(class)s_user_created',
                                      on_delete=models.deletion.DO_NOTHING, null=False)
     user_updated = models.ForeignKey(User, db_column="UserUpdatedUUID", related_name='%(class)s_user_updated',
@@ -974,8 +974,7 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             user = User.objects.get(username=kwargs.pop('username'))
         else:
             raise ValidationError('Save error! Provide the username of the current user in `username` argument')
-        from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         # check if object has been newly created
         if self.id is None:
             # save the new object
@@ -1006,8 +1005,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
         else:
             raise ValidationError('Delete error! Provide the username of the current user in `username` argument')
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
-            from core import datetime
-            now = datetime.datetime.now()
+
+            now = py_datetime.now()
             self.date_updated = now
             self.user_updated = user
             self.version = self.version + 1
@@ -1054,8 +1053,7 @@ class HistoryBusinessModel(HistoryModel):
 
     def _create_new_entity(self, user, data):
         """1 step - create new entity"""
-        from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         new_entity = copy(self)
         new_entity.id = None
         new_entity.version = 1
@@ -1075,11 +1073,10 @@ class HistoryBusinessModel(HistoryModel):
     def _update_replaced_entity(self, user, uuid_from_new_entity, date_valid_from_new_entity):
         """2 step - update the fields for the entity to be replaced"""
         # convert to datetime if the date_valid_from from new entity is date
-        from core import datetime
-        if not isinstance(date_valid_from_new_entity, datetime.datetime):
-            date_valid_from_new_entity = datetime.datetime.combine(
+        if not isinstance(date_valid_from_new_entity, base_datetime):
+            date_valid_from_new_entity = base_datetime.combine(
                 date_valid_from_new_entity,
-                datetime.datetime.min.time()
+                base_datetime.min.time()
             )
         if not self.is_dirty(check_relationship=True):
             if self.date_valid_to is not None:
@@ -1180,7 +1177,8 @@ def resolve_id_reference(instance, data):
                 except:
                     raise Exception(f"{instance.__name__}: relationship from {field.remote_field.model.__name__} : {v} not found ")
         if not found:
-            if isinstance(field.remote_field.model,(base_datetime.date, base_datetime.datetime)):
+            field = instance._meta.get_field( k)
+            if isinstance(field,(base_datetime.date, base_datetime.datetime)):
                 v = py_datetime.strptime(date_string, "%Y-%m-%d")
             out[k]=v
     return out
