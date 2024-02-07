@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, date, datetime
 
 __all__ = ["is_midnight", "datetimedelta"]
 
