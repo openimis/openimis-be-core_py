@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import User, ExportableQueryModel
 from .scheduler import scheduler
 from .serializers import UserSerializer
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 
 
 class UserViewSet(viewsets.ModelViewSet):
