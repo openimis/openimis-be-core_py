@@ -2,7 +2,18 @@ from django.contrib.auth.middleware import (
     RemoteUserMiddleware as dj_RemoteUserMiddleware,
 )
 from rest_framework import permissions
-import os
+from os import environ
+from rest_framework.permissions import IsAuthenticated
+
+
+def checkUserWithRights(rights):
+    class UserWithRights(IsAuthenticated):
+        def has_permission(self, request, view):
+            return super().has_permission(request, view) and request.user.has_perms(
+                rights
+            )
+
+    return UserWithRights
 
 
 class ObjectPermissions(permissions.DjangoObjectPermissions):
@@ -18,4 +29,4 @@ class ObjectPermissions(permissions.DjangoObjectPermissions):
 
 
 class RemoteUserMiddleware(dj_RemoteUserMiddleware):
-    header = os.environ.get("REMOTE_USER_HEADER_NAME", "HTTP_REMOTE_USER")
+    header = environ.get("REMOTE_USER_HEADER_NAME", "HTTP_REMOTE_USER")
