@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from copy import copy
-from datetime import datetime as timedelta, datetime as py_datetime
+from datetime import timedelta, datetime as py_datetime
 import datetime as base_datetime
 from django.core.cache import cache
 from cached_property import cached_property
