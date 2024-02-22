@@ -5,11 +5,13 @@ import jsonschema
 import core
 import ast
 import graphene
+from django.http import FileResponse
 from django.db.models import Q
 from django.utils.translation import gettext as _
 import logging
 from django.apps import apps
 from django.core.exceptions import PermissionDenied
+from django.core.files.storage import default_storage
 
 
 logger = logging.getLogger(__file__)
@@ -317,4 +319,35 @@ def validate_json_schema(schema):
         return [{"message": _("core.utils.schema_validation.invalid_json" % {
             'error': str(json_error)
         })}]
+
+
+class DefaultStorageFileHandler:
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def save_file(self, file_content):
+        if default_storage.exists(self.file_path):
+            raise FileExistsError("File already exists at the specified path.")
+        default_storage.save(self.file_path, file_content)
+
+    def get_file_content(self):
+        if not default_storage.exists(self.file_path):
+            raise FileNotFoundError("File does not exist at the specified path.")
+        with default_storage.open(self.file_path, 'rb') as source:
+            return source.read()
+
+    def get_file_response_csv(self, file_name=None):
+        if not default_storage.exists(self.file_path):
+            raise FileNotFoundError("File does not exist at the specified path.")
+        response = FileResponse(default_storage.open(self.file_path, 'rb'))
+        response['Content-Type'] = 'text/csv'
+        response['Content-Disposition'] = f'attachment; filename="{file_name if file_name else "default.csv"}"'
+        return response
+
+    @staticmethod
+    def list_files(directory):
+        """
+        Get a list of files in the specified directory within default storage.
+        """
+        return default_storage.listdir(directory)
 
