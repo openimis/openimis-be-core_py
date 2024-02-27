@@ -326,8 +326,7 @@ class DefaultStorageFileHandler:
         self.file_path = file_path
 
     def save_file(self, file_content):
-        if default_storage.exists(self.file_path):
-            raise FileExistsError("File already exists at the specified path.")
+        self.check_file_path()
         default_storage.save(self.file_path, file_content)
 
     def get_file_content(self):
@@ -343,6 +342,10 @@ class DefaultStorageFileHandler:
         response['Content-Type'] = 'text/csv'
         response['Content-Disposition'] = f'attachment; filename="{file_name if file_name else "default.csv"}"'
         return response
+
+    def check_file_path(self):
+        if default_storage.exists(self.file_path):
+            raise FileExistsError("File already exists at the specified path.")
 
     @staticmethod
     def list_files(directory):
