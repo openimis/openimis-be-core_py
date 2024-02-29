@@ -1341,6 +1341,9 @@ def update_or_create_user(data, user):
     if len(username) > CoreConfig.username_code_length:
         raise ValidationError(_("mutation.user_username_too_long"))
 
+    if not CoreConfig.username_changeable and current_user.username != username:
+        raise ValidationError(_("mutation.user_username_not_changeable"))
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
