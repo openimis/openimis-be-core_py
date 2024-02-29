@@ -14,7 +14,6 @@ this = sys.modules[MODULE_NAME]
 DEFAULT_CFG = {
     "username_code_length": "8",  # cannot be bigger than 50 unless modified length limit
     "username_changeable": True,
-    "user_username_and_code_length_limit": "50",
     "auto_provisioning_user_group": "user",
     "calendar_package": "core",
     "calendar_module": ".calendars.ad_calendar",
@@ -61,7 +60,6 @@ class CoreConfig(AppConfig):
     name = MODULE_NAME
     username_code_length = 8
     username_changeable = True
-    user_username_and_code_length_limit = 50
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
     gql_query_roles_perms = []
@@ -114,10 +112,8 @@ class CoreConfig(AppConfig):
 
     def _configure_user_config(self, cfg):
         this.username_code_length = int(cfg["username_code_length"])
-        this.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
         # Quick fix, this config has to be rebuilt
         CoreConfig.username_code_length = int(cfg["username_code_length"])
-        CoreConfig.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
         CoreConfig.username_changeable = cfg["username_changeable"]
 
 
