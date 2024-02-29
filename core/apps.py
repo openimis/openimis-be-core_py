@@ -182,7 +182,6 @@ class CoreConfig(AppConfig):
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_user_config(cfg)
-        self._configure_user_username_and_code_length_limit(cfg)
         self._configure_majority(cfg)
         self._configure_auto_provisioning(cfg)
         self._configure_graphql(cfg)
