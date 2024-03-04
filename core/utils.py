@@ -268,6 +268,7 @@ def insert_role_right_for_system(system_role, right_id):
     existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
     if not existing_role:
         logger.warning("Migration requested a role_right for system role %s but couldn't find that role", system_role)
+    else:
         role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
         if not role_right:
             role_right = RoleRight.objects.create(role=existing_role, right_id=right_id)
