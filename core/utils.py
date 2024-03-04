@@ -70,7 +70,6 @@ def filter_validity(arg="validity", prefix = '', **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
         return [
-            #Q(**{f'{prefix}legacy_id__isnull':True}),
             Q(**{f'{prefix}validity_to__isnull':True})
         ]
     return [
