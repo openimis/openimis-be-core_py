@@ -116,7 +116,6 @@ class CoreConfig(AppConfig):
         CoreConfig.username_code_length = int(cfg["username_code_length"])
         CoreConfig.username_changeable = cfg["username_changeable"]
 
-
     def _configure_majority(self, cfg):
         this.age_of_majority = int(cfg["age_of_majority"])
 
