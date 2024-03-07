@@ -329,6 +329,10 @@ class DefaultStorageFileHandler:
         self.check_file_path()
         default_storage.save(self.file_path, file_content)
 
+    def remove_file(self):
+        if default_storage.exists(self.file_path):
+            default_storage.delete(self.file_path)
+
     def get_file_content(self):
         if not default_storage.exists(self.file_path):
             raise FileNotFoundError("File does not exist at the specified path.")
