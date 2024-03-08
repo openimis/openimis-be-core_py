@@ -109,6 +109,9 @@ class AdDatetime(py_datetime.datetime):
         return AdDatetime(value.year, value.month, value.day,
                           value.hour, value.minute, value.second, value.microsecond,
                           value.tzinfo)
+    
+    def __hash__(self):
+        return super().__hash__()
 
     def to_ad_datetime(self):
         return self
