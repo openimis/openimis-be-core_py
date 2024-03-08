@@ -3,7 +3,7 @@ from core.services.userServices import create_or_update_officer_villages
 from core.services import create_or_update_user_roles
 from location.models import Location
 from  uuid import uuid4
-
+import json
 def create_test_officer(valid=True, custom_props={}, villages = []):
 
     code = custom_props.pop('code', None)
@@ -118,3 +118,59 @@ def compare_dicts(dict1, dict2):
 
     return recursive_compare(dict1, dict2)
 
+
+
+def AssertMutation(test_obj,mutaiton_uuid, token ):
+  content= None
+  while True:
+    # wait for the mutation to be done
+    # wait for the mutation to be done
+    response = test_obj.query(f'''
+        {{
+          mutationLogs(clientMutationId: "{mutaiton_uuid}")
+          {{
+          pageInfo {{ hasNextPage, hasPreviousPage, startCursor, endCursor}}
+          edges
+          {{
+            node
+            {{
+                id,status,error,clientMutationId,clientMutationLabel,clientMutationDetails,requestDateTime,jsonExt
+            }}
+          }}
+          }}
+        }}
+
+        ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+    content  = json.loads(response.content)
+    if 'data' in content:
+      
+      if 'mutationLogs' in content['data']:
+        if 'edges' in content['data']['mutationLogs']:
+          for e in content['data']['mutationLogs']['edges']:
+            if "node" in e:
+              e = e['node']
+            if 'status' in e and e:
+              AssertMutationEdgeNoError(e)
+              return content
+          else:
+            raise ValueError("mutation has no edge field")
+    else:  
+      raise ValueError("mutation has no data field")
+    time.sleep(1)
+  if AssertMutationNoError(content):
+    return None
+
+
+def AssertMutationEdgeNoError(e):
+  
+  if 'error' in e and e['error']:
+    raise ValueError(f"At least one edge of the mutation has error {e['error']}")
+    return False
+  elif 'errors' in e and e['errors']:
+    raise ValueError(f"At least one edge of the mutation has error {e['errors']}")
+    return False
+  elif 'status' in e and e['status'] == 1:
+    raise ValueError("Mutation failed with status 1")
+    return False
+  return True
