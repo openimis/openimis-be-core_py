@@ -91,3 +91,13 @@ msgstr "Schema is not valid %(error)"
 
 msgid "core.utils.schema_validation.invalid_json"
 msgstr "Schema json is not valid %(error)"
+
+
+msgid "core.validation.stringFieldValidationMixin.empty_string"
+msgstr "Field cannot be empty."
+
+msgid "core.validation.stringFieldValidationMixin.string_starts_with_whitespace"
+msgstr "Field cannot start with whitespace."
+
+msgid "core.validation.stringFieldValidationMixin.string_ends_with_whitespace"
+msgstr "Field cannot end with whitespace."
