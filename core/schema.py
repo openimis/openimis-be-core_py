@@ -49,6 +49,8 @@ from .services.roleServices import check_role_unique_name
 from .services.userServices import check_user_unique_email
 from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
+from graphene.relay import PageInfo
+from graphql_relay.connection.arrayconnection import cursor_to_offset, offset_to_cursor, connection_from_list_slice
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
 
@@ -360,15 +362,57 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     ):
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
+        if not any([ field.name.value == 'totalCount' for field in info.field_asts[0].selection_set.selections]): 
+            cls.resolve_connnection = cls.simplified_resolve_connection
+        else:
+            cls.resolve_connnection = super(DjangoFilterConnectionField, cls).resolve_connection
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
-            connection, iterable, info, args
-        )
+                connection, iterable, info, args
+            )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
         qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
 
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
+    @classmethod
+    def simplified_resolve_connection(cls, connection, args, iterable, max_limit=None):
+        offset = args.pop("offset", None)
+        after = args.get("after")
+        if offset:
+            if after:
+                offset += cursor_to_offset(after) + 1
+            # input offset starts at 1 while the graphene offset starts at 0
+            args["after"] = offset_to_cursor(offset - 1)
+        else:
+            args["after"] = cursor_to_offset(after_cursor) if after_cursor else None
+   
+        iterable = maybe_queryset(iterable)
+        first = parse_int(args.get("first")) or max_limit
 
+
+        start = 0 if args["after"] is None else args["after"] + 1
+        end = start + first
+        
+        if max_limit is not None and "first" not in args:
+            if "last" in args:
+                args["first"] = parse_int(args.get("first")) or max_limit
+                list_slice_length = end
+            else:
+                args["first"] = max_limit
+
+        connection = connection_from_list_slice(
+            iterable[after:],
+            args,
+            slice_start=after,
+            list_length=end+1,
+            list_slice_length=end,
+            connection_type=connection,
+            edge_type=connection.Edge,
+            pageinfo_type=PageInfo,
+        )
+        connection.iterable = iterable
+        connection.length = list_length
+        return connection
 class MutationLogGQLType(DjangoObjectType):
     """
     This represents a requested mutation and its status.

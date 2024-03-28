@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
             and o."ValidityTo" is null and u."ValidityTo" is null
             group by o."Code", u."UserID";
             """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+        migrations.RunSQL(sql=f"""
             update "core_User"
             set officer_id=maxofficer.maxid
             from "core_User" cu inner join
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
                     on "Code"=cu.username
             where cu.officer_id is null;
             """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+        migrations.RunSQL(sql=f"""
             insert into "core_User" (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
             select {NEWID_FUNC} as uuid, ca."ClaimAdminCode", u."UserID", null as t, null as o, max(ca."ClaimAdminId") as max_id
             from "tblClaimAdmin" ca
@@ -46,12 +46,19 @@ class Migration(migrations.Migration):
             and ca."ValidityTo" is null and u."ValidityTo" is null
             group by ca."ClaimAdminCode", u."UserID";
             """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+        migrations.RunSQL(sql=f"""
             update "core_User"
             set claim_admin_id=maxca.maxid
             from "core_User" cu inner join
                 (select "ClaimAdminCode", max("ClaimAdminId") as maxid from "tblClaimAdmin" where "ValidityTo" is null group by "ClaimAdminCode") maxca
                     on "ClaimAdminCode"=cu.username
             where cu.claim_admin_id is null;
-        """, reverse_sql="")
+        """, reverse_sql=""),
+        migrations.RunSQL(sql=f"""
+            insert into "core_User" (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
+            select {NEWID_FUNC} as uuid, u."LoginName", u."UserID", null as t, null as o, null as c
+            from "tblUsers" u
+            where not exists (select 1 from "core_User" where username=u."LoginName")
+            and u."ValidityTo" is null;
+            """, reverse_sql=""),
     ]
