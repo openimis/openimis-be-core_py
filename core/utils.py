@@ -331,9 +331,10 @@ class DefaultStorageFileHandler:
     def __init__(self, file_path):
         self.file_path = file_path
 
-    def save_file(self, file_content):
+    def save_file(self, file):
         self.check_file_path()
-        default_storage.save(self.file_path, file_content)
+        default_storage.save(self.file_path, file)
+        file.seek(0)
 
     def remove_file(self):
         if default_storage.exists(self.file_path):
