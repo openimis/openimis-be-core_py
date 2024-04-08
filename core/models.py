@@ -37,20 +37,25 @@ logger = logging.getLogger(__name__)
 # enforce object validation on every save
 @receiver(pre_save)
 def validator(sender, instance, **kwargs):
-    for f in  instance._meta.get_fields():
-        if hasattr(f,'default') and not f.default == models.fields.NOT_PROVIDED and not getattr(instance, f.name):
-            setattr(instance, f.name, f.default() if callable(f.default) else f.default )
-        elif isinstance(f, models.DecimalField) and f.decimal_places and getattr(instance, f.name):
-            setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(getattr(instance, f.name))))
-        elif isinstance(f, models.IntegerField) and isinstance(getattr(instance, f.name), str):
-            setattr(instance, f.name, int(getattr(instance, f.name)))
-        elif isinstance(f, models.DateField) and isinstance(getattr(instance, f.name), str):
-            setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name)[:10], "%Y-%m-%d"))   
-        elif isinstance(f, models.DateTimeField) and isinstance(getattr(instance, f.name), str):
-            setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name), "%Y-%m-%dT%H:%M:%S"))   
+    if issubclass(sender, (HistoryModel, BaseVersionedModel)):
+        try:
+            for f in  instance._meta.get_fields():
+                if hasattr(f,'default') and not f.default == models.fields.NOT_PROVIDED and not getattr(instance, f.name):
+                    setattr(instance, f.name, f.default() if callable(f.default) else f.default )
+                elif isinstance(f, models.DecimalField) and f.decimal_places and getattr(instance, f.name):
+                    setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(getattr(instance, f.name))))
+                elif isinstance(f, models.IntegerField) and isinstance(getattr(instance, f.name), str):
+                    setattr(instance, f.name, int(getattr(instance, f.name)))
+                elif isinstance(f, models.DateField) and isinstance(getattr(instance, f.name), str):
+                    setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name)[:10], "%Y-%m-%d"))   
+                elif isinstance(f, models.DateTimeField) and isinstance(getattr(instance, f.name), str):
+                    setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name), "%Y-%m-%dT%H:%M:%S"))   
 
-    if not issubclass(sender, HistoricalChanges):
-        instance.full_clean(validate_unique=False)
+            
+            instance.full_clean(validate_unique=False)
+        except Exception as e:
+            logger.debug(f"Validation failed with: {e}")
+            return False
 
 class UUIDModel(models.Model):
     """
