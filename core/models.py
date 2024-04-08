@@ -156,15 +156,17 @@ class ModuleConfiguration(UUIDModel):
 
         try:
             now = py_datetime.now()  # can't use core config here...
-            db_configuration = cls.objects.get(
+            qs = cls.objects.filter(
                 Q(is_disabled_until=None) | Q(is_disabled_until__lt=now),
                 layer=layer,
                 module=module
-            )._cfg
-            return {**default, **db_configuration}
-        except ModuleConfiguration.DoesNotExist:
-            logger.info('No %s configuration, using default!' % module)
-            return default
+            ).first()
+            if qs:
+                db_configuration = qs._cfg
+                return {**default, **db_configuration}
+            else:
+                logger.info('No %s configuration, using default!' % module)
+                return default
         except Exception:
             logger.error('Failed to load %s configuration, using default!\n%s: %s' % (
                 module, sys.exc_info()[0].__name__, sys.exc_info()[1]))
