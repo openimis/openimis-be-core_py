@@ -432,6 +432,7 @@ class Query(graphene.ObjectType):
         RoleGQLType,
         orderBy=graphene.List(of_type=graphene.String),
         is_system=graphene.Boolean(),
+        role_right=graphene.Int(),
         system_role_id=graphene.Int(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
@@ -759,6 +760,10 @@ class Query(graphene.ObjectType):
             raise PermissionError("Unauthorized")
         filters = []
         query = Role.objects
+
+        role_right = kwargs.get("role_right", None)
+        if role_right:
+            filters.append(Q(rights__validity_to__isnull=True, rights__right_id=role_right))
 
         text_search = kwargs.get("str")
         if text_search:
