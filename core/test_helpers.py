@@ -4,6 +4,8 @@ from core.services import create_or_update_user_roles
 from location.models import Location
 from  uuid import uuid4
 import json
+import time
+
 def create_test_officer(valid=True, custom_props={}, villages = []):
 
     code = custom_props.pop('code', None)
@@ -148,12 +150,12 @@ def AssertMutation(test_obj,mutaiton_uuid, token ):
       if 'mutationLogs' in content['data']:
         if 'edges' in content['data']['mutationLogs']:
           for e in content['data']['mutationLogs']['edges']:
-            if "node" in e:
-              e = e['node']
-            if 'status' in e and e:
-              AssertMutationEdgeNoError(e)
-              return content
-          else:
+                if "node" in e:
+                    e = e['node']
+                    if e and 'status' in e and e['status'] != 0 :
+                        AssertMutationEdgeNoError(e)
+                        return content
+        else:
             raise ValueError("mutation has no edge field")
     else:  
       raise ValueError("mutation has no data field")
