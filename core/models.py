@@ -49,7 +49,7 @@ def validator(sender, instance, **kwargs):
         elif isinstance(f, models.DateTimeField) and isinstance(getattr(instance, f.name), str):
             setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name), "%Y-%m-%dT%H:%M:%S"))   
 
-    if not issubclass(sender, HistoricalChanges):
+    if issubclass(sender, (HistoryModel, VersionedModel)):
         instance.full_clean(validate_unique=False)
 
 class UUIDModel(models.Model):
