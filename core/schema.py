@@ -173,12 +173,48 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     internal_id = graphene.Field(graphene.String)
 
+
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
         client_mutation_details = graphene.List(graphene.String)
         mutation_extensions = ParsedJSONString(
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
+    @classmethod
+    def coerce_mutation_data(cls, input_data, input_class = None):
+        if input_class is None:
+            input_class=cls.Input
+        coerced_data = {}
+        # Iterate through the input data dictionary
+        for key, value in input_data.items():
+            if hasattr(input_class, key):
+                # Get the field type from the input class
+                field = getattr(input_class, key)
+                # If the field type is List and the value is a list
+                if field.__class__ == graphene.List and isinstance(value, list):
+                    # Check if the list items need coercion
+                    inner_type = field.of_type
+                    coerced_list = []
+                    for item in value:
+                        if isinstance(item, str):
+                            coerced_list.append(inner_type.parse_value(item))
+                        elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
+                            coerced_list.append(cls.coerce_mutation_data(item, input_class = field))
+                        else:
+                            coerced_list.append(item)
+                    coerced_data[key] = coerced_list
+                elif isinstance(value, str):
+                    coerced_data[key] = field.parse_value(value)
+                elif field.__class__ == graphene.types.field.Field:
+                    coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
+                else:
+                    coerced_data[key] = value
+            else:
+                logger.debug(f"key {key} not in {cls.__name__}")
+                coerced_data[key] = value
+           
+        return coerced_data
+        
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
