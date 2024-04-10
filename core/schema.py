@@ -200,8 +200,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         coerced_list.append(item)
                 coerced_data[key] = coerced_list
             elif isinstance(value, str):
-                coerced_data[key] = field.type.parse_value(field_type,value)
-            return coerced_data
+                coerced_data[key] = field.type.parse_value(value)
+            else:
+                coerced_data[key] = value
+        return coerced_data
         
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
