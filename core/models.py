@@ -130,7 +130,7 @@ class ModuleConfiguration(UUIDModel):
     """
     Generic entity to save every modules' configuration (json format)
     """
-    module = models.CharField(max_length=20)
+    module = models.CharField(max_length=80)
     MODULE_LAYERS = [('fe', 'frontend'), ('be', 'backend')]
     layer = models.CharField(
         max_length=2,
