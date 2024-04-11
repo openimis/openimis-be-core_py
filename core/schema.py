@@ -203,10 +203,16 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         else:
                             coerced_list.append(item)
                     coerced_data[key] = coerced_list
-                elif isinstance(value, str):
-                    coerced_data[key] = field.parse_value(value)
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.enum.EnumMeta):
+                    # If the field type is Enum
+                    if hasattr(field.type,value):
+                        coerced_data[key] = str(getattr(field.type,value).value)
+                    else: 
+                        coerced_data[key] = value
                 elif field.__class__ == graphene.types.field.Field:
                     coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
+                elif isinstance(value, (str,int,float)):
+                    coerced_data[key] = field.parse_value(value)
                 else:
                     coerced_data[key] = value
             else:
@@ -299,6 +305,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
                     mutation_data = data.copy()
+                    #mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
