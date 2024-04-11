@@ -1,4 +1,5 @@
 from core.models import Officer, InteractiveUser, User, TechnicalUser, filter_validity
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.services.userServices import create_or_update_officer_villages
 from core.services import create_or_update_user_roles
 from location.models import Location
@@ -122,57 +123,7 @@ def compare_dicts(dict1, dict2):
 
 
 
-def AssertMutation(test_obj,mutaiton_uuid, token ):
-  content= None
-  while True:
-    # wait for the mutation to be done
-    # wait for the mutation to be done
-    response = test_obj.query(f'''
-        {{
-          mutationLogs(clientMutationId: "{mutaiton_uuid}")
-          {{
-          pageInfo {{ hasNextPage, hasPreviousPage, startCursor, endCursor}}
-          edges
-          {{
-            node
-            {{
-                id,status,error,clientMutationId,clientMutationLabel,clientMutationDetails,requestDateTime,jsonExt
-            }}
-          }}
-          }}
-        }}
-
-        ''',
-            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
-    content  = json.loads(response.content)
-    if 'data' in content:
-      
-      if 'mutationLogs' in content['data']:
-        if 'edges' in content['data']['mutationLogs']:
-          for e in content['data']['mutationLogs']['edges']:
-                if "node" in e:
-                    e = e['node']
-                    if e and 'status' in e and e['status'] != 0 :
-                        AssertMutationEdgeNoError(e)
-                        return content
-        else:
-            raise ValueError("mutation has no edge field")
-    else:  
-      raise ValueError("mutation has no data field")
-    time.sleep(1)
-  if AssertMutationNoError(content):
-    return None
+def AssertMutation(test_obj,mutation_uuid, token ):
+    return openIMISGraphQLTestCase().get_mutation_result(mutation_uuid, token)
 
 
-def AssertMutationEdgeNoError(e):
-  
-  if 'error' in e and e['error']:
-    raise ValueError(f"At least one edge of the mutation has error {e['error']}")
-    return False
-  elif 'errors' in e and e['errors']:
-    raise ValueError(f"At least one edge of the mutation has error {e['errors']}")
-    return False
-  elif 'status' in e and e['status'] == 1:
-    raise ValueError("Mutation failed with status 1")
-    return False
-  return True
