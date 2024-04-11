@@ -264,7 +264,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 data=data,
                 user=info.context.user,
                 mutation_module=cls._mutation_module,
-                mutation_class=cls._mutation_class,
+                mutation_class=cls.__name__,
             )
             results.extend(
                 signal_mutation_module_validate[cls._mutation_module].send(
@@ -273,7 +273,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     data=data,
                     user=info.context.user,
                     mutation_module=cls._mutation_module,
-                    mutation_class=cls._mutation_class,
+                    mutation_class=cls.__name__,
                 )
             )
             errors = [err for r in results for err in r[1]]
@@ -288,13 +288,13 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
+                mutation_module=cls._mutation_module, mutation_class=cls.__name__
             )
             logger.debug("[OpenIMISMutation %s] before mutate signal sent", mutation_log.id)
             if core.async_mutations:
                 logger.debug("[OpenIMISMutation %s] Sending async mutation", mutation_log.id)
                 openimis_mutation_async.delay(
-                    mutation_log.id, cls._mutation_module, cls._mutation_class)
+                    mutation_log.id, cls._mutation_module, cls.__name__)
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
@@ -328,7 +328,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug("[OpenIMISMutation %s] send post mutation signal", mutation_log.id)
                 signal_mutation_module_after_mutating[cls._mutation_module].send(
                     sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                    mutation_module=cls._mutation_module, mutation_class=cls._mutation_class,
+                    mutation_module=cls._mutation_module, mutation_class=cls.__name__,
                     error_messages=error_messages
                 )
         except Exception as exc:
