@@ -199,7 +199,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         if isinstance(item, str):
                             coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
-                            coerced_list.append(cls.coerce_mutation_data(item, input_class = field))
+                            coerced_list.append(cls.coerce_mutation_data(item, input_class = inner_type))
                         else:
                             coerced_list.append(item)
                     coerced_data[key] = coerced_list
@@ -209,9 +209,16 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         coerced_data[key] = str(getattr(field.type,value).value)
                     else: 
                         coerced_data[key] = value
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,graphene.types.structures.NonNull)\
+                    and isinstance(field.type._of_type,graphene.types.enum.EnumMeta):
+                    # If the field type is Enum
+                    if hasattr(field.type,value):
+                        coerced_data[key] = str(getattr(field.type._of_type,value).value)
+                    else: 
+                        coerced_data[key] = value
                 elif field.__class__ == graphene.types.field.Field:
                     coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
-                elif isinstance(value, (str,int,float)):
+                elif isinstance(value, str):
                     coerced_data[key] = field.parse_value(value)
                 else:
                     coerced_data[key] = value
