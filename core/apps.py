@@ -91,9 +91,9 @@ class CoreConfig(AppConfig):
             cfg["%s_module" % k], package=cfg["%s_package" % k])
 
     def _configure_calendar(self, cfg):
-        this.shortstrfdate = cfg["shortstrfdate"]
-        this.longstrfdate = cfg["longstrfdate"]
-        this.iso_raw_date = False if cfg["iso_raw_date"] is None else cfg["iso_raw_date"].lower(
+        CoreConfig.shortstrfdate = cfg["shortstrfdate"]
+        CoreConfig.longstrfdate = cfg["longstrfdate"]
+        CoreConfig.iso_raw_date = False if cfg["iso_raw_date"] is None else cfg["iso_raw_date"].lower(
         ) == "true"
         try:
             this.calendar = self._import_module(cfg, "calendar")
@@ -105,23 +105,23 @@ class CoreConfig(AppConfig):
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
     def _configure_username_code_length(self, cfg):
-        this.username_code_length = int(cfg["username_code_length"])
+        CoreConfig.username_code_length = int(cfg["username_code_length"])
 
     def _configure_user_username_and_code_length_limit(self, cfg):
-        this.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
+        CoreConfig.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
 
     def _configure_majority(self, cfg):
-        this.age_of_majority = int(cfg["age_of_majority"])
+        CoreConfig.age_of_majority = int(cfg["age_of_majority"])
 
     def _configure_currency(self, cfg):
-        this.currency = str(cfg["currency"])
+        CoreConfig.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
         if bool(os.environ.get('NO_DATABASE', False)):
             logger.info('env NO_DATABASE set to True: no user auto provisioning possible!')
             return
         group = cfg["auto_provisioning_user_group"]
-        this.auto_provisioning_user_group = group
+        CoreConfig.auto_provisioning_user_group = group
         try:
             from .models import Group
             Group.objects.get(name=group)
