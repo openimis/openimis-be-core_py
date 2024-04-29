@@ -150,16 +150,16 @@ class OpenIMISJSONEncoder(DjangoJSONEncoder):
 
 _mutation_signal_params = ["user", "mutation_module",
                            "mutation_class", "mutation_log_id", "data"]
-signal_mutation = dispatch.Signal(providing_args=_mutation_signal_params)
+signal_mutation = dispatch.Signal(_mutation_signal_params)
 signal_mutation_module_validate = {}
 signal_mutation_module_before_mutating = {}
 signal_mutation_module_after_mutating = {}
 
 for module in sys.modules:
-    signal_mutation_module_validate[module] = dispatch.Signal(providing_args=_mutation_signal_params)
-    signal_mutation_module_before_mutating[module] = dispatch.Signal(providing_args=_mutation_signal_params)
+    signal_mutation_module_validate[module] = dispatch.Signal(_mutation_signal_params)
+    signal_mutation_module_before_mutating[module] = dispatch.Signal(_mutation_signal_params)
     signal_mutation_module_after_mutating[module] = \
-        dispatch.Signal(providing_args=_mutation_signal_params + ["error_messages"])
+        dispatch.Signal(_mutation_signal_params + ["error_messages"])
 
 
 class OpenIMISMutation(graphene.relay.ClientIDMutation):
@@ -173,12 +173,61 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     internal_id = graphene.Field(graphene.String)
 
+
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
         client_mutation_details = graphene.List(graphene.String)
         mutation_extensions = ParsedJSONString(
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
+    @classmethod
+    def coerce_mutation_data(cls, input_data, input_class = None):
+        if input_class is None:
+            input_class=cls.Input
+        coerced_data = {}
+        # Iterate through the input data dictionary
+        for key, value in input_data.items():
+            if hasattr(input_class, key):
+                # Get the field type from the input class
+                field = getattr(input_class, key)
+                # If the field type is List and the value is a list
+                if field.__class__ == graphene.List and isinstance(value, list):
+                    # Check if the list items need coercion
+                    inner_type = field.of_type
+                    coerced_list = []
+                    for item in value:
+                        if isinstance(item, str):
+                            coerced_list.append(inner_type.parse_value(item))
+                        elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
+                            coerced_list.append(cls.coerce_mutation_data(item, input_class = inner_type))
+                        else:
+                            coerced_list.append(item)
+                    coerced_data[key] = coerced_list
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.enum.EnumMeta):
+                    # If the field type is Enum
+                    if hasattr(field.type,value):
+                        coerced_data[key] = str(getattr(field.type,value).value)
+                    else: 
+                        coerced_data[key] = value
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,graphene.types.structures.NonNull)\
+                    and isinstance(field.type._of_type,graphene.types.enum.EnumMeta):
+                    # If the field type is Enum
+                    if hasattr(field.type,value):
+                        coerced_data[key] = str(getattr(field.type._of_type,value).value)
+                    else: 
+                        coerced_data[key] = value
+                elif field.__class__ == graphene.types.field.Field:
+                    coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
+                elif isinstance(value, str):
+                    coerced_data[key] = field.parse_value(value)
+                else:
+                    coerced_data[key] = value
+            else:
+                logger.debug(f"key {key} not in {cls.__name__}")
+                coerced_data[key] = value
+           
+        return coerced_data
+        
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
@@ -228,7 +277,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 data=data,
                 user=info.context.user,
                 mutation_module=cls._mutation_module,
-                mutation_class=cls._mutation_class,
+                mutation_class=cls.__name__,
             )
             results.extend(
                 signal_mutation_module_validate[cls._mutation_module].send(
@@ -237,7 +286,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     data=data,
                     user=info.context.user,
                     mutation_module=cls._mutation_module,
-                    mutation_class=cls._mutation_class,
+                    mutation_class=cls.__name__,
                 )
             )
             errors = [err for r in results for err in r[1]]
@@ -252,17 +301,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                mutation_module=cls._mutation_module, mutation_class=cls._mutation_class
+                mutation_module=cls._mutation_module, mutation_class=cls.__name__
             )
             logger.debug("[OpenIMISMutation %s] before mutate signal sent", mutation_log.id)
             if core.async_mutations:
                 logger.debug("[OpenIMISMutation %s] Sending async mutation", mutation_log.id)
                 openimis_mutation_async.delay(
-                    mutation_log.id, cls._mutation_module, cls._mutation_class)
+                    mutation_log.id, cls._mutation_module, cls.__name__)
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
                     mutation_data = data.copy()
+                    #mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
@@ -292,7 +342,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug("[OpenIMISMutation %s] send post mutation signal", mutation_log.id)
                 signal_mutation_module_after_mutating[cls._mutation_module].send(
                     sender=cls, mutation_log_id=mutation_log.id, data=data, user=info.context.user,
-                    mutation_module=cls._mutation_module, mutation_class=cls._mutation_class,
+                    mutation_module=cls._mutation_module, mutation_class=cls.__name__,
                     error_messages=error_messages
                 )
         except Exception as exc:
@@ -432,6 +482,7 @@ class Query(graphene.ObjectType):
         RoleGQLType,
         orderBy=graphene.List(of_type=graphene.String),
         is_system=graphene.Boolean(),
+        role_right=graphene.Int(),
         system_role_id=graphene.Int(),
         show_history=graphene.Boolean(),
         client_mutation_id=graphene.String(),
@@ -661,8 +712,8 @@ class Query(graphene.ObjectType):
 
         show_deleted = kwargs.get('showDeleted', False)
         if not show_deleted and not kwargs.get('id', None):
-            
-            #active_users_ids = [user.id for user in user_query if user.is_active]
+
+            # active_users_ids = [user.id for user in user_query if user.is_active]
             user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user__')))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
@@ -760,6 +811,10 @@ class Query(graphene.ObjectType):
         filters = []
         query = Role.objects
 
+        role_right = kwargs.get("role_right", None)
+        if role_right:
+            filters.append(Q(rights__validity_to__isnull=True, rights__right_id=role_right))
+
         text_search = kwargs.get("str")
         if text_search:
             filters.append(Q(name__icontains=text_search))
@@ -840,7 +895,8 @@ class Query(graphene.ObjectType):
         if type(user) is AnonymousUser or not user.id:
             raise PermissionError("Unauthorized")
 
-        module_name, object_type_name, uuid_of_object, additional_params = Query._obtain_params_from_custom_filter_graphql_query(**kwargs)
+        module_name, object_type_name, uuid_of_object, additional_params = Query._obtain_params_from_custom_filter_graphql_query(
+            **kwargs)
         custom_filter_list_output = Query._obtain_definition_of_custom_filter_from_hub(
             module_name, object_type_name, uuid_of_object, additional_params
         )
@@ -1340,6 +1396,9 @@ def update_or_create_user(data, user):
     if len(username) > CoreConfig.username_code_length:
         raise ValidationError(_("mutation.user_username_too_long"))
 
+    if not CoreConfig.username_changeable and current_user.username != username:
+        raise ValidationError(_("mutation.user_username_not_changeable"))
+
     if "client_mutation_id" in data:
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
@@ -1518,8 +1577,11 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         if username:
             # get_or_create will auto-provision from tblUsers if applicable
             user = User.objects.get_or_create(username=username)
-            if user:
+            if not user:
                 logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+            else:
+                kwargs[User.USERNAME_FIELD] = user[0].username
+
         return super().mutate(cls, info, **kwargs)
 
 

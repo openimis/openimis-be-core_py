@@ -4,7 +4,7 @@ import logging
 from django.db import connection
 from django.test.client import RequestFactory
 from django.apps import apps
-
+import datetime
 import core
 from core.models import InteractiveUser, Officer, UserRole
 from core.services import (
@@ -281,7 +281,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(officer.location_id, 1)
         self.assertEquals(officer.substitution_officer_id, 1)
         self.assertEquals(officer.address, "Multi\nline\naddress")
-        self.assertEquals(officer.works_to, "2025-01-01")
+        self.assertEquals(str(officer.works_to.date()), "2025-01-01")
         self.assertEquals(
             list(
                 OfficerVillage.objects.filter(validity_to__isnull=True, officer=officer)
@@ -328,7 +328,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(officer.location_id, 1)
         self.assertEquals(officer.substitution_officer_id, 1)
         self.assertEquals(officer.address, "Multi\nline\naddress")
-        self.assertEquals(officer.works_to, "2025-01-01")
+        self.assertEquals(str(officer.works_to.date()), "2025-01-01")
         self.assertEquals(
             list(
                 OfficerVillage.objects.filter(validity_to__isnull=True, officer=officer)
@@ -352,7 +352,7 @@ class UserServicesTest(TestCase):
                 location_id=17,
                 village_ids=[22],
                 substitution_officer_id=None,
-                works_to="2025-05-05",
+                works_to=datetime.date(2025,5,5),
                 phone_communication=False,
                 address="updated address",
             ),
@@ -370,7 +370,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(officer2.location_id, 17)
         self.assertIsNone(officer2.substitution_officer_id)
         self.assertEquals(officer2.address, "updated address")
-        self.assertEquals(officer2.works_to, "2025-05-05")
+        self.assertEquals(str(officer2.works_to.date()), "2025-05-05")
         self.assertEquals(
             list(
                 OfficerVillage.objects.filter(

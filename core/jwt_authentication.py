@@ -29,12 +29,14 @@ class JWTAuthentication(BaseAuthentication):
         try:
             user = get_user_by_token(token)
         except (jwt.PyJWTError, JSONWebTokenError) as exc:
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS") from exc
+        except Exception as exc:
             raise exceptions.AuthenticationFailed(str(exc)) from exc
-
-        if CoreConfig.is_valid_health_facility_contract_required:
-            if (hasattr(user, 'health_facility') and hasattr(user.health_facility, 'contract_end_date') and
-                    user.health_facility.contract_end_date > date.today()):
-                raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
+        else:
+            if CoreConfig.is_valid_health_facility_contract_required:
+                if not (hasattr(user, 'health_facility') and hasattr(user.health_facility, 'contract_end_date') and
+                        user.health_facility.contract_end_date > date.today()):
+                    raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
 
         return user, None
 

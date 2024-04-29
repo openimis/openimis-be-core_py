@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, date, datetime
 
 __all__ = ["is_midnight", "datetimedelta"]
 
@@ -102,18 +102,21 @@ class datetimedelta(object):
         return self.add_to_date(datetime)
 
     def __add__(self, other):
-        if isinstance(other, datetimedelta):
+        if isinstance(other, (datetimedelta)):
             return datetimedelta(years=self.years + other.years,
                                  months=self.months + other.months,
                                  days=self.days + other.days,
                                  seconds=self.seconds + other.seconds,
                                  microseconds=self.microseconds + other.microseconds)
+        elif isinstance(other, (date, datetime)):
+            return self.add_to_date( other)
         return NotImplemented
 
-    __radd__ = __add__
+    def __radd__(self, other):
+        return self.__add__(other)
 
     def __sub__(self, other):
-        if isinstance(other, datetimedelta):
+        if isinstance(other, (datetimedelta)):
             return datetimedelta(years=self.years - other.years,
                                  months=self.months - other.months,
                                  days=self.days - other.days,
@@ -122,9 +125,11 @@ class datetimedelta(object):
         return NotImplemented
 
     def __rsub__(self, other):
-        if isinstance(other, datetimedelta):
-            return -self + other
-        return NotImplemented
+        if isinstance(other, (date, datetime)):
+            sub = - self
+            return sub.__add__(other)
+        return self.__sub__(other)
+
 
     def __neg__(self):
         return datetimedelta(years=-self.years,

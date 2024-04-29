@@ -1,22 +1,25 @@
 from django.db.models import Lookup, JSONField
 from django.db.models.lookups import Contains
+from itertools import chain
+
+from django.conf import settings
 
 
-@JSONField.register_lookup
+
 class JsonContains(Lookup):
-    lookup_name = 'jsoncontains'
+    lookup_name = 'contains'
 
     sql_server_json_key_prefix = '$'
     sql_server_nested_json_separator = '.'
     BASE_SQL = '(JSON_VALUE(cast({} as nvarchar(max)), %s)=%s)'
 
-    def as_sql(self, qn, connection):
-        lhs, lhs_params = self.process_lhs(qn, connection)
-        rhs, rhs_params = self.process_rhs(qn, connection)
-
-        rhs_params[0].prepare(connection)
-        params = self._build_sql_params(lhs, rhs_params[0].adapted)
-        sql_statement = ' AND '.join([self.BASE_SQL.format(lhs) for _ in range(0, len(rhs_params[0].adapted))])
+    def as_sql(self, compiler, connection):
+        
+        lhs, lhs_params = self.process_lhs(compiler, connection)
+        rhs, rhs_params = self.process_rhs(compiler, connection)
+        # have the json section and value of the json section in params
+        params = list(chain.from_iterable([[f"'{list(rhs_params[0].keys())[_]}'", f"'{rhs_params[0][list(rhs_params[0].keys())[_]][0]}'"] for _ in range(0, len(rhs_params[0]))]))
+        sql_statement = ' AND '.join([self.BASE_SQL.format(lhs)    for _ in range(0, len(rhs_params[0]))])
         return sql_statement, params
 
     def _prepare_dict_value(self, json_ext):
@@ -41,9 +44,8 @@ class JsonContains(Lookup):
         return conditions
 
 
-@JSONField.register_lookup
 class JsonContainsKey(Contains):
-    lookup_name = 'jsoncontainskey'
+    lookup_name = 'containskey'
 
     def __init__(self, lhs, rhs):
         rhs = f'"{rhs}":'
@@ -51,3 +53,9 @@ class JsonContainsKey(Contains):
 
     def get_rhs_op(self, connection, rhs):
         return connection.operators['contains'] % rhs
+    
+    
+if settings.MSSQL:
+    JSONField.register_lookup(JsonContains)
+    JSONField.register_lookup(JsonContainsKey)
+

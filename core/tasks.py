@@ -31,11 +31,15 @@ def openimis_mutation_async(mutation_id, module, class_name):
                 translation.activate(lang.code)
             else:
                 translation.activate(lang)
-        error_messages = mutation_class.async_mutate(mutation.user, **json.loads(mutation.json_content))
+        error_messages = mutation_class.async_mutate(mutation.user, **mutation_class.coerce_mutation_data(json.loads(mutation.json_content)))
         if not error_messages:
             mutation.mark_as_successful()
         else:
-            mutation.mark_as_failed(json.dumps(error_messages))
+            logger.debug(f"error :{error_messages}")
+            try:
+                mutation.mark_as_failed(json.dumps(error_messages))
+            except:
+                mutation.mark_as_failed(error_messages)
         return "OK"
     except Exception as exc:
         if mutation:
