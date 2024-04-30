@@ -7,6 +7,6 @@ class ObjectExistsValidationMixin:
 
     @classmethod
     def validate_object_exists(cls, id_):
-        existing = cls.OBJECT_TYPE.objects.filter(id=id_).exists()
+        existing = cls.OBJECT_TYPE.objects.filter(id=id_).first()
         if not existing:
             raise ValidationError(cls.INVALID_UPDATE_ID_MSG % {'id': id_, 'model': str(cls.OBJECT_TYPE)})
