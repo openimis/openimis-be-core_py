@@ -91,7 +91,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         content = json.loads(response.content)
         
         if follow:
-            return self.get_mutation_result(content['data']['updateProduct']['clientMutationId'],token)
+            return self.get_mutation_result(content['data'][mutation_type]['clientMutationId'],token)
         else:
             return json.loads(response.content)
         
@@ -116,7 +116,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         self.assertResponseNoErrors(response)
         content  =json.loads(response.content)
         if follow:
-            return self.get_mutation_result(content['data']['createBenefitPlan']['internalId'],token, internal = True)
+            return self.get_mutation_result(content['data'][mutation_type]['internalId'],token, internal = True)
         else:
             return content
 
