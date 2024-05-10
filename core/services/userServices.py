@@ -228,6 +228,14 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
 
 
 def change_user_password(logged_user, username_to_update=None, old_password=None, new_password=None):
+    print("-------------------------------")
+    print("-------------------------------")
+    print("-------------------------------")
+    print(old_password)
+    print(new_password)
+    print("-------------------------------")
+    print("-------------------------------")
+    print("-------------------------------")
     if username_to_update and username_to_update != logged_user.username:
         if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
             raise PermissionDenied("unauthorized")
