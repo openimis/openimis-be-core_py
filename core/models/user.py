@@ -20,6 +20,7 @@ from .base import *
 from .versioned_model import *
 
 logger = logging.getLogger(__name__)
+from rest_framework import exceptions
 
 
 class UserManager(BaseUserManager):
@@ -51,8 +52,8 @@ class UserManager(BaseUserManager):
             i_user = InteractiveUser.objects.get(
                 login_name=kwargs['username'],
                 *filter_validity())
-        except InteractiveUser.DoesNotExist:
-            raise PermissionDenied
+        except InteractiveUser.DoesNotExist as e:
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS") from e
         user = self._create_core_user(**kwargs)
         user.i_user = i_user
         user.save()
