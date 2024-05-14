@@ -9,6 +9,7 @@ import graphene
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
+from rest_framework import exceptions
 
 from functools import reduce
 from django.utils.translation import gettext_lazy
@@ -29,6 +30,7 @@ from core.tasks import openimis_mutation_async
 from core import filter_validity
 from django import dispatch
 from django.conf import settings
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
@@ -1577,9 +1579,18 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
 
     @classmethod
     def mutate(cls, root, info, **kwargs):
+
         username = kwargs.get("username")
+        password = kwargs.get("password")
         request = info.context
+
         check_lockout(request)
+
+        user = authenticate(request, username=username, password=password)
+        if not user:
+            logger.debug(f"Authentication failed for username: {username}")
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+
         # consider auto-provisioning
         if username:
             # get_or_create will auto-provision from tblUsers if applicable
@@ -1590,6 +1601,7 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
                 kwargs[User.USERNAME_FIELD] = user[0].username
 
         return super().mutate(cls, info, **kwargs)
+
 
 
 class Mutation(graphene.ObjectType):
