@@ -90,6 +90,12 @@ class CoreConfig(AppConfig):
     fields_controls_eo = {}
     secondary_calendar = None
 
+    password_min_length = settings.PASSWORD_MIN_LENGTH
+    password_uppercase = settings.PASSWORD_UPPERCASE
+    password_lowercase = settings.PASSWORD_LOWERCASE
+    password_digits = settings.PASSWORD_DIGITS
+    password_symbols = settings.PASSWORD_SYMBOLS
+
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
                     (cfg["%s_module" % k], cfg["%s_package" % k]))
