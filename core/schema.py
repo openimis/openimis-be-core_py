@@ -9,8 +9,11 @@ import graphene
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
+from rest_framework import exceptions
+
 from functools import reduce
 from django.utils.translation import gettext_lazy
+from graphql.error import GraphQLError
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 import graphene_django_optimizer as gql_optimizer
@@ -27,6 +30,7 @@ from core.tasks import openimis_mutation_async
 from core import filter_validity
 from django import dispatch
 from django.conf import settings
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
@@ -35,9 +39,12 @@ from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.utils import translation
+from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
+from axes.attempts import get_user_attempts
+from axes.handlers.database import AxesDatabaseHandler
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
@@ -1572,7 +1579,18 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
 
     @classmethod
     def mutate(cls, root, info, **kwargs):
+
         username = kwargs.get("username")
+        password = kwargs.get("password")
+        request = info.context
+
+        check_lockout(request)
+
+        user = authenticate(request, username=username, password=password)
+        if not user:
+            logger.debug(f"Authentication failed for username: {username}")
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+
         # consider auto-provisioning
         if username:
             # get_or_create will auto-provision from tblUsers if applicable
@@ -1583,6 +1601,7 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
                 kwargs[User.USERNAME_FIELD] = user[0].username
 
         return super().mutate(cls, info, **kwargs)
+
 
 
 class Mutation(graphene.ObjectType):
@@ -1641,3 +1660,26 @@ def on_user_mutation(sender, **kwargs):
 def bind_signals():
     signal_mutation_module_validate["core"].connect(on_role_mutation)
     signal_mutation_module_validate["core"].connect(on_user_mutation)
+
+
+
+def check_lockout(request):
+    attempts = get_user_attempts(request)
+    if attempts:
+        from django.db.models import Max
+        last_attempt_time = max(
+            (attempt.aggregate(Max('attempt_time'))['attempt_time__max'] for attempt in attempts if attempt.exists()),
+            default=None
+        )
+
+        if last_attempt_time:
+            handler = AxesDatabaseHandler()
+            failure_count = handler.get_failures(request)
+            if failure_count >= settings.AXES_FAILURE_LIMIT:
+                # Calculate the remaining time of the lockout
+                remaining_lockout_delta = settings.AXES_COOLOFF_TIME - (now() - last_attempt_time)
+                remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
+                raise GraphQLError(
+                    f"Too many failed login attempts."
+                    f"Try again in {remaining_minutes} minutes."
+                )
