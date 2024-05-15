@@ -111,7 +111,7 @@ class CoreConfig(AppConfig):
         CoreConfig.user_username_and_code_length_limit = int(cfg["user_username_and_code_length_limit"])
 
     def _configure_majority(self, cfg):
-        CoreConfig.age_of_majority = int(cfg["age_of_majority"])
+        this.age_of_majority = int(cfg["age_of_majority"])
 
     def _configure_currency(self, cfg):
         CoreConfig.currency = str(cfg["currency"])
