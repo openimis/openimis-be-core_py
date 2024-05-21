@@ -253,8 +253,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else None,
         )
         logger.debug(
-            "OpenIMISMutation: saved as %s, label: %s",
+            "OpenIMISMutation: saved as %s, type: %s, label: %s",
             mutation_log.id,
+            cls.__name__,
             mutation_log.client_mutation_label,
         )
         if (
@@ -311,8 +312,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
-                    mutation_data = data.copy()
-                    #mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
+                    #mutation_data = data.copy()
+                    mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
