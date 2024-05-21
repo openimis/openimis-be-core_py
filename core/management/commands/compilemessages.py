@@ -7,6 +7,7 @@ from django.core.management import CommandError
 from django.core.management.commands import compilemessages
 from django.core.management.utils import is_ignored_path, find_command
 
+from openimisconf import load_openimis_conf
 
 class Command(compilemessages.Command):
     def handle(self, **options):
@@ -76,7 +77,3 @@ class Command(compilemessages.Command):
             raise CommandError('compilemessages generated one or more errors.')
 
 
-def load_openimis_conf():
-    conf_file_path = "../openimis.json"
-    with open(conf_file_path) as conf_file:
-        return json.load(conf_file)
