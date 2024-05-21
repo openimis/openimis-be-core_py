@@ -372,7 +372,7 @@ def validate_json_schema(schema):
 
 
 def validate_password(password: str) -> None:
-    if os.environ.get("MODE", "DEV") == "PROD":
+    if os.environ.get("MODE", "PROD") == "DEV":
         return
     schema = PasswordValidator()
     schema.min(settings.PASSWORD_MIN_LENGTH)
@@ -389,6 +389,7 @@ def validate_password(password: str) -> None:
 
     if not schema.validate(password):
         raise GraphQLError(
+            f"Mode: {os.environ.get('MODE', 'PROD')}"
             f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long, "
             f"have at least {settings.PASSWORD_UPPERCASE} uppercase letter(s), "
             f"{settings.PASSWORD_LOWERCASE} lowercase letter(s), "
