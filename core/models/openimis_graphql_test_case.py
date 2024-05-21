@@ -97,8 +97,10 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         content = json.loads(response.content)
 
         if follow:
+            mutation_type = list(content['data'].keys())[0]
             return self.get_mutation_result(
-                content["data"]["updateProduct"]["clientMutationId"], token
+                content['data'][mutation_type]['clientMutationId'],
+                token
             )
         else:
             return json.loads(response.content)
