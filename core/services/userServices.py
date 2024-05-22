@@ -249,7 +249,6 @@ def change_user_password(logged_user, username_to_update=None, old_password=None
 
 def set_user_password(request, username, token, password):
     user = User.objects.get(username=username)
-
     if default_token_generator.check_token(user, token):
         user.set_password(password)
         user.save()

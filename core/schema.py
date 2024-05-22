@@ -34,7 +34,7 @@ from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -45,6 +45,7 @@ from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
 from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
+from axes.models import AccessAttempt
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
@@ -1598,9 +1599,18 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, username, token, new_password, **input):
+        request = info.context
+        log_reset_password_attempt(request, username)
         try:
+            check_lockout(request)
             set_user_password(info.context, username, token, new_password)
             return SetPasswordMutation(success=True)
+        except GraphQLError as gql_error:
+            logger.exception(gql_error)
+            return SetPasswordMutation(
+                success=False,
+                error=gql_error.message,
+            )
         except Exception as exc:
             logger.exception(exc)
             return SetPasswordMutation(
@@ -1682,6 +1692,32 @@ def bind_signals():
     signal_mutation_module_validate["core"].connect(on_user_mutation)
 
 
+def log_reset_password_attempt(request, username):
+    ip_address = request.axes_ip_address
+    user_agent = request.axes_user_agent
+    attempt_time = request.axes_attempt_time
+    attempt_data = {
+        'user_agent': user_agent,
+        'ip_address': ip_address,
+        'username': username,
+        'attempt_time': attempt_time,
+        'get_data': request.GET.dict(),
+        'post_data': request.POST.dict(),
+        'failures_since_start': 1,
+        'path_info': request.path,
+    }
+
+    try:
+        with transaction.atomic():
+            AccessAttempt.objects.create(**attempt_data)
+    except IntegrityError:
+        attempt = AccessAttempt.objects.get(user_agent=user_agent, ip_address=ip_address, username=username)
+        attempt.failures_since_start += 1
+        attempt.attempt_time = attempt_time
+        attempt.get_data = attempt_data['get_data']
+        attempt.post_data = attempt_data['post_data']
+        attempt.save()
+
 
 def check_lockout(request):
     attempts = get_user_attempts(request)
@@ -1700,6 +1736,6 @@ def check_lockout(request):
                 remaining_lockout_delta = settings.AXES_COOLOFF_TIME - (now() - last_attempt_time)
                 remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
                 raise GraphQLError(
-                    f"Too many failed login attempts."
+                    f"Too many failed attempts."
                     f"Try again in {remaining_minutes} minutes."
                 )
