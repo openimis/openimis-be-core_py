@@ -6,6 +6,10 @@ from django.dispatch import receiver
 from django.db.models.signals import pre_save
 from django.db import models
 from datetime import timedelta, datetime as py_datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class BaseModelValidation(ABC):
     """
@@ -38,9 +42,9 @@ class BaseModelValidation(ABC):
 @receiver(pre_save)
 def validator(sender, instance, **kwargs):
     if issubclass(sender, (HistoryModel, VersionedModel)):
-        for f in  instance._meta.get_fields():
+        for f in instance._meta.get_fields():
             if hasattr(f,'default') and not f.default == models.fields.NOT_PROVIDED and not getattr(instance, f.name):
-                setattr(instance, f.name, f.default() if callable(f.default) else f.default )
+                setattr(instance, f.name, f.default() if callable(f.default) else f.default)
             elif isinstance(f, models.DecimalField) and f.decimal_places and getattr(instance, f.name):
                 setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(getattr(instance, f.name))))
             elif isinstance(f, models.IntegerField) and isinstance(getattr(instance, f.name), str):
@@ -50,5 +54,9 @@ def validator(sender, instance, **kwargs):
             elif isinstance(f, models.DateTimeField) and isinstance(getattr(instance, f.name), str):
                 setattr(instance, f.name, py_datetime.strptime(getattr(instance, f.name), "%Y-%m-%dT%H:%M:%S"))   
 
-    
-        instance.full_clean(validate_unique=False)
+        try:
+            instance.full_clean(validate_unique=False)
+        except Exception as e:
+            logger.error(
+                f"Object {instance.__class__.__name__} is not respecting the mandatory fields: {e}"
+            )
