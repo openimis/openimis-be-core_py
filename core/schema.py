@@ -599,10 +599,24 @@ class Query(graphene.ObjectType):
 
     username_length = graphene.Int()
 
+    password_policy = graphene.Field(
+        graphene.JSONString,
+        description="Returns the password policy configuration."
+    )
+
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         return CoreConfig.username_code_length
+
+    def resolve_password_policy(self, info, **kwargs):
+        return {
+            "min_length": CoreConfig.password_min_length,
+            "require_upper_case": CoreConfig.password_uppercase,
+            "require_lower_case": CoreConfig.password_lowercase,
+            "require_numbers": CoreConfig.password_digits,
+            "require_special_characters": CoreConfig.password_symbols,
+        }
 
     def resolve_validate_role_name(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
