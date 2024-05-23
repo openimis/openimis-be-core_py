@@ -392,11 +392,7 @@ class CustomPasswordValidator:
         if os.environ.get("MODE", "DEV") != "PROD":
             if not self.schema.validate(password):
                 raise ValidationError(
-                    f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long, "
-                    f"have at least {settings.PASSWORD_UPPERCASE} uppercase letter(s), "
-                    f"{settings.PASSWORD_LOWERCASE} lowercase letter(s), "
-                    f"{settings.PASSWORD_DIGITS} number(s), and "
-                    f"{settings.PASSWORD_SYMBOLS} special character(s)."
+                    self.get_help_text()
                 )
             zxcvbn_result = zxcvbn(password)
             if zxcvbn_result['score'] < 3:
