@@ -40,7 +40,6 @@ __all__ = [
     "ExtendedConnection",
     "get_scheduler_method_ref",
     "ExtendedRelayConnection",
-    "validate_password"
 ]
 
 
