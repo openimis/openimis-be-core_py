@@ -181,9 +181,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
-    def coerce_mutation_data(cls, input_data, input_class = None):
+    def coerce_mutation_data(cls, input_data, input_class=None):
         if input_class is None:
-            input_class=cls.Input
+            input_class = cls.Input
         coerced_data = {}
         # Iterate through the input data dictionary
         for key, value in input_data.items():
@@ -199,28 +199,28 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         if isinstance(item, str):
                             coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
-                            coerced_list.append(cls.coerce_mutation_data(item, input_class = field))
+                            coerced_list.append(cls.coerce_mutation_data(item, input_class=field))
                         else:
                             coerced_list.append(item)
                     coerced_data[key] = coerced_list
                 elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.enum.EnumMeta):
                     # If the field type is Enum
-                    if hasattr(field.type,value):
-                        coerced_data[key] = str(getattr(field.type,value).value)
-                    else: 
+                    if hasattr(field.type, value):
+                        coerced_data[key] = str(getattr(field.type, value).value)
+                    else:
                         coerced_data[key] = value
                 elif field.__class__ == graphene.types.field.Field:
-                    coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
-                elif isinstance(value, (str,int,float)):
+                    coerced_data[key] = cls.coerce_mutation_data(value, input_class=field._type)
+                elif isinstance(value, (str, int, float)):
                     coerced_data[key] = field.parse_value(value)
                 else:
                     coerced_data[key] = value
             else:
                 logger.debug(f"key {key} not in {cls.__name__}")
                 coerced_data[key] = value
-           
+
         return coerced_data
-        
+
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
@@ -305,7 +305,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
                     mutation_data = data.copy()
-                    #mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
+                    # mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy()
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
@@ -407,7 +407,17 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             connection, iterable, info, args
         )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
+        filter = filterset_class(data=filter_kwargs, queryset=qs, request=info.context)
+
+        # The condition below will throw an exception if the filter class has an error
+        # Without that it will ignore the filter and display all the records
+        if filter.errors:
+            raise Exception(filter.errors)
+        else:
+            qs = filter.qs
+
+
 
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
