@@ -12,6 +12,7 @@ from django.db import models
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 import core
+from core.utils import validate_password
 #from core.datetimes.ad_datetime import datetime as py_datetime
 from django.conf import settings
 
@@ -20,6 +21,7 @@ from .base import *
 from .versioned_model import *
 
 logger = logging.getLogger(__name__)
+from rest_framework import exceptions
 
 
 class UserManager(BaseUserManager):
@@ -51,8 +53,8 @@ class UserManager(BaseUserManager):
             i_user = InteractiveUser.objects.get(
                 login_name=kwargs['username'],
                 *filter_validity())
-        except InteractiveUser.DoesNotExist:
-            raise PermissionDenied
+        except InteractiveUser.DoesNotExist as e:
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS") from e
         user = self._create_core_user(**kwargs)
         user.i_user = i_user
         user.save()
@@ -294,7 +296,7 @@ class InteractiveUser(VersionedModel):
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
-
+        validate_password(raw_password)
         self.private_key = token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
@@ -475,12 +477,17 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     def __getattr__(self, name):
         if name == '_u':
             raise ValueError('wrapper has not been initialised')
-        if name == '__name__':
+        elif name == '__name__':
             return self.username
-        if name == 'get_session_auth_hash':
+        elif name == 'get_session_auth_hash':
             return False
-        return getattr(self._u, name)
-
+        elif hasattr(self._u, name):
+            return getattr(self._u, name)
+        elif name in self.__dict__:
+            return self.__dict__[name]
+        else:
+            raise AttributeError(f"User has no attribute {name}")
+        
     def __call__(self, *args, **kwargs):
         # if not self._u:
         #     raise ValueError('wrapper has not been initialised')

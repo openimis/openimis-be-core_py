@@ -22,8 +22,6 @@ class JWTAuthentication(BaseAuthentication):
 
     def authenticate(self, request):
         token = get_credentials(request)
-        if not token:
-            return
 
         # Do not pass context to avoid to try to get user from request to get his private key.
         try:

@@ -4,6 +4,9 @@ from importlib import import_module
 from typing import Type, Dict, Any
 
 import jsonschema
+from password_validator import PasswordValidator
+from zxcvbn import zxcvbn
+from graphql import GraphQLError
 
 import core
 import ast
@@ -14,6 +17,7 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 import logging
 from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.core.files.storage import default_storage
 
@@ -34,6 +38,7 @@ __all__ = [
     "ExtendedConnection",
     "get_scheduler_method_ref",
     "ExtendedRelayConnection",
+    "validate_password"
 ]
 
 
@@ -52,11 +57,11 @@ def full_class_name(o):
     module = o.__class__.__module__
     if module is None or module == str.__class__.__module__:
         return o.__class__.__name__
-    return module + '.' + o.__class__.__name__
+    return module + "." + o.__class__.__name__
 
 
 def comparable(cls):
-    """ Class decorator providing generic comparison functionality """
+    """Class decorator providing generic comparison functionality"""
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
@@ -69,19 +74,20 @@ def comparable(cls):
     return cls
 
 
-def filter_validity(arg="validity", prefix='', **kwargs):
+def filter_validity(arg="validity", prefix="", **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
-        return [
-            Q(**{f'{prefix}validity_to__isnull':True})
-        ]
+        return [Q(**{f"{prefix}validity_to__isnull": True})]
     return [
-        Q(**{f'{prefix}validity_from__lte':validity}),
-        Q(**{f'{prefix}validity_to__isnull':True}) | Q(**{f'{prefix}validity_to__gte':validity})
+        Q(**{f"{prefix}validity_from__lte": validity}),
+        Q(**{f"{prefix}validity_to__isnull": True})
+        | Q(**{f"{prefix}validity_to__gte": validity}),
     ]
 
 
-def filter_validity_business_model(arg='dateValidFrom__Gte', arg2='dateValidTo__Lte', **kwargs):
+def filter_validity_business_model(
+    arg="dateValidFrom__Gte", arg2="dateValidTo__Lte", **kwargs
+):
     date_valid_from = kwargs.get(arg)
     date_valid_to = kwargs.get(arg2)
     # default scenario
@@ -112,18 +118,18 @@ def __place_the_filters(date_start, date_end):
     if not date_end:
         return (
             Q(date_valid_from__isnull=False),
-            Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start)
+            Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start),
         )
     return (
         Q(date_valid_from__lte=date_end),
-        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start)
+        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=date_start),
     )
 
 
 def append_validity_filter(**kwargs):
-    default_filter = kwargs.get('applyDefaultValidityFilter', False)
-    date_valid_from = kwargs.get('dateValidFrom__Gte', None)
-    date_valid_to = kwargs.get('dateValidTo__Lte', None)
+    default_filter = kwargs.get("applyDefaultValidityFilter", False)
+    date_valid_from = kwargs.get("dateValidFrom__Gte", None)
+    date_valid_to = kwargs.get("dateValidTo__Lte", None)
     filters = []
     # check if we can use default filter validity
     if date_valid_from is None and date_valid_to is None:
@@ -136,7 +142,7 @@ def append_validity_filter(**kwargs):
     return filters
 
 
-def flatten_dict(d, parent_key='', sep='_'):
+def flatten_dict(d, parent_key="", sep="_"):
     items = []
     for k, v in d.items():
         new_key = parent_key + sep + k if parent_key else k
@@ -147,13 +153,11 @@ def flatten_dict(d, parent_key='', sep='_'):
     return dict(items)
 
 
-def filter_is_deleted(arg='is_deleted', **kwargs):
+def filter_is_deleted(arg="is_deleted", **kwargs):
     is_deleted = kwargs.get(arg)
     if is_deleted is None:
         is_deleted = False
-    return (
-        Q(is_deleted=is_deleted)
-    )
+    return Q(is_deleted=is_deleted)
 
 
 def prefix_filterset(prefix, filterset):
@@ -168,8 +172,9 @@ def prefix_filterset(prefix, filterset):
 def assert_string_length(str_value, length):
     if length and len(str_value) > length:
         raise Exception(
-            _("core.string.over_max_length") % {
-                'value': str_value, 'max_length': length})
+            _("core.string.over_max_length")
+            % {"value": str_value, "max_length": length}
+        )
 
 
 PATIENT_CATEGORY_MASK_MALE = 1
@@ -181,6 +186,7 @@ PATIENT_CATEGORY_MASK_MINOR = 8
 def patient_category_mask(insuree, target_date):
     if type(target_date) is str:
         from core import datetime
+
         # TODO: this should be nicer
         target_date = datetime.date(*[int(x) for x in target_date.split("-")])
     mask = 0
@@ -189,7 +195,7 @@ def patient_category_mask(insuree, target_date):
     if not insuree.dob:
         raise NotImplementedError(_("core.insuree.unknown_dob"))
 
-    if insuree.gender.code in ('M', 'O'):
+    if insuree.gender.code in ("M", "O"):
         mask = mask | PATIENT_CATEGORY_MASK_MALE
     else:
         mask = mask | PATIENT_CATEGORY_MASK_FEMALE
@@ -223,6 +229,13 @@ class ExtendedConnection(graphene.Connection):
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
         return len(self.edges)
+
+
+def block_update(update_dict, current_object, attribute_name, Ex=ValueError):
+    if attribute_name in update_dict and update_dict["code"] != getattr(
+        current_object, attribute_name
+    ):
+        raise Ex("That {attribute_name} field is not editable")
 
 
 def get_scheduler_method_ref(name):
@@ -259,9 +272,10 @@ class ExtendedRelayConnection(graphene.relay.Connection):
 
 def get_first_or_default_language():
     from core.models import Language
+
     sorted_languages = Language.objects.filter(sort_order__isnull=False)
     if sorted_languages.exists():
-        return sorted_languages.order_by('sort_order').first()
+        return sorted_languages.order_by("sort_order").first()
     else:
         return Language.objects.first()
 
@@ -269,11 +283,18 @@ def get_first_or_default_language():
 def insert_role_right_for_system(system_role, right_id):
     RoleRight = apps.get_model("core", "RoleRight")
     Role = apps.get_model("core", "Role")
-    existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
+    existing_role = Role.objects.filter(
+        is_system=system_role, validity_to__isnull=True
+    ).first()
     if not existing_role:
-        logger.warning("Migration requested a role_right for system role %s but couldn't find that role", system_role)
+        logger.warning(
+            "Migration requested a role_right for system role %s but couldn't find that role",
+            system_role,
+        )
     else:
-        role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
+        role_right = RoleRight.objects.filter(
+            role=existing_role, right_id=right_id
+        ).first()
         if not role_right:
             role_right = RoleRight.objects.create(role=existing_role, right_id=right_id)
 
@@ -283,16 +304,28 @@ def insert_role_right_for_system(system_role, right_id):
 def remove_role_right_for_system(system_role, right_id):
     RoleRight = apps.get_model("core", "RoleRight")
     Role = apps.get_model("core", "Role")
-    existing_role = Role.objects.filter(is_system=system_role, validity_to__isnull=True).first()
+    existing_role = Role.objects.filter(
+        is_system=system_role, validity_to__isnull=True
+    ).first()
     if not existing_role:
-        logger.warning("Migration requested to remove a role_right for system role %s but couldn't find that role",
-                       system_role)
+        logger.warning(
+            "Migration requested to remove a role_right for system role %s but couldn't find that role",
+            system_role,
+        )
     role_right = RoleRight.objects.filter(role=existing_role, right_id=right_id).first()
     if role_right:
         role_right.delete()
-        logger.info("Role right removed for system role %s and right ID %s", system_role, right_id)
+        logger.info(
+            "Role right removed for system role %s and right ID %s",
+            system_role,
+            right_id,
+        )
     else:
-        logger.warning("Role right not found for system role %s and right ID %s", system_role, right_id)
+        logger.warning(
+            "Role right not found for system role %s and right ID %s",
+            system_role,
+            right_id,
+        )
 
 
 def convert_to_python_value(string):
@@ -305,7 +338,7 @@ def convert_to_python_value(string):
 
 def is_valid_uuid(string):
     try:
-        uuid_obj = uuid.UUID(str(string))
+        uuid.UUID(str(string))
         return True
     except ValueError:
         return False
@@ -318,13 +351,51 @@ def validate_json_schema(schema):
         jsonschema.Draft7Validator.check_schema(schema)
         return []
     except jsonschema.exceptions.SchemaError as schema_error:
-        return [{"message": _("core.utils.schema_validation.invalid_schema" % {
-            'error': str(schema_error)
-        })}]
+        return [
+            {
+                "message": _(
+                    "core.utils.schema_validation.invalid_schema"
+                    % {"error": str(schema_error)}
+                )
+            }
+        ]
     except ValueError as json_error:
-        return [{"message": _("core.utils.schema_validation.invalid_json" % {
-            'error': str(json_error)
-        })}]
+        return [
+            {
+                "message": _(
+                    "core.utils.schema_validation.invalid_json"
+                    % {"error": str(json_error)}
+                )
+            }
+        ]
+
+
+def validate_password(password: str) -> None:
+    schema = PasswordValidator()
+    schema.min(settings.PASSWORD_MIN_LENGTH)
+    requirements = {
+        'PASSWORD_UPPERCASE': 'uppercase',
+        'PASSWORD_LOWERCASE': 'lowercase',
+        'PASSWORD_DIGITS': 'digits',
+        'PASSWORD_SYMBOLS': 'symbols'
+    }
+
+    for setting, method in requirements.items():
+        if getattr(settings, setting) > 0:
+            getattr(schema.has(), method)()
+
+    if not schema.validate(password):
+        raise GraphQLError(
+            f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long, "
+            f"have at least {settings.PASSWORD_UPPERCASE} uppercase letter(s), "
+            f"{settings.PASSWORD_LOWERCASE} lowercase letter(s), "
+            f"{settings.PASSWORD_DIGITS} number(s), and "
+            f"{settings.PASSWORD_SYMBOLS} special character(s)."
+        )
+    # Use zxcvbn to check against common patterns and dictionary words
+    zxcvbn_result = zxcvbn(password)
+    if zxcvbn_result['score'] < 3:
+        raise GraphQLError("Password is too weak. Avoid common patterns and dictionary words.")
 
 
 class DefaultStorageFileHandler:
@@ -343,15 +414,17 @@ class DefaultStorageFileHandler:
     def get_file_content(self):
         if not default_storage.exists(self.file_path):
             raise FileNotFoundError("File does not exist at the specified path.")
-        with default_storage.open(self.file_path, 'rb') as source:
+        with default_storage.open(self.file_path, "rb") as source:
             return source.read()
 
     def get_file_response_csv(self, file_name=None):
         if not default_storage.exists(self.file_path):
             raise FileNotFoundError("File does not exist at the specified path.")
-        response = FileResponse(default_storage.open(self.file_path, 'rb'))
-        response['Content-Type'] = 'text/csv'
-        response['Content-Disposition'] = f'attachment; filename="{file_name if file_name else "default.csv"}"'
+        response = FileResponse(default_storage.open(self.file_path, "rb"))
+        response["Content-Type"] = "text/csv"
+        response["Content-Disposition"] = (
+            f'attachment; filename="{file_name if file_name else "default.csv"}"'
+        )
         return response
 
     def check_file_path(self):
@@ -386,10 +459,17 @@ class ConfigUtilMixin:
         try:
             mod, name = path.rsplit(".", 1)
             if not mod or not name:
-                raise ImportError("Invalid function path, module and function name are required")
+                raise ImportError(
+                    "Invalid function path, module and function name are required"
+                )
             module = import_module(mod)
             function = getattr(module, name)
             setattr(cls, function_name, function)
         except ImportError as e:
-            logger.error(f'Failed to configure function "%s" as "%s.%s": %s',
-                         path, cls.__name__, function_name, str(e))
+            logger.error(
+                "Failed to configure function '%s' as '%s.%s': %s",
+                path,
+                cls.__name__,
+                function_name,
+                str(e),
+            )

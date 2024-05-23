@@ -12,7 +12,7 @@ MODULE_NAME = "core"
 this = sys.modules[MODULE_NAME]
 
 DEFAULT_CFG = {
-    "username_code_length": "8",  # cannot be bigger than 50 unless modified length limit
+    "username_code_length": "12",  # cannot be bigger than 50 unless modified length limit
     "username_changeable": True,
     "auto_provisioning_user_group": "user",
     "calendar_package": "core",
@@ -58,7 +58,7 @@ DEFAULT_CFG = {
 class CoreConfig(AppConfig):
     default_auto_field = 'django.db.models.AutoField'  # Django 3.1+
     name = MODULE_NAME
-    username_code_length = 8
+    username_code_length = 12
     username_changeable = True
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
@@ -89,6 +89,12 @@ class CoreConfig(AppConfig):
     fields_controls_user = {}
     fields_controls_eo = {}
     secondary_calendar = None
+
+    password_min_length = settings.PASSWORD_MIN_LENGTH
+    password_uppercase = settings.PASSWORD_UPPERCASE
+    password_lowercase = settings.PASSWORD_LOWERCASE
+    password_digits = settings.PASSWORD_DIGITS
+    password_symbols = settings.PASSWORD_SYMBOLS
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
