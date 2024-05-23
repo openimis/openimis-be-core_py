@@ -12,6 +12,8 @@ from django.core.cache import cache
 from core.apps import CoreConfig
 from core.models import User, InteractiveUser, Officer, UserRole
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
+from django.contrib.auth import authenticate
+from rest_framework import exceptions
 
 logger = logging.getLogger(__file__)
 
@@ -36,7 +38,10 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         if i_user.validity_to is not None and i_user.validity_to:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
-        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"] ).first()
+        i_user = InteractiveUser.objects.filter(
+            validity_to__isnull=True,
+            login_name=data_subset["login_name"] 
+        ).first()
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
@@ -72,8 +77,8 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
         UserRole.objects.create(
             user=i_user, role_id=role_id, audit_user_id=audit_user_id
         )
-    cache.delete('rights_'+str(i_user.id))
-    cache.delete('is_admin_'+str(i_user.id))
+    cache.delete('rights_' + str(i_user.id))
+    cache.delete('is_admin_' + str(i_user.id))
 
 
 # TODO move to location module ?
@@ -92,7 +97,7 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
-    cache.delete('q_allowed_locations_'+str(i_user.id))
+    cache.delete('q_allowed_locations_' + str(i_user.id))
 
 
 
@@ -252,6 +257,16 @@ def set_user_password(request, username, token, password):
         raise ValidationError("Invalid Token")
 
 
+def user_authentication(request, username, password):
+    if not username or not password:
+        raise exceptions.ParseError(_("Missing username or password"))
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        logger.debug(f"Authentication failed for username: {username}")
+        raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+    return user
+    
+    
 def check_user_unique_email(user_email):
     if InteractiveUser.objects.filter(email=user_email, validity_to__isnull=True).exists():
         return [{"message": "User email %s already exists" % user_email}]

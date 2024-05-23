@@ -25,12 +25,12 @@ from core.services import (
     change_user_password,
     reset_user_password,
     set_user_password,
+    user_authentication
 )
 from core.tasks import openimis_mutation_async
 from core import filter_validity
 from django import dispatch
 from django.conf import settings
-from django.contrib.auth import authenticate
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
@@ -1584,23 +1584,8 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         username = kwargs.get("username")
         password = kwargs.get("password")
         request = info.context
-
         check_lockout(request)
-
-        user = authenticate(request, username=username, password=password)
-        if not user:
-            logger.debug(f"Authentication failed for username: {username}")
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
-
-        # consider auto-provisioning
-        if username:
-            # get_or_create will auto-provision from tblUsers if applicable
-            user = User.objects.get_or_create(username=username)
-            if not user:
-                logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
-            else:
-                kwargs[User.USERNAME_FIELD] = user[0].username
-
+        info.context.user = user_authentication(request, username, password)
         return super().mutate(cls, info, **kwargs)
 
 
