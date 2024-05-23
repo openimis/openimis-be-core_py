@@ -188,10 +188,15 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             description="Extension data to be used by signals. Will not be pushed to mutation implementation.")
 
     @classmethod
-    def coerce_mutation_data(cls, input_data, input_class = None):
+    def coerce_mutation_data(cls, input_data, input_class=None):
         if input_class is None:
-            input_class=cls.Input
+            input_class = cls.Input
         coerced_data = {}
+
+        if not isinstance(input_data, dict):
+            logger.debug(f"Expected input_data to be a dict but got {type(input_data)}")
+            return input_data
+
         # Iterate through the input data dictionary
         for key, value in input_data.items():
             if hasattr(input_class, key):
@@ -203,28 +208,32 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     inner_type = field.of_type
                     coerced_list = []
                     for item in value:
-                        if isinstance(item, str):
+                        if isinstance(inner_type, graphene.types.enum.EnumMeta):
+                            coerced_list.append(item)  # Append the item directly for enums
+                        elif isinstance(item, str):
                             coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
-                            coerced_list.append(cls.coerce_mutation_data(item, input_class = inner_type))
+                            coerced_list.append(cls.coerce_mutation_data(item, input_class=inner_type))
                         else:
                             coerced_list.append(item)
                     coerced_data[key] = coerced_list
-                elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.enum.EnumMeta):
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,
+                                                                                  graphene.types.enum.EnumMeta):
                     # If the field type is Enum
-                    if hasattr(field.type,value):
-                        coerced_data[key] = str(getattr(field.type,value).value)
-                    else: 
+                    if hasattr(field.type, value):
+                        coerced_data[key] = str(getattr(field.type, value).value)
+                    else:
                         coerced_data[key] = value
-                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,graphene.types.structures.NonNull)\
-                    and isinstance(field.type._of_type,graphene.types.enum.EnumMeta):
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,
+                                                                                  graphene.types.structures.NonNull) \
+                        and isinstance(field.type._of_type, graphene.types.enum.EnumMeta):
                     # If the field type is Enum
-                    if hasattr(field.type,value):
-                        coerced_data[key] = str(getattr(field.type._of_type,value).value)
-                    else: 
+                    if hasattr(field.type._of_type, value):
+                        coerced_data[key] = str(getattr(field.type._of_type, value).value)
+                    else:
                         coerced_data[key] = value
                 elif field.__class__ == graphene.types.field.Field:
-                    coerced_data[key] = cls.coerce_mutation_data(value, input_class = field._type)
+                    coerced_data[key] = cls.coerce_mutation_data(value, input_class=field._type)
                 elif isinstance(value, str):
                     coerced_data[key] = field.parse_value(value)
                 else:
@@ -232,9 +241,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug(f"key {key} not in {cls.__name__}")
                 coerced_data[key] = value
-           
+
         return coerced_data
-        
+
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
         """
@@ -599,10 +608,24 @@ class Query(graphene.ObjectType):
 
     username_length = graphene.Int()
 
+    password_policy = graphene.Field(
+        graphene.JSONString,
+        description="Returns the password policy configuration."
+    )
+
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         return CoreConfig.username_code_length
+
+    def resolve_password_policy(self, info, **kwargs):
+        return {
+            "min_length": CoreConfig.password_min_length,
+            "require_upper_case": CoreConfig.password_uppercase,
+            "require_lower_case": CoreConfig.password_lowercase,
+            "require_numbers": CoreConfig.password_digits,
+            "require_special_characters": CoreConfig.password_symbols,
+        }
 
     def resolve_validate_role_name(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
