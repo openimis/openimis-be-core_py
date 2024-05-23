@@ -29,6 +29,7 @@ setup(
         'django-dirtyfields',
         'websocket-client',
         'jsonschema',
+        'password-validator'
     ],
     classifiers=[
         'Environment :: Web Environment',
