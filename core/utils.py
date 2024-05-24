@@ -372,7 +372,7 @@ def validate_json_schema(schema):
 
 
 class CustomPasswordValidator:
-    def __init__(self):
+    def __init__(self, uppercase=0, lowercase=0, digits=0, symbols=0):
         self.schema = PasswordValidator()
         self.requirements = {
             'PASSWORD_UPPERCASE': 'uppercase',
