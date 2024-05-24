@@ -1416,6 +1416,7 @@ class DeleteUserMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
+    imis_administrator_system = 64
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
 
@@ -1446,6 +1447,11 @@ def update_or_create_user(data, user):
     if "client_mutation_label" in data:
         data.pop('client_mutation_label')
     user_uuid = data.pop('uuid') if 'uuid' in data else None
+
+    current_roles = Role.objects.filter(id__in=data.get("roles", []))
+    is_admin_role = any(role.is_system == imis_administrator_system for role in current_roles)
+    if user_uuid == str(user.id) and not is_admin_role:
+        raise ValidationError("Administrator cannot deprovision himself.")
 
     if UT_INTERACTIVE in data["user_types"]:
         i_user, i_user_created = create_or_update_interactive_user(
