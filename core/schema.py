@@ -1448,9 +1448,7 @@ def update_or_create_user(data, user):
         data.pop('client_mutation_label')
     user_uuid = data.pop('uuid') if 'uuid' in data else None
 
-    current_roles = Role.objects.filter(id__in=data.get("roles", []))
-    is_admin_role = any(role.is_system == imis_administrator_system for role in current_roles)
-    if user_uuid == str(user.id) and not is_admin_role:
+    if user_uuid == str(user.id) and user.is_imis_admin and imis_administrator_system not in data.get("roles",[]):
         raise ValidationError("Administrator cannot deprovision himself.")
 
     if UT_INTERACTIVE in data["user_types"]:
