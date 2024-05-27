@@ -1,5 +1,7 @@
+import os
 import uuid
 import json
+import os
 from importlib import import_module
 from typing import Type, Dict, Any
 
@@ -18,7 +20,7 @@ from django.utils.translation import gettext as _
 import logging
 from django.apps import apps
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.storage import default_storage
 
 logger = logging.getLogger(__file__)
@@ -38,7 +40,6 @@ __all__ = [
     "ExtendedConnection",
     "get_scheduler_method_ref",
     "ExtendedRelayConnection",
-    "validate_password"
 ]
 
 
@@ -370,32 +371,41 @@ def validate_json_schema(schema):
         ]
 
 
-def validate_password(password: str) -> None:
-    schema = PasswordValidator()
-    schema.min(settings.PASSWORD_MIN_LENGTH)
-    requirements = {
-        'PASSWORD_UPPERCASE': 'uppercase',
-        'PASSWORD_LOWERCASE': 'lowercase',
-        'PASSWORD_DIGITS': 'digits',
-        'PASSWORD_SYMBOLS': 'symbols'
-    }
+class CustomPasswordValidator:
+    def __init__(self, uppercase=0, lowercase=0, digits=0, symbols=0):
+        self.schema = PasswordValidator()
+        self.requirements = {
+            'PASSWORD_UPPERCASE': 'uppercase',
+            'PASSWORD_LOWERCASE': 'lowercase',
+            'PASSWORD_DIGITS': 'digits',
+            'PASSWORD_SYMBOLS': 'symbols'
+        }
+        self.set_password_policy()
 
-    for setting, method in requirements.items():
-        if getattr(settings, setting) > 0:
-            getattr(schema.has(), method)()
+    def set_password_policy(self):
+        self.schema.min(settings.PASSWORD_MIN_LENGTH)
+        for setting, method in self.requirements.items():
+            if getattr(settings, setting) > 0:
+                getattr(self.schema.has(), method)()
 
-    if not schema.validate(password):
-        raise GraphQLError(
-            f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long, "
-            f"have at least {settings.PASSWORD_UPPERCASE} uppercase letter(s), "
+    def validate(self, password, user=None):
+        if os.environ.get("MODE", "DEV") != "PROD":
+            if not self.schema.validate(password):
+                raise ValidationError(
+                    self.get_help_text()
+                )
+            zxcvbn_result = zxcvbn(password)
+            if zxcvbn_result['score'] < 3:
+                raise ValidationError("Password is too weak. Avoid common patterns and dictionary words.")
+
+    def get_help_text(self):
+        return (
+            f"Your password must be at least {settings.PASSWORD_MIN_LENGTH} characters long, "
+            f"contain at least {settings.PASSWORD_UPPERCASE} uppercase letter(s), "
             f"{settings.PASSWORD_LOWERCASE} lowercase letter(s), "
             f"{settings.PASSWORD_DIGITS} number(s), and "
             f"{settings.PASSWORD_SYMBOLS} special character(s)."
         )
-    # Use zxcvbn to check against common patterns and dictionary words
-    zxcvbn_result = zxcvbn(password)
-    if zxcvbn_result['score'] < 3:
-        raise GraphQLError("Password is too weak. Avoid common patterns and dictionary words.")
 
 
 class DefaultStorageFileHandler:
