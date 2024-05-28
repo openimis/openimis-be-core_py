@@ -1,27 +1,23 @@
-import os
-import uuid
+import ast
 import json
-import os
+import logging
+import uuid
 from importlib import import_module
-from typing import Type, Dict, Any
-
-import jsonschema
-from password_validator import PasswordValidator
-from zxcvbn import zxcvbn
-from graphql import GraphQLError
+from typing import Any, Dict, Type
 
 import core
-import ast
 import graphene
-from django.apps import AppConfig
-from django.http import FileResponse
-from django.db.models import Q
-from django.utils.translation import gettext as _
-import logging
-from django.apps import apps
+import jsonschema
+from django.apps import AppConfig, apps
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.storage import default_storage
+from django.db.models import Q
+from django.http import FileResponse
+from django.utils.translation import gettext as _
+from graphql import GraphQLError
+from password_validator import PasswordValidator
+from zxcvbn import zxcvbn
 
 logger = logging.getLogger(__file__)
 
@@ -375,10 +371,10 @@ class CustomPasswordValidator:
     def __init__(self, uppercase=0, lowercase=0, digits=0, symbols=0):
         self.schema = PasswordValidator()
         self.requirements = {
-            'PASSWORD_UPPERCASE': 'uppercase',
-            'PASSWORD_LOWERCASE': 'lowercase',
-            'PASSWORD_DIGITS': 'digits',
-            'PASSWORD_SYMBOLS': 'symbols'
+            "PASSWORD_UPPERCASE": "uppercase",
+            "PASSWORD_LOWERCASE": "lowercase",
+            "PASSWORD_DIGITS": "digits",
+            "PASSWORD_SYMBOLS": "symbols",
         }
         self.set_password_policy()
 
@@ -389,14 +385,13 @@ class CustomPasswordValidator:
                 getattr(self.schema.has(), method)()
 
     def validate(self, password, user=None):
-        if os.environ.get("MODE", "DEV") != "PROD":
-            if not self.schema.validate(password):
-                raise ValidationError(
-                    self.get_help_text()
-                )
-            zxcvbn_result = zxcvbn(password)
-            if zxcvbn_result['score'] < 3:
-                raise ValidationError("Password is too weak. Avoid common patterns and dictionary words.")
+        if not self.schema.validate(password):
+            raise ValidationError(self.get_help_text())
+        zxcvbn_result = zxcvbn(password)
+        if zxcvbn_result["score"] < 3:
+            raise ValidationError(
+                "Password is too weak. Avoid common patterns and dictionary words."
+            )
 
     def get_help_text(self):
         return (
