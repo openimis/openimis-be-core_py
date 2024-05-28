@@ -1,16 +1,14 @@
-# from graphql_auth.backends import GraphQLAuthBackend
-# from django.utils.deprecation import MiddlewareMixin
 import jwt
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.signals import token_issued
 from django.apps import apps
 from django.utils import timezone
 from django.dispatch import receiver
-
 import logging
+import uuid
+from datetime import datetime
 
 logger = logging.getLogger(__file__)
-
 
 @receiver(token_issued)
 def on_token_issued(sender, request, user, **kwargs):
@@ -18,18 +16,19 @@ def on_token_issued(sender, request, user, **kwargs):
     user.last_login = timezone.now()
     user.save()
 
-
 def jwt_encode_user_key(payload, context=None):
+    payload['jti'] = str(uuid.uuid4())
+    payload['nbf'] = datetime.utcnow()
+
     token = jwt.encode(
         payload,
         get_jwt_key(encode=True, context=context, payload=payload),
-        jwt_settings.JWT_ALGORITHM,
+        algorithm=jwt_settings.JWT_ALGORITHM,
     )
     # JWT module after 1.7 does the encoding, introducing some conflicts in graphql-jwt, let's support both
     if isinstance(token, bytes):
         token = token.decode("utf-8")
     return token
-
 
 def jwt_decode_user_key(token, context=None):
     # First decode the token without validating it, so we can extract the username
@@ -72,7 +71,6 @@ def jwt_decode_user_key(token, context=None):
         algorithms=[jwt_settings.JWT_ALGORITHM],
     )
 
-
 def get_jwt_key(encode=True, context=None, payload=None):
     user_key = extract_private_key_from_context(context)
     if user_key is None and payload is not None:
@@ -81,13 +79,9 @@ def get_jwt_key(encode=True, context=None, payload=None):
         return user_key
 
     if encode:
-        if hasattr(jwt_settings, "JWT_PRIVATE_KEY"):
-            return jwt_settings.JWT_PRIVATE_KEY
+        return getattr(jwt_settings, "JWT_PRIVATE_KEY", jwt_settings.JWT_SECRET_KEY)
     else:
-        if hasattr(jwt_settings, "JWT_PUBLIC_KEY"):
-            return jwt_settings.JWT_PUBLIC_KEY
-    return jwt_settings.JWT_SECRET_KEY
-
+        return getattr(jwt_settings, "JWT_PUBLIC_KEY", jwt_settings.JWT_SECRET_KEY)
 
 def extract_private_key_from_payload(payload):
     # Get user private key from payload. This covers the refresh token mutation
@@ -95,7 +89,6 @@ def extract_private_key_from_payload(payload):
 
     if "username" in payload:
         return User.objects.get(username=payload["username"]).private_key
-
 
 def extract_private_key_from_context(context):
     if context and context.user and hasattr(context.user, "private_key"):
