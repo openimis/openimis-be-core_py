@@ -1,4 +1,5 @@
 from django.utils.timezone import now
+from django.conf import settings
 
 
 class DefaultAxesAttributesMiddleware:
@@ -15,3 +16,22 @@ class DefaultAxesAttributesMiddleware:
             request.axes_attempt_time = now()
 
         return self.get_response(request)
+
+
+class SecurityHeadersMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+
+        if settings.MODE == "PROD":
+            response["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+
+        response["Content-Security-Policy"] = "default-src 'self';"
+        response["X-Frame-Options"] = "DENY"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Referrer-Policy"] = "no-referrer"
+        response["Permissions-Policy"] = "geolocation=(), microphone=()"
+
+        return response
