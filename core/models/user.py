@@ -232,13 +232,14 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_staff(self):
-        return False
+        return self.is_superuser
+
 
     @property
     def is_superuser(self):
-        if self.user and self.user.t_user:
-            return self.user.t_user.is_superuser
-        return False
+        return self.is_imis_admin
+
+
 
     @property
     def rights(self):
@@ -412,9 +413,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     @property
     def is_superuser(self):
-        if self.user and self.user.t_user:
-            return self.user.t_user.is_superuser
-        return False
+        return self._u.is_superuser
 
     @property
     def is_imis_admin(self):
