@@ -328,8 +328,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
-                    #mutation_data = data.copy()
-                    mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
+                    # mutation_data = data.copy()
+                    mutation_data = cls.coerce_mutation_data(json.loads(
+                        json.dumps(data, cls=OpenIMISJSONEncoder)))  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
@@ -431,7 +432,17 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             connection, iterable, info, args
         )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
+        filter = filterset_class(data=filter_kwargs, queryset=qs, request=info.context)
+
+        # The condition below will throw an exception if the filter class has an error
+        # Without that it will ignore the filter and display all the records
+        if filter.errors:
+            raise Exception(filter.errors)
+        else:
+            qs = filter.qs
+
+
 
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
