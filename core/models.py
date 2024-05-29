@@ -658,6 +658,11 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
             pass
         return queryset
 
+    def archive(self):
+        from core import datetime
+        self.validity_to = datetime.datetime.now()
+        self.save()
+
     class Meta:
         managed = True
         db_table = 'core_User'
