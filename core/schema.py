@@ -38,6 +38,7 @@ from django.db import transaction
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
+from django.middleware.csrf import CsrfViewMiddleware
 from django.utils import translation
 from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
@@ -1618,6 +1619,12 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         username = kwargs.get("username")
         password = kwargs.get("password")
         request = info.context
+
+        csrf_middleware = CsrfViewMiddleware(lambda req: None)
+        reason = csrf_middleware.process_view(request, None, (), {})
+        if reason:
+            raise PermissionDenied('CSRF token missing or incorrect.')
+
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)
         return super().mutate(cls, info, **kwargs)
