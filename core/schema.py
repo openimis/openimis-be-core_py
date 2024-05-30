@@ -22,6 +22,7 @@ from core.services import (
     change_user_password,
     reset_user_password,
     set_user_password,
+    user_authentication,
 )
 from core.tasks import openimis_mutation_async
 from core import filter_validity
@@ -1573,15 +1574,9 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     @classmethod
     def mutate(cls, root, info, **kwargs):
         username = kwargs.get("username")
-        # consider auto-provisioning
-        if username:
-            # get_or_create will auto-provision from tblUsers if applicable
-            user = User.objects.get_or_create(username=username)
-            if not user:
-                logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
-            else:
-                kwargs[User.USERNAME_FIELD] = user[0].username
-
+        password = kwargs.get("password")
+        request = info.context
+        info.context.user = user_authentication(request, username, password)
         return super().mutate(cls, info, **kwargs)
 
 
