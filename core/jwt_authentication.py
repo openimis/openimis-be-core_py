@@ -1,11 +1,14 @@
 from .jwt import jwt_decode_user_key
 
 from rest_framework.authentication import BaseAuthentication
+from rest_framework.exceptions import Throttled
 from rest_framework import exceptions
 from graphql_jwt.utils import get_credentials
 from graphql_jwt.exceptions import JSONWebTokenError
 from graphql_jwt.shortcuts import get_user_by_token
 from core.apps import CoreConfig
+from django.conf import settings
+from django_ratelimit.core import is_ratelimited
 
 from datetime import date
 import jwt
@@ -21,6 +24,7 @@ class JWTAuthentication(BaseAuthentication):
     """
 
     def authenticate(self, request):
+        self.check_rate_limit(request)
         token = get_credentials(request)
         if token:
         # Do not pass context to avoid to try to get user from request to get his private key.
@@ -40,3 +44,20 @@ class JWTAuthentication(BaseAuthentication):
 
     def enforce_csrf(self, request):
         return  # To not perform the csrf during checking auth header
+
+    @staticmethod
+    def check_rate_limit(request) -> None:
+        group = settings.RATELIMIT_GROUP
+        key = settings.RATELIMIT_KEY
+        rate = settings.RATELIMIT_RATE
+
+        if is_ratelimited(
+                request=request,
+                group=group,
+                fn=None,
+                key=key,
+                rate=rate,
+                method=is_ratelimited.ALL,
+                increment=True
+        ):
+            raise Throttled(detail='Rate limit exceeded')

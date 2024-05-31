@@ -30,7 +30,8 @@ setup(
         'websocket-client',
         'jsonschema',
         'password-validator',
-        'zxcvbn'
+        'zxcvbn',
+        'django-ratelimit',
     ],
     classifiers=[
         'Environment :: Web Environment',
