@@ -1,6 +1,6 @@
 from django.test import TestCase
-from .security import ObjectPermissions
-from .models import ModuleConfiguration
+from core.security import ObjectPermissions
+from core.models import ModuleConfiguration
 
 
 class ObjectPermissionsTest(TestCase):
