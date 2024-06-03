@@ -10,7 +10,7 @@ from django.template import loader
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
-from core.models import User, InteractiveUser, Officer, UserRole
+from core.models.user import User, InteractiveUser, Officer, UserRole, UserManager
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 from django.contrib.auth import authenticate
 from rest_framework import exceptions
@@ -261,8 +261,14 @@ def user_authentication(request, username, password):
         raise exceptions.ParseError(_("Missing username or password"))
     user = authenticate(request, username=username, password=password)
     if not user:
-        logger.debug(f"Authentication failed for username: {username}")
-        raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+        user, provisioned = UserManager().auto_provision_user(username=username)
+        if provisioned:
+            logger.debug(f"user {username} was automatically provisioned")
+        if user and user.check_password(password):
+            return user
+        else:
+            logger.debug(f"Authentication failed for username: {username}")
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
     return user
     
     

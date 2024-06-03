@@ -13,9 +13,10 @@ logger = logging.getLogger(__file__)
 @receiver(token_issued)
 def on_token_issued(sender, request, user, **kwargs):
     # Store the date on which the user got the auth token
-    # user.last_login = timezone.now()
-    # user.save()
+    user.last_login = timezone.now()
+    user.save()
     pass
+
 
 def jwt_encode_user_key(payload, context=None):
     payload['jti'] = str(uuid.uuid4())

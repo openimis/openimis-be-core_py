@@ -7,6 +7,7 @@ from django.db import models
 from ..fields import DateTimeField
 from ..utils import filter_validity
 import logging
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +22,14 @@ class BaseVersionedModel(models.Model):
         histo.id = None
         if hasattr(histo, "uuid"):
             setattr(histo, "uuid", uuid.uuid4())
-        from core import datetime
-        histo.validity_to = datetime.datetime.now()
+        histo.validity_to = py_datetime.now()
         histo.legacy_id = self.id
         histo.save()
         return histo.id
 
     def delete_history(self, **kwargs):
         self.save_history()
-        from core import datetime
-        now = datetime.datetime.now()
+        now = py_datetime.now()
         self.validity_from = now
         self.validity_to = now
         self.save()

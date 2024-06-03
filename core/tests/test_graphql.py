@@ -33,6 +33,28 @@ class gqlTest(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
         content = json.loads(response.content)
 
+
+    def test_login_deafult_successful(self):
+        variables = {
+            "username": "Admin",
+            "password": "admin123"
+        }
+        
+        query = """
+            mutation authenticate($username: String!, $password: String!) {
+                tokenAuth(username: $username, password: $password)
+                {
+                refreshExpiresIn
+                }
+            }
+        """
+        response = self.query(
+            query,
+            variables=variables
+        )
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+
     def test_login_wrong_credentials(self):
         variables = {
             "username": str(self.admin_username),
