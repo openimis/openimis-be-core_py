@@ -21,6 +21,7 @@ from location.models import OfficerVillage
 logger = logging.getLogger(__file__)
 postgresql = "postgresql"
 
+
 class UserServicesTest(TestCase):
     claim_admin_class = None
 

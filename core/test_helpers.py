@@ -31,11 +31,11 @@ def create_test_officer(valid=True, custom_props={}, villages = []):
     if code or uuid:
         eo = qs_eo.first()
     if eo:
-        data['uuid']=eo.uuid
+        data['uuid'] = eo.uuid
         eo.update(data)
     else:
-        data['uuid']=uuid4()
-        eo =   Officer.objects.create(**data)
+        data['uuid'] = uuid4()
+        eo = Officer.objects.create(**data)
     if villages == []:
         villages == Location.objects.filter(*filter_validity(), type = 'V').first()
     if eo:

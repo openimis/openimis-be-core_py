@@ -1046,7 +1046,7 @@ def update_or_create_role(data, user):
         role.save()
         if rights_id is not None:
             # reset all role rights assigned to the chosen role
-            from core import datetime
+            import datetime
             now = datetime.datetime.now()
             role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
             role_rights_currently_assigned.update(validity_to=now)
@@ -1096,7 +1096,7 @@ def duplicate_role(data, user):
     # get the current Role object to be duplicated
     role = Role.objects.get(uuid=role_uuid)
     # copy Role to be dupliacated
-    from core import datetime
+    import datetime
     now = datetime.datetime.now()
     duplicated_role = copy(role)
     duplicated_role.id = None
