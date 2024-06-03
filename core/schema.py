@@ -1344,6 +1344,14 @@ class CreateUserMutation(OpenIMISMutation):
             data['audit_user_id'] = user.id_for_audit
             update_or_create_user(data, user)
             return None
+        except ValidationError as ve:
+            logger.error(f'Validation error: {ve}')
+            return [
+                {
+                    'message': "core.mutation.validation_error",
+                    'detail': str(ve)
+                }
+            ]
         except Exception as exc:
             return [
                 {

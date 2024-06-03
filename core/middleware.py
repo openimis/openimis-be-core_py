@@ -1,4 +1,6 @@
 from django.utils.timezone import now
+from django_ratelimit.core import is_ratelimited
+from rest_framework.exceptions import JsonResponse
 from django.conf import settings
 
 
@@ -34,4 +36,27 @@ class SecurityHeadersMiddleware:
         response["Referrer-Policy"] = "no-referrer"
         response["Permissions-Policy"] = "geolocation=(), microphone=()"
 
+        return response
+
+
+class GraphQLRateLimitMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        group = settings.RATELIMIT_GROUP
+        key = settings.RATELIMIT_KEY
+        rate = settings.RATELIMIT_RATE
+        if request.path == '/api/graphql':
+            rate_limited = is_ratelimited(
+                request=request,
+                group=group,
+                key=key,
+                rate=rate,
+                method=is_ratelimited.ALL,
+                increment=True
+            )
+            if rate_limited:
+                return JsonResponse({'detail': 'Rate limit exceeded'}, status=429)
+        response = self.get_response(request)
         return response
