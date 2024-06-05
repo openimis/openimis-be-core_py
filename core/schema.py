@@ -1431,7 +1431,7 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
     _mutation_class = "ChangeUserLanguageMutation"
 
     class Input(OpenIMISMutation.Input):
-        language_id = graphene.String()
+        language_id = graphene.String(required=True)
 
     @classmethod
     def async_mutate(cls, user, **data):
@@ -1439,7 +1439,7 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError("mutation.authentication_required")
             data['audit_user_id'] = user.id_for_audit
-            change_user_language(data, user)
+            change_user_language(user, language_id=data["language_id"])
 
             return None
         except Exception as exc:
@@ -1548,10 +1548,10 @@ def set_user_deleted(user):
         }
 
 
-def change_user_language(data, user):
-    new_user = User.objects.get(id=user.id)
-    new_user.i_user.language_id = data["language_id"]
-    new_user.save()
+def change_user_language(user, language_id):
+    updated_user = User.objects.get(id=user.id)
+    updated_user.i_user.language_id = language_id
+    updated_user.save()
 
 
 class ChangePasswordMutation(graphene.relay.ClientIDMutation):
