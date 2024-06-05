@@ -114,7 +114,7 @@ class CoreConfig(AppConfig):
         this.age_of_majority = int(cfg["age_of_majority"])
 
     def _configure_currency(self, cfg):
-        CoreConfig.currency = str(cfg["currency"])
+        this.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
         if bool(os.environ.get('NO_DATABASE', False)):
