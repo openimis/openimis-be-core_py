@@ -12,7 +12,8 @@ from django.db import models
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 import core
-from core.utils import validate_password
+# from core.utils import validate_password
+from django.contrib.auth.password_validation import validate_password
 #from core.datetimes.ad_datetime import datetime as py_datetime
 from django.conf import settings
 
@@ -232,13 +233,14 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_staff(self):
-        return False
+        return self.is_superuser
+
 
     @property
     def is_superuser(self):
-        if self.user and self.user.t_user:
-            return self.user.t_user.is_superuser
-        return False
+        return self.is_imis_admin
+
+
 
     @property
     def rights(self):
@@ -412,9 +414,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     @property
     def is_superuser(self):
-        if self.user and self.user.t_user:
-            return self.user.t_user.is_superuser
-        return False
+        return self._u.is_superuser
 
     @property
     def is_imis_admin(self):

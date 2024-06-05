@@ -1,5 +1,5 @@
 from django.test import TestCase
-from .models import User, TechnicalUser, InteractiveUser
+from core.models import User, TechnicalUser, InteractiveUser
 
 
 class UserTestCase(TestCase):

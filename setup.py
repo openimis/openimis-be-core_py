@@ -29,6 +29,9 @@ setup(
         'django-dirtyfields',
         'websocket-client',
         'jsonschema',
+        'password-validator',
+        'zxcvbn',
+        'django-ratelimit',
     ],
     classifiers=[
         'Environment :: Web Environment',

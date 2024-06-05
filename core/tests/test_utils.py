@@ -4,7 +4,7 @@ from django.db import connections
 from django.test.runner import DiscoverRunner
 from django.test.utils import get_unique_databases_and_mirrors
 
-from .utils import full_class_name, comparable
+from core.utils import full_class_name, comparable
 
 
 class ComparableTest(TestCase):
@@ -37,7 +37,7 @@ class ComparableTest(TestCase):
 class UtilsTestCase(TestCase):
     def test_full_class_name(self):
         self.assertEquals(full_class_name(
-            self), 'core.test_utils.UtilsTestCase')
+            self), 'core.tests.test_utils.UtilsTestCase')
 
         self.assertEquals(full_class_name(
             1), 'int')

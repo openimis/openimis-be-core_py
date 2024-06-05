@@ -10,7 +10,7 @@ from django.template import loader
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
-from core.models import User, InteractiveUser, Officer, UserRole
+from core.models.user import User, InteractiveUser, Officer, UserRole, UserManager
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 from django.contrib.auth import authenticate
 from rest_framework import exceptions
@@ -67,7 +67,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
 
 
 def create_or_update_user_roles(i_user, role_ids, audit_user_id):
-    from core import datetime
+    import datetime
 
     now = datetime.datetime.now()
     UserRole.objects.filter(user=i_user, validity_to__isnull=True).update(
@@ -85,11 +85,11 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
 def create_or_update_user_districts(i_user, district_ids, audit_user_id):
     # To avoid a static dependency from Core to Location, we'll dynamically load this class
     user_district_class = apps.get_model("location", "UserDistrict")
-    from core import datetime
+    import datetime
 
     now = datetime.datetime.now()
     user_district_class.objects.filter(user=i_user, validity_to__isnull=True).update(
-        validity_to=now.to_ad_datetime()
+        validity_to=now
     )
     for district_id in district_ids:
         user_district_class.objects.update_or_create(
@@ -104,7 +104,7 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
 def create_or_update_officer_villages(officer, village_ids, audit_user_id):
     # To avoid a static dependency from Core to Location, we'll dynamically load this class
     officer_village_class = apps.get_model("location", "OfficerVillage")
-    from core import datetime
+    import datetime
 
     now = datetime.datetime.now()
     officer_village_class.objects.filter(
@@ -249,7 +249,6 @@ def change_user_password(logged_user, username_to_update=None, old_password=None
 
 def set_user_password(request, username, token, password):
     user = User.objects.get(username=username)
-
     if default_token_generator.check_token(user, token):
         user.set_password(password)
         user.save()
@@ -268,8 +267,14 @@ def user_authentication(request, username, password):
     except Exception as exc:
         logger.debug(f"Authentication failed for username: {username}:{exc}")
     if not user:
-        logger.debug(f"Authentication failed for username: {username}")
-        raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+        user, provisioned = UserManager().auto_provision_user(username=username)
+        if provisioned:
+            logger.debug(f"user {username} was automatically provisioned")
+        if user and user.check_password(password):
+            return user
+        else:
+            logger.debug(f"Authentication failed for username: {username}")
+            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
     return user
 
 

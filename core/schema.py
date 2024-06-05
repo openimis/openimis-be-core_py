@@ -34,10 +34,11 @@ from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
+from django.middleware.csrf import CsrfViewMiddleware
 from django.utils import translation
 from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
@@ -45,6 +46,7 @@ from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
 from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
+from axes.models import AccessAttempt
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
@@ -328,8 +330,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             else:
                 logger.debug("[OpenIMISMutation %s] mutating...", mutation_log.id)
                 try:
-                    #mutation_data = data.copy()
-                    mutation_data = cls.coerce_mutation_data(json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))) #data.copy() 
+                    # mutation_data = data.copy()
+                    mutation_data = cls.coerce_mutation_data(json.loads(
+                        json.dumps(data, cls=OpenIMISJSONEncoder)))  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
                     messages = cls.async_mutate(
                         info.context.user if info.context and info.context.user else None,
@@ -431,7 +434,17 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             connection, iterable, info, args
         )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
-        qs = filterset_class(data=filter_kwargs, queryset=qs, request=info.context).qs
+
+        filter = filterset_class(data=filter_kwargs, queryset=qs, request=info.context)
+
+        # The condition below will throw an exception if the filter class has an error
+        # Without that it will ignore the filter and display all the records
+        if filter.errors:
+            raise Exception(filter.errors)
+        else:
+            qs = filter.qs
+
+
 
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
@@ -1033,7 +1046,7 @@ def update_or_create_role(data, user):
         role.save()
         if rights_id is not None:
             # reset all role rights assigned to the chosen role
-            from core import datetime
+            import datetime
             now = datetime.datetime.now()
             role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
             role_rights_currently_assigned.update(validity_to=now)
@@ -1083,7 +1096,7 @@ def duplicate_role(data, user):
     # get the current Role object to be duplicated
     role = Role.objects.get(uuid=role_uuid)
     # copy Role to be dupliacated
-    from core import datetime
+    import datetime
     now = datetime.datetime.now()
     duplicated_role = copy(role)
     duplicated_role.id = None
@@ -1331,6 +1344,14 @@ class CreateUserMutation(OpenIMISMutation):
             data['audit_user_id'] = user.id_for_audit
             update_or_create_user(data, user)
             return None
+        except ValidationError as ve:
+            logger.error(f'Validation error: {ve}')
+            return [
+                {
+                    'message': "core.mutation.validation_error",
+                    'detail': str(ve)
+                }
+            ]
         except Exception as exc:
             return [
                 {
@@ -1405,6 +1426,7 @@ class DeleteUserMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
+    imis_administrator_system = 64
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
 
@@ -1435,6 +1457,9 @@ def update_or_create_user(data, user):
     if "client_mutation_label" in data:
         data.pop('client_mutation_label')
     user_uuid = data.pop('uuid') if 'uuid' in data else None
+
+    if user_uuid == str(user.id) and user.is_imis_admin and imis_administrator_system not in data.get("roles",[]):
+        raise ValidationError("Administrator cannot deprovision himself.")
 
     if UT_INTERACTIVE in data["user_types"]:
         i_user, i_user_created = create_or_update_interactive_user(
@@ -1587,9 +1612,18 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, username, token, new_password, **input):
+        request = info.context
+        log_reset_password_attempt(request, username)
         try:
+            check_lockout(request)
             set_user_password(info.context, username, token, new_password)
             return SetPasswordMutation(success=True)
+        except GraphQLError as gql_error:
+            logger.exception(gql_error)
+            return SetPasswordMutation(
+                success=False,
+                error=gql_error.message,
+            )
         except Exception as exc:
             logger.exception(exc)
             return SetPasswordMutation(
@@ -1607,6 +1641,12 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         username = kwargs.get("username")
         password = kwargs.get("password")
         request = info.context
+
+        csrf_middleware = CsrfViewMiddleware(lambda req: None)
+        reason = csrf_middleware.process_view(request, None, (), {})
+        if reason:
+            raise PermissionDenied('CSRF token missing or incorrect.')
+
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)
         return super().mutate(cls, info, **kwargs)
@@ -1671,6 +1711,32 @@ def bind_signals():
     signal_mutation_module_validate["core"].connect(on_user_mutation)
 
 
+def log_reset_password_attempt(request, username):
+    ip_address = request.axes_ip_address
+    user_agent = request.axes_user_agent
+    attempt_time = request.axes_attempt_time
+    attempt_data = {
+        'user_agent': user_agent,
+        'ip_address': ip_address,
+        'username': username,
+        'attempt_time': attempt_time,
+        'get_data': request.GET.dict(),
+        'post_data': request.POST.dict(),
+        'failures_since_start': 1,
+        'path_info': request.path,
+    }
+
+    try:
+        with transaction.atomic():
+            AccessAttempt.objects.create(**attempt_data)
+    except IntegrityError:
+        attempt = AccessAttempt.objects.get(user_agent=user_agent, ip_address=ip_address, username=username)
+        attempt.failures_since_start += 1
+        attempt.attempt_time = attempt_time
+        attempt.get_data = attempt_data['get_data']
+        attempt.post_data = attempt_data['post_data']
+        attempt.save()
+
 
 def check_lockout(request):
     attempts = get_user_attempts(request)
@@ -1689,6 +1755,6 @@ def check_lockout(request):
                 remaining_lockout_delta = settings.AXES_COOLOFF_TIME - (now() - last_attempt_time)
                 remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
                 raise GraphQLError(
-                    f"Too many failed login attempts."
+                    f"Too many failed attempts."
                     f"Try again in {remaining_minutes} minutes."
                 )
