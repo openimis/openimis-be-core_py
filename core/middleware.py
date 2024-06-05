@@ -32,7 +32,7 @@ class SecurityHeadersMiddleware:
             response["Content-Security-Policy"] = "default-src 'self';"
             response["X-Frame-Options"] = "DENY"
             response["X-Content-Type-Options"] = "nosniff"
-            response["Referrer-Policy"] = "no-referrer"
+            response["Referrer-Policy"] = "strict-origin-when-cross-origin"
             response["Permissions-Policy"] = "geolocation=(), microphone=()"
 
         return response
