@@ -29,12 +29,11 @@ class SecurityHeadersMiddleware:
 
         if settings.MODE == "PROD":
             response["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-
-        response["Content-Security-Policy"] = "default-src 'self';"
-        response["X-Frame-Options"] = "DENY"
-        response["X-Content-Type-Options"] = "nosniff"
-        response["Referrer-Policy"] = "no-referrer"
-        response["Permissions-Policy"] = "geolocation=(), microphone=()"
+            response["Content-Security-Policy"] = "default-src 'self';"
+            response["X-Frame-Options"] = "DENY"
+            response["X-Content-Type-Options"] = "nosniff"
+            response["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response["Permissions-Policy"] = "geolocation=(), microphone=()"
 
         return response
 
