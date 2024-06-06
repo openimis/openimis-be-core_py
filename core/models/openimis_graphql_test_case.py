@@ -15,6 +15,9 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
     GRAPHQL_URL = f"/{settings.SITE_ROOT()}graphql"
     GRAPHQL_SCHEMA = True
 
+    class BaseTestContext:
+        def __init__(self, user):
+            self.user = user
     # client = None
     @classmethod
     def setUpClass(cls):
