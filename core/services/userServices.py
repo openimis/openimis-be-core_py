@@ -9,6 +9,9 @@ from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
 from django.core.cache import cache
+
+from django.contrib.auth import authenticate
+from rest_framework import exceptions
 from core.apps import CoreConfig
 from core.models import User, InteractiveUser, Officer, UserRole
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
@@ -36,7 +39,10 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         if i_user.validity_to is not None and i_user.validity_to:
             raise ValidationError(_('core.user.edit_historical_data_error'))
     else:
-        i_user = InteractiveUser.objects.filter(validity_to__isnull=True, login_name=data_subset["login_name"] ).first()
+        i_user = InteractiveUser.objects.filter(
+            validity_to__isnull=True,
+            login_name=data_subset["login_name"]
+        ).first()    
     if i_user:
         i_user.save_history()
         [setattr(i_user, k, v) for k, v in data_subset.items()]
@@ -290,3 +296,13 @@ def reset_user_password(request, username):
         return email_to_send
     except BadHeaderError:
         return ValueError("Invalid header found.")
+
+
+def user_authentication(request, username, password):
+    if not username or not password:
+        raise exceptions.ParseError(_("Missing username or password"))
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        logger.debug(f"Authentication failed for username: {username}")
+        raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+    return user
