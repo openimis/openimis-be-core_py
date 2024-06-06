@@ -1,4 +1,5 @@
 from django.db import connection, migrations
+import os
 
 
 class RemoveIndexForField(migrations.RunPython):
@@ -16,7 +17,10 @@ class RemoveIndexForField(migrations.RunPython):
             constraints = connection.introspection.get_constraints(cursor, model._meta.db_table)
             for constraint_name, constraint_info in constraints.items():
                 if constraint_info["index"] and any(field.column.lower() == col.lower() for col in constraint_info["columns"]):
-                    cursor.execute(f"DROP INDEX {constraint_name} ON {model._meta.db_table}")
+                    if os.environ.get("DB_DEFAULT") == 'mssql':
+                        cursor.execute(f"DROP INDEX {constraint_name} ON {model._meta.db_table}")
+                    else:
+                        cursor.execute(f'DROP INDEX "{constraint_name}"')
 
     def reverse_remove_index(self, app, schema_editor):
         pass
