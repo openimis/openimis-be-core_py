@@ -60,10 +60,13 @@ class UserManager(BaseUserManager):
         user.i_user = i_user
         user.save()
         if core.auto_provisioning_user_group:
-            group = Group.objects.get(
-                name=core.auto_provisioning_user_group)
-            user_group = UserGroup(user=user, group=group)
-            user_group.save()
+            group = Group.objects.filter(
+                name=core.auto_provisioning_user_group).first()
+            if group:
+                user_group = UserGroup(user=user, group=group)
+                user_group.save()
+            else:
+                logger.error(f"Group {core.auto_provisioning_user_group} was not found")
         return user, True
 
     def get_or_create(self, **kwargs):

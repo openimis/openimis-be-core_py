@@ -40,7 +40,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
     else:
         i_user = InteractiveUser.objects.filter(
             validity_to__isnull=True,
-            login_name=data_subset["login_name"] 
+            login_name=data_subset["login_name"]
         ).first()
     if i_user:
         i_user.save_history()
@@ -259,7 +259,13 @@ def set_user_password(request, username, token, password):
 def user_authentication(request, username, password):
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
-    user = authenticate(request, username=username, password=password)
+    try:
+        if hasattr(request, 'COOKIES') and isinstance(request.COOKIES, dict):
+            request.COOKIES.pop('JWT', None)
+            request.COOKIES.pop('JWT-refresh-token', None)
+        user = authenticate(request, username=username, password=password)
+    except Exception as exc:
+        logger.debug(f"Authentication failed for username: {username}:{exc}")
     if not user:
         user, provisioned = UserManager().auto_provision_user(username=username)
         if provisioned:
@@ -270,8 +276,8 @@ def user_authentication(request, username, password):
             logger.debug(f"Authentication failed for username: {username}")
             raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
     return user
-    
-    
+
+
 def check_user_unique_email(user_email):
     if InteractiveUser.objects.filter(email=user_email, validity_to__isnull=True).exists():
         return [{"message": "User email %s already exists" % user_email}]

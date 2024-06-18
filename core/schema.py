@@ -1423,6 +1423,34 @@ class DeleteUserMutation(OpenIMISMutation):
         return errors
 
 
+class ChangeUserLanguageMutation(OpenIMISMutation):
+    """
+    Update an existing User Language and do not change history data
+    """
+    _mutation_module = "core"
+    _mutation_class = "ChangeUserLanguageMutation"
+
+    class Input(OpenIMISMutation.Input):
+        language_id = graphene.String(required=True)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise ValidationError("mutation.authentication_required")
+            data['audit_user_id'] = user.id_for_audit
+            change_user_language(user, language_id=data["language_id"])
+
+            return None
+        except Exception as exc:
+            return [
+                {
+                    'message': "core.mutation.failed_to_update_user_language",
+                    'detail': str(exc)
+                }]
+
+
+
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
@@ -1518,6 +1546,12 @@ def set_user_deleted(user):
                 "message": "role.mutation.failed_to_change_status_of_user" % {'user': str(user)},
                 "detail": user.id}]
         }
+
+
+def change_user_language(user, language_id):
+    updated_user = User.objects.get(id=user.id)
+    updated_user.i_user.language_id = language_id
+    updated_user.save()
 
 
 class ChangePasswordMutation(graphene.relay.ClientIDMutation):
@@ -1652,7 +1686,6 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         return super().mutate(cls, info, **kwargs)
 
 
-
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
@@ -1662,6 +1695,7 @@ class Mutation(graphene.ObjectType):
     create_user = CreateUserMutation.Field()
     update_user = UpdateUserMutation.Field()
     delete_user = DeleteUserMutation.Field()
+    change_user_language = ChangeUserLanguageMutation.Field()
 
     change_password = ChangePasswordMutation.Field()
     reset_password = ResetPasswordMutation.Field()
