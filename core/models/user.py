@@ -66,7 +66,15 @@ class UserManager(BaseUserManager):
                 user_group = UserGroup(user=user, group=group)
                 user_group.save()
             else:
-                logger.error(f"Group {core.auto_provisioning_user_group} was not found")
+                g = Group(name=group)
+                g.save()
+                from django.contrib.auth.models import Permission
+                p = Permission.objects.get(codename="view_user")
+                g.permissions.add(p)
+                try:
+                    g.save()
+                except Exception as e:
+                    logger.warning('Failed set auto_provisioning_user_group ' + str(e))
         return user, True
 
     def get_or_create(self, **kwargs):

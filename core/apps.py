@@ -133,19 +133,7 @@ class CoreConfig(AppConfig):
             logger.info('env NO_DATABASE set to True: no user auto provisioning possible!')
             return
         group = cfg["auto_provisioning_user_group"]
-        this.auto_provisioning_user_group = group
-        try:
-            from .models import Group
-            Group.objects.get(name=group)
-        except Group.DoesNotExist:
-            g = Group(name=group)
-            g.save()
-            from django.contrib.auth.models import Permission
-            p = Permission.objects.get(codename="view_user")
-            g.permissions.add(p)
-            g.save()
-        except Exception as e:
-            logger.warning('Failed set auto_provisioning_user_group ' + str(e))
+        this.auto_provisioning_user_group = group 
 
     def _configure_graphql(self, cfg):
         this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
