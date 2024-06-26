@@ -385,9 +385,11 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     def _u(self):
         return self.i_user or self.officer or self.claim_admin or self.t_user
 
-    def has_perms(self, perm_list, obj=None):
+    def has_perms(self, perm_list, obj=None, list_evaluation_or=True):
         if self.is_imis_admin:
             return True
+        elif list_evaluation_or:
+            return any(self.has_perm(perm, obj) for perm in perm_list)
         else:
             return super().has_perms(perm_list, obj)
 
