@@ -1,35 +1,25 @@
 from django.test import TestCase
-from core.services.userServices import create_or_update_interactive_user, create_or_update_core_user
-from core.test_helpers import create_test_officer
+from core.test_helpers import create_test_officer, LogInHelper
 import re
-from core.models import InteractiveUser
-# Create your tests here.
-null = None
+from core.models import InteractiveUser, Officer, User
 
 
 class HelpersTest(TestCase):
-    test_office = None
-    i_user= None
-    user = None
-    _TEST_USER_NAME = "testhelperusersername"
-    _TEST_USER_PASSWORD = "TestPasswordTest2"
-    _TEST_DATA_USER = {
-    "username": _TEST_USER_NAME,
-    "last_name": _TEST_USER_NAME,
-    "password": _TEST_USER_PASSWORD,
-    "other_names": _TEST_USER_NAME,
-    "user_types": "INTERACTIVE",
-    "language": "en",
-    "roles": [1, 3, 5, 9],
-    }
-    @classmethod
-    def setUpTestData(cls):
-        cls.test_officer = create_test_officer(valid=True, custom_props={})
-        cls.i_user, i_user_created = create_or_update_interactive_user(user_id=None, data=cls._TEST_DATA_USER, audit_user_id=999, connected=False)
-        cls.user, user_created = create_or_update_core_user(None, cls.i_user.username, i_user=cls.i_user)
 
-    def test_defautl(self):
-        self.assertEquals(self.user.username, self._TEST_USER_NAME)
+    def test_create_test_officer(self):
+        count_before = Officer.objects.count()
+        user = create_test_officer(valid=True, custom_props={})
+        self.assertTrue(type(user) is Officer)
+        count_after = Officer.objects.count()
+        self.assertEquals(count_after, count_before+1)
+
+    def test_login_helper(self):
+        count_before = InteractiveUser.objects.count()
+        login_helper = LogInHelper()
+        user = login_helper.get_or_create_user_api()
+        self.assertTrue(type(user) is User)
+        count_after = InteractiveUser.objects.count()
+        self.assertEquals(count_after, count_before+1)
 
 
 class GQLTest(TestCase):
@@ -46,13 +36,13 @@ class GQLTest(TestCase):
 			"healthFacilityId": "6",
 			"language": "en",
 			"lastName": "Manal",
-			"locationId": null,
+			"locationId": None,
 			"otherNames": "Roger",
-			"phone": null,
+			"phone": None,
 			"roles": [
 				"9"
 			],
-			"substitutionOfficerId": null,
+			"substitutionOfficerId": None,
 			"username": "VHOS0011",
 			"userTypes": [
 				"INTERACTIVE",

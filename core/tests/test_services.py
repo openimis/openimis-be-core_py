@@ -20,6 +20,7 @@ from location.models import OfficerVillage
 
 logger = logging.getLogger(__file__)
 postgresql = "postgresql"
+PASSWORD = "FoBoar72!"
 
 
 class UserServicesTest(TestCase):
@@ -76,7 +77,7 @@ class UserServicesTest(TestCase):
                 phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
-                password="foobar123",
+                password=PASSWORD,
             ),
             audit_user_id=999,
             connected=False,
@@ -95,8 +96,8 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.phone, "+123456789")
         self.assertEquals(i_user.email, f"{username}@illuminati.int")
         self.assertIsNotNone(i_user.password)
-        self.assertNotEqual(i_user.password, "foobar123")  # No clear text password
-        self.assertTrue(i_user.check_password("foobar123"))
+        self.assertNotEqual(i_user.password, PASSWORD)  # No clear text password
+        self.assertTrue(i_user.check_password(PASSWORD))
         self.assertFalse(i_user.check_password("wrong_password"))
 
         UserRole.objects.filter(user_id=i_user.id).delete()
@@ -118,7 +119,7 @@ class UserServicesTest(TestCase):
                 phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
-                password="foobar123",
+                password=PASSWORD,
             ),
             audit_user_id=999,
             connected=False,
@@ -136,7 +137,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.language.code, "fr")
         self.assertEquals(i_user.phone, "+123456789")
         self.assertEquals(i_user.email, f"{username}@illuminati.int")
-        self.assertTrue(i_user.check_password("foobar123"))
+        self.assertTrue(i_user.check_password(PASSWORD))
 
         # Core user necessary for the update
         core_user, core_user_created = create_or_update_core_user(
@@ -154,7 +155,7 @@ class UserServicesTest(TestCase):
                 phone="updated phone",
                 email=f"{username}@updated.int",
                 health_facility_id=2,
-                password="updated",
+                password=f"{PASSWORD}updated",
             ),
             audit_user_id=111,
             connected=False,
@@ -179,7 +180,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user2.language.code, "en")
         self.assertEquals(i_user2.phone, "updated phone")
         self.assertEquals(i_user2.email, f"{username}@updated.int")
-        self.assertTrue(i_user2.check_password("updated"))
+        self.assertTrue(i_user2.check_password(f"{PASSWORD}updated"))
 
         UserRole.objects.filter(user_id=i_user.id).delete()
         core_user.delete()
@@ -453,13 +454,13 @@ class UserServicesTest(TestCase):
                 phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
-                password="foobar123",
+                password=PASSWORD,
             ),
             audit_user_id=999,
             connected=False,
         )
         self.assertTrue(created)
-        self.assertTrue(i_user.check_password("foobar123"))
+        self.assertTrue(i_user.check_password(PASSWORD))
 
         # Core user necessary for the update
         core_user, core_user_created = create_or_update_core_user(
@@ -492,13 +493,13 @@ class UserServicesTest(TestCase):
                 phone="+123456789",
                 email=f"{username}@illuminati.int",
                 health_facility_id=1,
-                password="foobar123",
+                password=PASSWORD,
             ),
             audit_user_id=999,
             connected=False,
         )
         self.assertTrue(created)
-        self.assertTrue(i_user.check_password("foobar123"))
+        self.assertTrue(i_user.check_password(PASSWORD))
         # Core user necessary for the update
         core_user, _ = create_or_update_core_user(None, username, i_user=i_user)
 
