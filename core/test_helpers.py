@@ -141,15 +141,17 @@ class LogInHelper:
             "roles": [1, 3, 5, 9],
         }
 
-    def get_or_create_user_api(self):
-        user = User.objects.filter(username=self.test_user_name).first()
+    def get_or_create_user_api(self, **kwargs):
+        username = kwargs.get('username') or self.test_user_name
+        user = User.objects.filter(username=username).first()
         if user is None:
-            user = self._create_user_interactive_core()
+            user = self._create_user_interactive_core(**kwargs)
         return user
 
-    def _create_user_interactive_core(self):
+    def _create_user_interactive_core(self, **kwargs):
+        username = kwargs.get('username') or self.test_user_name
         i_user, i_user_created = create_or_update_interactive_user(
-            user_id=None, data=self.test_data_user, audit_user_id=999, connected=False)
+            user_id=None, data={**self.test_data_user, **kwargs}, audit_user_id=999, connected=False)
         create_or_update_core_user(
-            user_uuid=None, username=self.test_data_user["username"], i_user=i_user)
-        return User.objects.get(username=self.test_user_name)
+            user_uuid=None, username=username, i_user=i_user)
+        return User.objects.get(username=username)
