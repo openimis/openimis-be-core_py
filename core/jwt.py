@@ -1,3 +1,5 @@
+from calendar import timegm
+
 import jwt
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.signals import token_issued
@@ -20,7 +22,7 @@ def on_token_issued(sender, request, user, **kwargs):
 
 def jwt_encode_user_key(payload, context=None):
     payload['jti'] = str(uuid.uuid4())
-    payload['nbf'] = datetime.utcnow()
+    payload['nbf'] = timegm(datetime.utcnow().utctimetuple())
 
     token = jwt.encode(
         payload,
