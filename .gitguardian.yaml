@@ -1,0 +1,2 @@
+paths-ignore:
+  - "core/tests/*.py"
