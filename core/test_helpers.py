@@ -1,6 +1,6 @@
 from core.models import Officer, InteractiveUser, User, TechnicalUser, filter_validity
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
-from core.services.userServices import create_or_update_officer_villages
+from core.services.userServices import create_or_update_officer_villages,  create_or_update_interactive_user, create_or_update_core_user
 from core.services import create_or_update_user_roles
 from location.models import Location
 from  uuid import uuid4
@@ -42,7 +42,7 @@ def create_test_officer(valid=True, custom_props={}, villages = []):
         result = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
 
-def create_test_interactive_user(username='TestInteractiveTest', password="Test1234", roles=None, custom_props=None):
+def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe®Pąßw0rd""", roles=None, custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
     i_user = InteractiveUser.objects.create(
@@ -127,3 +127,31 @@ def AssertMutation(test_obj,mutation_uuid, token ):
     return openIMISGraphQLTestCase().get_mutation_result(mutation_uuid, token)
 
 
+class LogInHelper:
+    def __init__(self):
+        self.test_user_name = "TestUserTest2"
+        self.test_user_password = "TestPasswordTest2@"
+        self.test_data_user = {
+            "username": self.test_user_name,
+            "last_name": self.test_user_name,
+            "password": self.test_user_password,
+            "other_names": self.test_user_name,
+            "user_types": "INTERACTIVE",
+            "language": "en",
+            "roles": [1, 3, 5, 9],
+        }
+
+    def get_or_create_user_api(self, **kwargs):
+        username = kwargs.get('username') or self.test_user_name
+        user = User.objects.filter(username=username).first()
+        if user is None:
+            user = self._create_user_interactive_core(**kwargs)
+        return user
+
+    def _create_user_interactive_core(self, **kwargs):
+        username = kwargs.get('username') or self.test_user_name
+        i_user, i_user_created = create_or_update_interactive_user(
+            user_id=None, data={**self.test_data_user, **kwargs}, audit_user_id=999, connected=False)
+        create_or_update_core_user(
+            user_uuid=None, username=username, i_user=i_user)
+        return User.objects.get(username=username)
