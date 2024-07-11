@@ -209,10 +209,23 @@ def create_or_update_core_user(user_uuid, username, i_user=None, t_user=None, of
         user.i_user = i_user
     if t_user:
         user.t_user = t_user
+
     if officer:
         user.officer = officer
+    elif not officer and user.officer:
+        # This means that the user was an enrollment officer, but was stripped of that role. We need to archive the officer.
+        user.officer.delete_history()
+        for village in user.officer.officer_villages.filter(validity_to__isnull=True):
+            village.delete_history()
+        user.officer = officer
+
     if claim_admin:
         user.claim_admin = claim_admin
+    elif not claim_admin and user.claim_admin:
+        # This means that the user was a claim admin, but was stripped of that role. We need to archive the claim admin.
+        user.claim_admin.delete_history()
+        user.claim_admin = claim_admin
+
     user.save()
     return user, created
 
