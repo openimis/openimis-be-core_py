@@ -29,6 +29,7 @@ from core.services import (
 )
 from core.tasks import openimis_mutation_async
 from core import filter_validity
+from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -404,7 +405,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             return order_by
 
     @classmethod
-    def orderBy(cls, qs, args):
+    @anonymize_gql()
+    def orderBy(cls, qs, args, **kwargs):
         order = args.get('orderBy', None)
         if order:
             random_expression = RawSQL("NEWID()", params=[]) \
@@ -444,9 +446,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         else:
             qs = filter.qs
 
-
-
-        return OrderedDjangoFilterConnectionField.orderBy(qs, args)
+        model = iterable.model
+        return OrderedDjangoFilterConnectionField.orderBy(qs, args, model=model)
 
 
 class MutationLogGQLType(DjangoObjectType):
@@ -1675,11 +1676,6 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         username = kwargs.get("username")
         password = kwargs.get("password")
         request = info.context
-
-        csrf_middleware = CsrfViewMiddleware(lambda req: None)
-        reason = csrf_middleware.process_view(request, None, (), {})
-        if reason:
-            raise PermissionDenied('CSRF token missing or incorrect.')
 
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)
