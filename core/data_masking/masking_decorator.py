@@ -12,11 +12,12 @@ def anonymize_gql():
             model = kwargs.get('model', None)
             if model:
                 masking_class = MaskingClassStorage.get_masking_class(model.__name__)
-                masking_enabled = masking_class.masking_enabled
-                if masking_enabled:
-                    if isinstance(result, QuerySet):
-                        for obj in result:
-                            masking_class.apply_mask(obj)
+                if masking_class:
+                    masking_enabled = masking_class.masking_enabled
+                    if masking_enabled:
+                        if isinstance(result, QuerySet):
+                            for obj in result:
+                                masking_class.apply_mask(obj)
             return result
         return wrapper
     return decorator
