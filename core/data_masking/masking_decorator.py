@@ -16,6 +16,7 @@ def anonymize_gql():
                     masking_enabled = masking_class.masking_enabled
                     if masking_enabled:
                         if isinstance(result, QuerySet):
+                            print('ok')
                             for obj in result:
                                 masking_class.apply_mask(obj)
             return result

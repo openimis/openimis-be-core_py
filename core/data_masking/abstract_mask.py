@@ -1,7 +1,4 @@
-import re
 from abc import ABC
-from django.db.models.query import QuerySet
-from django.core.serializers import serialize
 
 
 class DataMaskAbs(ABC):
@@ -10,14 +7,12 @@ class DataMaskAbs(ABC):
     enabled = False
 
     def apply_mask(self, data):
-        print(self.anon_fields, 'anon fields')
         for field in self.anon_fields:
             field_parts = field.split('.')
             self._anonymize_nested_field(data, field_parts)
         return data
 
     def anonymize(self, value):
-        print('typeis', type(value))
         if isinstance(value, str):
             result = '***************'
             return result
