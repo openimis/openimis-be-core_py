@@ -29,6 +29,7 @@ from core.services import (
 )
 from core.tasks import openimis_mutation_async
 from core import filter_validity
+from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -404,6 +405,13 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             return order_by
 
     @classmethod
+    @anonymize_gql()
+    def resolve_connection(cls, connection, args, iterable, max_limit=None):
+        return super(DjangoFilterConnectionField, cls).resolve_connection(
+            connection, args, iterable, max_limit
+        )
+
+    @classmethod
     def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
@@ -422,6 +430,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
+
         return qs
 
     @classmethod
@@ -443,8 +452,6 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             raise Exception(filter.errors)
         else:
             qs = filter.qs
-
-
 
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
