@@ -406,7 +406,13 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
 
     @classmethod
     @anonymize_gql()
-    def orderBy(cls, qs, args, **kwargs):
+    def resolve_connection(cls, connection, args, iterable, max_limit=None):
+        return super(DjangoFilterConnectionField, cls).resolve_connection(
+            connection, args, iterable, max_limit
+        )
+
+    @classmethod
+    def orderBy(cls, qs, args):
         order = args.get('orderBy', None)
         if order:
             random_expression = RawSQL("NEWID()", params=[]) \
@@ -424,6 +430,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
                     for o in order
                 ]
             qs = qs.order_by(*snake_order)
+
         return qs
 
     @classmethod
@@ -446,8 +453,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         else:
             qs = filter.qs
 
-        model = iterable.model
-        return OrderedDjangoFilterConnectionField.orderBy(qs, args, model=model)
+        return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
 
 class MutationLogGQLType(DjangoObjectType):
