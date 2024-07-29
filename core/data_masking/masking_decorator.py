@@ -1,7 +1,4 @@
-import base64
-
 from functools import wraps
-from django.db.models import QuerySet
 
 from core.data_masking import MaskingClassStorage
 
