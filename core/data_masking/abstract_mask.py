@@ -17,7 +17,7 @@ class DataMaskAbs(ABC):
             result = '***************'
             return result
         elif isinstance(value, (int, float)):
-            return 0  # Example for numbers
+            return 0
         elif isinstance(value, dict):
             return {k: self.anonymize(v) for k, v in value.items()}
         return value
