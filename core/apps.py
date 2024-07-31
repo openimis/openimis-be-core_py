@@ -51,7 +51,8 @@ DEFAULT_CFG = {
     "fields_controls_eo": {},
     "is_valid_health_facility_contract_required": False,
     "secondary_calendar": None,
-    "locked_user_password_hash": 'locked'
+    "locked_user_password_hash": 'locked',
+    "gql_query_enable_viewing_masked_data_perms": ["900101"],
 }
 
 
@@ -95,6 +96,8 @@ class CoreConfig(AppConfig):
     password_lowercase = settings.PASSWORD_LOWERCASE
     password_digits = settings.PASSWORD_DIGITS
     password_symbols = settings.PASSWORD_SYMBOLS
+
+    gql_query_enable_viewing_masked_data_perms = []
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -170,6 +173,7 @@ class CoreConfig(AppConfig):
         CoreConfig.gql_mutation_update_claim_administrator_perms = cfg["gql_mutation_update_claim_administrator_perms"]
         CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
         CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
+        CoreConfig.gql_query_enable_viewing_masked_data_perms = cfg["gql_query_enable_viewing_masked_data_perms"]
 
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
         CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
