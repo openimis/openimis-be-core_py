@@ -480,9 +480,9 @@ To configure data masking:
 ### Granting Authority to See Masked Data
 If someone wants to grant a role the authority to see masked data, follow these steps:
 * Go to the openIMIS application.
-* Navigate to Administration -> Roles Management.
+* Navigate to `Administration` -> `Roles Management`.
 * Select the role you want to grant the authority to see masked data.
-* In the available permissions list, find Core | Query Enable Viewing Masked Data.
+* In the available permissions list, find `Core | Query Enable Viewing Masked Data`.
 * Move this permission into chosen permissions.
 * Save the role.
 
