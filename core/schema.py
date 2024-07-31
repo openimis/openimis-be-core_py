@@ -10,6 +10,8 @@ from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
 from rest_framework import exceptions
+from functools import partial
+from promise import Promise
 
 from functools import reduce
 from django.utils.translation import gettext_lazy
@@ -406,10 +408,69 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
 
     @classmethod
     @anonymize_gql()
-    def resolve_connection(cls, connection, args, iterable, max_limit=None):
+    def resolve_connection(cls, connection, args, iterable, max_limit=None, user=None):
         return super(DjangoFilterConnectionField, cls).resolve_connection(
             connection, args, iterable, max_limit
         )
+
+    @classmethod
+    def connection_resolver(
+            cls,
+            resolver,
+            connection,
+            default_manager,
+            queryset_resolver,
+            max_limit,
+            enforce_first_or_last,
+            root,
+            info,
+            **args
+    ):
+        first = args.get("first")
+        last = args.get("last")
+        offset = args.get("offset")
+        before = args.get("before")
+
+        if enforce_first_or_last:
+            assert first or last, (
+                "You must provide a `first` or `last` value to properly paginate the `{}` connection."
+            ).format(info.field_name)
+
+        if max_limit:
+            if first:
+                assert first <= max_limit, (
+                    "Requesting {} records on the `{}` connection exceeds the `first` limit of {} records."
+                ).format(first, info.field_name, max_limit)
+                args["first"] = min(first, max_limit)
+
+            if last:
+                assert last <= max_limit, (
+                    "Requesting {} records on the `{}` connection exceeds the `last` limit of {} records."
+                ).format(last, info.field_name, max_limit)
+                args["last"] = min(last, max_limit)
+
+        if offset is not None:
+            assert before is None, (
+                "You can't provide a `before` value at the same time as an `offset` value to properly paginate the `{}` connection."
+            ).format(info.field_name)
+
+        # eventually leads to DjangoObjectType's get_queryset (accepts queryset)
+        # or a resolve_foo (does not accept queryset)
+        iterable = resolver(root, info, **args)
+        if iterable is None:
+            iterable = default_manager
+        # thus the iterable gets refiltered by resolve_queryset
+        # but iterable might be promise
+        iterable = queryset_resolver(connection, iterable, info, args)
+        on_resolve = partial(
+            cls.resolve_connection, connection, args,
+            max_limit=max_limit, user=info.context.user
+        )
+
+        if Promise.is_thenable(iterable):
+            return Promise.resolve(iterable).then(on_resolve)
+
+        return on_resolve(iterable)
 
     @classmethod
     def orderBy(cls, qs, args):

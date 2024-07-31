@@ -469,6 +469,7 @@ class IndividualConfig(AppConfig):
     ...
     ...
 ```
+
 ### Summary
 To configure data masking:
 * Define masking classes in data_masking.py by inheriting from DataMaskAbs. 
@@ -476,6 +477,17 @@ To configure data masking:
 * Remember to register data masking class in module - this activity must also be done in apps.py file. 
 * Use dot notation for JSON fields in the anon_fields list.
 
+### Granting Authority to See Masked Data
+If someone wants to grant a role the authority to see masked data, follow these steps:
+* Go to the openIMIS application.
+* Navigate to Administration -> Roles Management.
+* Select the role you want to grant the authority to see masked data.
+* In the available permissions list, find Core | Query Enable Viewing Masked Data.
+* Move this permission into chosen permissions.
+* Save the role.
+
+Now, users with this role will be able to see the original values of masked data even if they are marked as masked. To revert this option, simply move this permission from chosen permissions back to available permissions for the given role. 
+This will make the data appear in the masked way again.
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
