@@ -352,7 +352,7 @@ CLASS_RULE_PARAM_VALIDATION = [
   - run_convert(instance, convert_to **argv) - execute the conversion for the instance with the first rule that provide the conversion (see get_convert_from_to). 'from_to' is deducted from instance. 
   - get_convert_from_to() - get the possible conversion, return [calc UUID, from, to]
 
-## CustomFilters
+## Custom Filters
 This module provides the ability to define custom filters and their construction. It includes the following classes:
 * ```CustomFilterRegistryPoint```: This class is responsible for registering filters from a specific module. 
 * ```CustomFilterWizardInterface```: This interface defines the implementation details of a custom filtering wizard.
@@ -380,6 +380,114 @@ by invoking the wizard hub service. Here's an example using the Django shell:
    CustomFilterWizardStorage.build_output_how_to_build_filter('social_protection', 'Beneficiary')
 ```
 
+## Data Masking
+Data masking in the application can be configured by defining masking classes in the data_masking.py file within the relevant business module. 
+This guide provides a detailed explanation of how to configure data masking using classes and settings.
+
+### Step-by-Step Configuration
+#### 1. Define Masking Classes
+* Create a data_masking.py file in your business module and define masking classes by inheriting from DataMaskAbs. 
+Below there is an example from Individual module.
+``` python
+from core.data_masking import DataMaskAbs
+from individual.apps import IndividualConfig
+
+class IndividualMask(DataMaskAbs):
+    masking_model = 'Individual'
+    anon_fields = IndividualConfig.individual_mask_fields
+    masking_enabled = IndividualConfig.individual_masking_enabled
+
+class IndividualHistoryMask(DataMaskAbs):
+    masking_model = 'HistoricalIndividual'
+    anon_fields = IndividualConfig.individual_mask_fields
+    masking_enabled = IndividualConfig.individual_masking_enabled
+```
+#### 2. Configure Settings in apps.py
+* Ensure the relevant configuration is set in the apps.py file within the business module. This configuration includes enabling or disabling masking and defining which fields should be masked.
+Example configuration in apps.py:
+``` python
+DEFAULT_CONFIG = {
+    ...
+    ...
+    "individual_masking_enabled": True,
+    "individual_mask_fields": [
+        'json_ext.beneficiary_data_source',
+        'json_ext.educated_level'
+    ]
+}
+
+class IndividualConfig(AppConfig):
+    name = 'individual'
+    ...
+    ...
+    individual_mask_fields = None
+    individual_masking_enabled = None
+    ...
+    ...
+```
+
+#### 3. Configuration Parameters
+* `masking_enabled`: This parameter enables or disables the data masking functionality. It should be set to True to enable masking or False to disable it.
+* `anon_fields`: This is an array of fields to be masked based on model names. When the model field is a JSON field, the proper evaluation of the expression is <model_json_field>.<chosen_field_to_be_masked>.
+
+#### 4. Example Configuration Details
+* `masking_enabled`: True or False
+    - Setting this to True enables data masking.
+    - Setting this to False disables data masking.
+* `anon_fields`: List of fields to be masked.
+     - Fields within JSON structures should be referenced using dot notation.
+     - Example: ['first_name', 'json_ext.beneficiary_data_source', 'json_ext.educated_level']
+
+#### 5. Register masking in apps.py
+* Ensure the masking is applied by registration it in the apps.py file within the business module.
+Example configuration in apps.py:
+``` python
+class IndividualConfig(AppConfig):
+    name = 'individual'
+    ...
+    ...
+    individual_mask_fields = None
+    individual_masking_enabled = None
+    ...
+    ...
+    def ready(self):
+        from core.models import ModuleConfiguration
+        
+        cfg = ModuleConfiguration.get_or_default(self.name, DEFAULT_CONFIG)
+        self.__load_config(cfg)
+        self.__validate_individual_schema(cfg)
+        self.__initialize_custom_filters()
+        self._set_up_workflows()
+        self.__register_masking_class()
+    ...
+    ...
+    def __register_masking_class(cls):
+        from individual.data_masking import IndividualMask, IndividualHistoryMask
+        MaskingClassRegistryPoint.register_masking_class(
+            masking_class_list=[IndividualMask(), IndividualHistoryMask()]
+        )
+    ...
+    ...
+```
+
+### Summary
+To configure data masking:
+* Define masking classes in data_masking.py by inheriting from DataMaskAbs. 
+* Set the masking configuration in apps.py including enabling/disabling masking and specifying fields to be masked.
+* Remember to register data masking class in module - this activity must also be done in apps.py file. 
+* Use dot notation for JSON fields in the anon_fields list.
+
+### Granting Authority to See Masked Data
+If someone wants to grant a role the authority to see masked data, follow these steps:
+* Go to the openIMIS application.
+* Navigate to `Administration` -> `Roles Management`.
+* Select the role you want to grant the authority to see masked data.
+* In the available permissions list, find `Core | Query Enable Viewing Masked Data`.
+* Move this permission into chosen permissions.
+* Save the role.
+
+Now, users with this role will be able to see the original values of masked data even if they are marked as masked. To revert this option, simply move this permission from chosen permissions back to available permissions for the given role. 
+This will make the data appear in the masked way again.
 
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
