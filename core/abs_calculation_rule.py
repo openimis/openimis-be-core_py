@@ -1,7 +1,8 @@
 import abc
+import datetime
 
 
-class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
+class AbsStrategy(object, metaclass=abc.ABCMeta):
 
     @classmethod
     def get_version(cls):
@@ -84,9 +85,12 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
     from_to = property(get_from_to, set_from_to)
 
     @classmethod
-    @abc.abstractmethod
     def ready(cls):
-        return
+        now = datetime.datetime.now()
+        condition_is_valid = (now >= cls.date_valid_from and now <= cls.date_valid_to) \
+            if cls.date_valid_to else (now >= cls.date_valid_from and cls.date_valid_to is None)
+        if not condition_is_valid:
+            cls.status = "inactive"
 
     @classmethod
     @abc.abstractmethod
@@ -104,9 +108,20 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
         return
 
     @classmethod
-    @abc.abstractmethod
     def get_linked_class(cls, sender, class_name, **kwargs):
-        return
+        # calculation are loaded on the side, therefore contentType have to be loaded on execution
+        from django.contrib.contenttypes.models import ContentType
+        list_class = []
+        if class_name != None:
+            model_class = ContentType.objects.filter(model__iexact=class_name).first()
+            if model_class:
+                model_class = model_class.model_class()
+                list_class = list_class + \
+                             [f.remote_field.model.__name__ for f in model_class._meta.fields
+                              if f.get_internal_type() == 'ForeignKey' and f.remote_field.model.__name__ != "User"]
+        else:
+            list_class.append("Calculation")
+        return list_class
 
     @classmethod
     @abc.abstractmethod
@@ -187,3 +202,6 @@ class AbsCalculationRule(object,  metaclass=abc.ABCMeta):
             convert_from_to = {'calc_uuid': cls.uuid, 'from': ft['from'], 'to': ft['to']}
             list_possible_conversion.append(convert_from_to)
         return list_possible_conversion
+
+
+AbsCalculationRule = AbsStrategy
