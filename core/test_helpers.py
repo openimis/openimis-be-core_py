@@ -45,24 +45,32 @@ def create_test_officer(valid=True, custom_props={}, villages = []):
 def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe®Pąßw0rd""", roles=None, custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
-    i_user = InteractiveUser.objects.create(
-        **{
-            "language_id": "en",
-            "last_name": "TestLastName",
-            "other_names": "Test Other Names",
-            "login_name": username,
-            "audit_user_id": -1,
-            "role_id": roles[0],
-            **(custom_props if custom_props else {})
-        }
-    )
+    
+    i_user = InteractiveUser.objects.filter(login_name=username).first()
+    if i_user:
+        # TODO add custom prop to existing user
+        user = User.objects.filter(i_user=i_user).first()
+    else:
+        i_user = InteractiveUser.objects.create(
+            **{
+                "language_id": "en",
+                "last_name": "TestLastName",
+                "other_names": "Test Other Names",
+                "login_name": username,
+                "audit_user_id": -1,
+                "role_id": roles[0],
+                **(custom_props if custom_props else {})
+            }
+        )
+        user = User.objects.create(
+                username=username,
+                i_user=i_user,
+        )
     i_user.set_password(password)
     i_user.save()
     create_or_update_user_roles(i_user, roles, None)
-    return User.objects.create(
-        username=username,
-        i_user=i_user,
-    )
+    return user
+
 
 
 def create_test_technical_user(
