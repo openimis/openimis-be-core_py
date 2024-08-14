@@ -61,6 +61,5 @@ def validator(sender, instance, **kwargs):
         try:
             instance.full_clean(validate_unique=False)
         except Exception as e:
-            logger.error(
-                f"Object {instance.__class__.__name__} is not respecting the mandatory fields: {e}"
-            )
+            msg = f"Object {instance.__class__.__name__} is not respecting the mandatory fields: {e}"
+            raise ValueError(msg)

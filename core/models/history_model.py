@@ -98,6 +98,8 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def delete(self, *args, **kwargs):
         if 'username' in kwargs:
             user = User.objects.get(username=kwargs.pop('username'))
+        elif 'user' in kwargs:
+            user = kwargs.pop('user')
         else:
             raise ValidationError('Delete error! Provide the username of the current user in `username` argument')
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
