@@ -7,6 +7,7 @@ from django.db.models.signals import pre_save
 from django.db import models
 from datetime import datetime, datetime, timedelta, datetime as py_datetime
 import logging
+from django.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -62,4 +63,4 @@ def validator(sender, instance, **kwargs):
             instance.full_clean(validate_unique=False)
         except Exception as e:
             msg = f"Object {instance.__class__.__name__} is not respecting the mandatory fields: {e}"
-            raise ValueError(msg)
+            raise ValidationError(msg)
