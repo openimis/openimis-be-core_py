@@ -5,7 +5,7 @@ from core.models import HistoryModel, VersionedModel
 from django.dispatch import receiver
 from django.db.models.signals import pre_save
 from django.db import models
-from datetime import datetime, datetime, timedelta, datetime as py_datetime
+from datetime import datetime as py_datetime
 import logging
 from django.core.exceptions import ValidationError
 
@@ -53,7 +53,7 @@ def validator(sender, instance, **kwargs):
                     setattr(instance, f.name, int(attr))
                 elif isinstance(f, models.DateField) and isinstance(attr, str):
                     setattr(instance, f.name, py_datetime.strptime(attr[:10], "%Y-%m-%d"))
-                elif isinstance(f, models.DateTimeField) and not isinstance(attr, datetime):
+                elif isinstance(f, models.DateTimeField) and not isinstance(attr, py_datetime):
                     if hasattr(attr, 'to_ad_datetime'):
                         setattr(instance, f.name, attr.to_ad_datetime())
                     elif isinstance(f, models.DateTimeField) and isinstance(attr, str):
