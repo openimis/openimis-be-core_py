@@ -53,9 +53,9 @@ class AbstractWebSocketClient(ABC):
         :raises NotImplementedError: when payload has invalid type
         """
         payload = self._transform_payload(payload)
-        if type(payload) == bytes:
+        if isinstance(payload, bytes):
             self.websocket.send(payload, websocket.ABNF.OPCODE_BINARY)
-        elif type(payload) == str:
+        elif isinstance(payload, str):
             self.websocket.send(payload, websocket.ABNF.OPCODE_TEXT)
         else:
             raise NotImplementedError(F"Sending payload of type {type(payload)} not supported")
