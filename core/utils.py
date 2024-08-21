@@ -348,13 +348,11 @@ def validate_json_schema(schema):
         return []
     except jsonschema.exceptions.SchemaError as schema_error:
         return [
-            {"message": _("core.utils.schema_validation.invalid_schema")
-                        % {"error": str(schema_error)}}
+            {"message": _("core.utils.schema_validation.invalid_schema") % {"error": str(schema_error)}}
         ]
     except ValueError as json_error:
         return [
-            {"message": _("core.utils.schema_validation.invalid_json")
-                        % {"error": str(json_error)}}
+            {"message": _("core.utils.schema_validation.invalid_json") % {"error": str(json_error)}}
         ]
 
 

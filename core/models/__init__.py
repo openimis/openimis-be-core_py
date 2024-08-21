@@ -1,9 +1,9 @@
-from .base import *
-from . import versioned_model
-from . import user
-from . import history_model
-from . import base_mutation
-from . import user_mutation
+from core.models.base import *
+from core.models import versioned_model
+from core.models import user
+from core.models import history_model
+from core.models import base_mutation
+from core.models import user_mutation
 
 _query_export_path = user._query_export_path
 _get_default_expire_date = user._get_default_expire_date
