@@ -9,7 +9,8 @@ import graphene
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
-from rest_framework import exceptions
+
+from graphene_django import DjangoObjectType
 from functools import partial
 from promise import Promise
 
@@ -52,14 +53,17 @@ from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
 from typing import Optional, List, Dict, Any
 
-from .apps import CoreConfig
-from .custom_filters import CustomFilterWizardStorage
-from .gql_queries import *
-from .utils import flatten_dict
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
-from .services.roleServices import check_role_unique_name
-from .services.userServices import check_user_unique_email
-from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
+from core.apps import CoreConfig
+from core.custom_filters import CustomFilterWizardStorage
+from core.gql_queries import RoleGQLType, RoleRightGQLType, UserGQLType, InteractiveUserGQLType, LanguageGQLType, \
+    CustomFilterGQLType, ModulePermissionsListGQLType, OfficerGQLType, PermissionOpenImisGQLType, \
+    ModulePermissionGQLType, CustomFilterOptionGQLType
+from core.utils import flatten_dict, ExtendedConnection
+from core.models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation, User, \
+    InteractiveUser, Role, RoleRight
+from core.services.roleServices import check_role_unique_name
+from core.services.userServices import check_user_unique_email
+from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768

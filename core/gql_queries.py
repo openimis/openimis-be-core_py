@@ -4,7 +4,7 @@ from core import ExtendedConnection, filter_validity
 from core.models import Officer, Role, RoleRight, UserRole, User, InteractiveUser, UserMutation, Language
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility
-from .apps import CoreConfig
+from core.apps import CoreConfig
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 

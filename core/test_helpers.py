@@ -35,8 +35,8 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
     else:
         data['uuid'] = uuid4()
         eo = Officer.objects.create(**data)
-    if villages == []:
-        villages == Location.objects.filter(*filter_validity(), type='\V').first()
+    if not villages:
+        villages == Location.objects.filter(*filter_validity(), type='V').first()
     if eo:
         _ = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
