@@ -30,4 +30,3 @@ class DateTimeField(models.DateTimeField):
         if hasattr(value, 'to_ad_datetime'):
             value = value.to_ad_datetime()
         return models.DateTimeField().get_prep_value(value)
-    

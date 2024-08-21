@@ -12,6 +12,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__file__)
 
+
 @receiver(token_issued)
 def on_token_issued(sender, request, user, **kwargs):
     # Store the date on which the user got the auth token
@@ -34,6 +35,7 @@ def jwt_encode_user_key(payload, context=None):
         token = token.decode("utf-8")
     return token
 
+
 def jwt_decode_user_key(token, context=None):
     # First decode the token without validating it, so we can extract the username
     not_validated = jwt.decode(
@@ -51,9 +53,9 @@ def jwt_decode_user_key(token, context=None):
     )
     if not_validated and not_validated.get("username"):
         user_class = apps.get_model("core", "User")
-        db_user = user_class.objects\
-            .filter(username=not_validated.get("username"))\
-            .only("i_user__private_key")\
+        db_user = user_class.objects \
+            .filter(username=not_validated.get("username")) \
+            .only("i_user__private_key") \
             .first()
         if db_user and db_user.private_key:
             key = db_user.private_key
@@ -75,6 +77,7 @@ def jwt_decode_user_key(token, context=None):
         algorithms=[jwt_settings.JWT_ALGORITHM],
     )
 
+
 def get_jwt_key(encode=True, context=None, payload=None):
     user_key = extract_private_key_from_context(context)
     if user_key is None and payload is not None:
@@ -87,12 +90,14 @@ def get_jwt_key(encode=True, context=None, payload=None):
     else:
         return getattr(jwt_settings, "JWT_PUBLIC_KEY", jwt_settings.JWT_SECRET_KEY)
 
+
 def extract_private_key_from_payload(payload):
     # Get user private key from payload. This covers the refresh token mutation
     from core.models import User
 
     if "username" in payload:
         return User.objects.get(username=payload["username"]).private_key
+
 
 def extract_private_key_from_context(context):
     if context and context.user and hasattr(context.user, "private_key"):

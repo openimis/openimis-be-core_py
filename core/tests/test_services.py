@@ -354,7 +354,7 @@ class UserServicesTest(TestCase):
                 location_id=17,
                 village_ids=[22],
                 substitution_officer_id=None,
-                works_to=datetime.date(2025,5,5),
+                works_to=datetime.date(2025, 5, 5),
                 phone_communication=False,
                 address="updated address",
             ),

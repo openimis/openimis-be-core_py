@@ -15,6 +15,7 @@ class OfficerGQLType(DjangoObjectType):
     """
     This type corresponds to the Enrolment Officer but is a bit more generic than just Enrolment.
     """
+
     class Meta:
         model = Officer
         interfaces = (graphene.relay.Node,)
@@ -126,8 +127,8 @@ class InteractiveUserGQLType(DjangoObjectType):
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
         if self.user_roles:
-            return Role.objects\
-                .filter(validity_to__isnull=True)\
+            return Role.objects \
+                .filter(validity_to__isnull=True) \
                 .filter(user_roles__user_id=self.id, user_roles__validity_to__isnull=True)
         else:
             return None
@@ -213,6 +214,7 @@ class UserMutationGQLType(DjangoObjectType):
     This intermediate object links Mutations to Users. Beware of the confusion between the user performing the mutation
     and the users affected by that mutation, the latter being listed in this object.
     """
+
     class Meta:
         model = UserMutation
 
@@ -238,4 +240,3 @@ class ValidationMessageGQLType(graphene.ObjectType):
     is_valid = graphene.Boolean()
     error_code = graphene.Int()
     error_message = graphene.String()
-

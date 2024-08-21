@@ -27,7 +27,7 @@ class JWTAuthentication(BaseAuthentication):
         self.check_rate_limit(request)
         token = get_credentials(request)
         if token:
-        # Do not pass context to avoid to try to get user from request to get his private key.
+            # Do not pass context to avoid to try to get user from request to get his private key.
             try:
                 user = get_user_by_token(token)
             except (jwt.PyJWTError, JSONWebTokenError) as exc:

@@ -5,7 +5,6 @@ from itertools import chain
 from django.conf import settings
 
 
-
 class JsonContains(Lookup):
     lookup_name = 'contains'
 
@@ -14,12 +13,13 @@ class JsonContains(Lookup):
     BASE_SQL = '(JSON_VALUE(cast({} as nvarchar(max)), %s)=%s)'
 
     def as_sql(self, compiler, connection):
-        
         lhs, lhs_params = self.process_lhs(compiler, connection)
         rhs, rhs_params = self.process_rhs(compiler, connection)
         # have the json section and value of the json section in params
-        params = list(chain.from_iterable([[f"'{list(rhs_params[0].keys())[_]}'", f"'{rhs_params[0][list(rhs_params[0].keys())[_]][0]}'"] for _ in range(0, len(rhs_params[0]))]))
-        sql_statement = ' AND '.join([self.BASE_SQL.format(lhs)    for _ in range(0, len(rhs_params[0]))])
+        params = list(chain.from_iterable(
+            [[f"'{list(rhs_params[0].keys())[_]}'", f"'{rhs_params[0][list(rhs_params[0].keys())[_]][0]}'"] for _ in
+             range(0, len(rhs_params[0]))]))
+        sql_statement = ' AND '.join([self.BASE_SQL.format(lhs) for _ in range(0, len(rhs_params[0]))])
         return sql_statement, params
 
     def _prepare_dict_value(self, json_ext):
@@ -53,9 +53,8 @@ class JsonContainsKey(Contains):
 
     def get_rhs_op(self, connection, rhs):
         return connection.operators['contains'] % rhs
-    
-    
+
+
 if settings.MSSQL:
     JSONField.register_lookup(JsonContains)
     JSONField.register_lookup(JsonContainsKey)
-
