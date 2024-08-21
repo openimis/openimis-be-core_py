@@ -100,7 +100,6 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
     cache.delete('q_allowed_locations_' + str(i_user.id))
 
 
-
 def create_or_update_officer_villages(officer, village_ids, audit_user_id):
     # To avoid a static dependency from Core to Location, we'll dynamically load this class
     officer_village_class = apps.get_model("location", "OfficerVillage")

@@ -16,7 +16,8 @@ class RemoveIndexForField(migrations.RunPython):
         with connection.cursor() as cursor:
             constraints = connection.introspection.get_constraints(cursor, model._meta.db_table)
             for constraint_name, constraint_info in constraints.items():
-                if constraint_info["index"] and any(field.column.lower() == col.lower() for col in constraint_info["columns"]):
+                if constraint_info["index"] and any(
+                        field.column.lower() == col.lower() for col in constraint_info["columns"]):
                     if os.environ.get("DB_DEFAULT") == 'mssql':
                         cursor.execute(f"DROP INDEX {constraint_name} ON {model._meta.db_table}")
                     else:

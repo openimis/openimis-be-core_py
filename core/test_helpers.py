@@ -5,8 +5,6 @@ from core.services.userServices import create_or_update_officer_villages, create
 from core.services import create_or_update_user_roles
 from location.models import Location
 from uuid import uuid4
-import json
-import time
 
 
 def create_test_officer(valid=True, custom_props={}, villages=[]):
@@ -40,11 +38,11 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
     if villages == []:
         villages == Location.objects.filter(*filter_validity(), type='V').first()
     if eo:
-        result = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
+        _ = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
 
 
-def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe®Pąßw0rd""", roles=None,
+def create_test_interactive_user(username='TestInteractiveTest', password="S\:\/pe®Pąßw0rd""", roles=None,
                                  custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
@@ -76,7 +74,7 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe
 
 
 def create_test_technical_user(
-        username='TestAdminTechnicalTest', password="S\/pe®Pąßw0rd""", super_user=False,
+        username='TestAdminTechnicalTest', password="S\\/pe®Pąßw0rd""", super_user=False,
         custom_tech_user_props={}, custom_core_user_props={}):
     custom_tech_user_props['password'] = password
     t_user, t_user_created = TechnicalUser.objects.get_or_create(

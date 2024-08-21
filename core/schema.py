@@ -1062,7 +1062,7 @@ class Query(graphene.ObjectType):
         if validity is None:
             validity = py_datetime.now()
         else:
-            d = re.split('\D', validity)
+            d = re.split(r'\d', validity)
             validity = py_datetime(*[int('0' + x) for x in d][:6])
         # is_exposed indicates wherever a configuration
         # is safe to be accessible from api

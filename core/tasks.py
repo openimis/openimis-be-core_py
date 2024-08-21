@@ -39,7 +39,7 @@ def openimis_mutation_async(mutation_id, module, class_name):
             logger.debug(f"error :{error_messages}")
             try:
                 mutation.mark_as_failed(json.dumps(error_messages))
-            except:
+            except Exception:
                 mutation.mark_as_failed(error_messages)
         return "OK"
     except Exception as exc:
