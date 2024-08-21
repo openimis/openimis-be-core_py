@@ -77,8 +77,7 @@ def filter_validity(arg="validity", prefix="", **kwargs):
         return [Q(**{f"{prefix}validity_to__isnull": True})]
     return [
         Q(**{f"{prefix}validity_from__lte": validity}),
-        Q(**{f"{prefix}validity_to__isnull": True})
-        | Q(**{f"{prefix}validity_to__gte": validity}),
+        Q(**{f"{prefix}validity_to__isnull": True}) | Q(**{f"{prefix}validity_to__gte": validity}),
     ]
 
 
