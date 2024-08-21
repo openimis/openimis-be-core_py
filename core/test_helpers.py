@@ -36,13 +36,13 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
         data['uuid'] = uuid4()
         eo = Officer.objects.create(**data)
     if villages == []:
-        villages == Location.objects.filter(*filter_validity(), type='V').first()
+        villages == Location.objects.filter(*filter_validity(), type='\V').first()
     if eo:
         _ = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
 
 
-def create_test_interactive_user(username='TestInteractiveTest', password="S\:\/pe®Pąßw0rd""", roles=None,
+def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\\/pe®Pąßw0rd""", roles=None,
                                  custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
