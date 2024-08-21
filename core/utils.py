@@ -83,7 +83,7 @@ def filter_validity(arg="validity", prefix="", **kwargs):
 
 
 def filter_validity_business_model(
-    arg="dateValidFrom__Gte", arg2="dateValidTo__Lte", **kwargs
+        arg="dateValidFrom__Gte", arg2="dateValidTo__Lte", **kwargs
 ):
     date_valid_from = kwargs.get(arg)
     date_valid_to = kwargs.get(arg2)
@@ -230,7 +230,7 @@ class ExtendedConnection(graphene.Connection):
 
 def block_update(update_dict, current_object, attribute_name, Ex=ValueError):
     if attribute_name in update_dict and update_dict["code"] != getattr(
-        current_object, attribute_name
+            current_object, attribute_name
     ):
         raise Ex("That {attribute_name} field is not editable")
 
@@ -350,19 +350,16 @@ def validate_json_schema(schema):
     except jsonschema.exceptions.SchemaError as schema_error:
         return [
             {
-                "message": _(
-                    "core.utils.schema_validation.invalid_schema"
-                    % {"error": str(schema_error)}
-                )
+                "message": _("core.utils.schema_validation.invalid_schema")
+                           % {"error": str(schema_error)}
+
             }
         ]
     except ValueError as json_error:
         return [
             {
-                "message": _(
-                    "core.utils.schema_validation.invalid_json"
-                    % {"error": str(json_error)}
-                )
+                "message": _("core.utils.schema_validation.invalid_json")
+                           % {"error": str(json_error)}
             }
         ]
 
