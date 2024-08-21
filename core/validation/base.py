@@ -38,7 +38,6 @@ class BaseModelValidation(ABC):
         pass
 
 
-
 # enforce object validation on every save
 @receiver(pre_save)
 def validator(sender, instance, **kwargs):
@@ -48,7 +47,7 @@ def validator(sender, instance, **kwargs):
             if hasattr(f, 'default') and not f.default == models.fields.NOT_PROVIDED and not attr:
                 setattr(instance, f.name, f.default() if callable(f.default) else f.default)
             elif attr:
-                if isinstance(f, models.DecimalField) and f.decimal_places :
+                if isinstance(f, models.DecimalField) and f.decimal_places:
                     setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(attr)))
                 elif isinstance(f, models.IntegerField) and isinstance(attr, str):
                     setattr(instance, f.name, int(attr))
