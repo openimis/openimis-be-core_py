@@ -3,23 +3,13 @@ import os
 import logging
 import sys
 import uuid
-from copy import copy
+
 from datetime import datetime as py_datetime
 import datetime as base_datetime
 from cached_property import cached_property
-from dirtyfields import DirtyFieldsMixin
-from django.core.exceptions import ValidationError
-from django.core.files.base import ContentFile
-from django.db import models
-from django.db.models import Q, DO_NOTHING, F, JSONField
-from pandas import DataFrame
-from simple_history.models import HistoricalRecords
-from django.db.models.signals import pre_save
-from django.dispatch import receiver
-#from core.datetimes.ad_datetime import datetime as py_datetime
 
-from ..fields import DateTimeField
-from ..utils import filter_validity
+from django.db import models
+from django.db.models import Q, JSONField
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +21,7 @@ class ExtendableModel(models.Model):
 
     class Meta:
         abstract = True
+
 
 class UUIDModel(models.Model):
     """
@@ -44,6 +35,7 @@ class UUIDModel(models.Model):
 
     def __str__(self):
         return "[%s]" % (self.id,)
+
 
 class ModuleConfiguration(UUIDModel):
     """
@@ -125,9 +117,10 @@ class Language(models.Model):
         managed = True
         db_table = 'tblLanguages'
 
-    
+
 def resolved_id_reference(instance, data):
     return resolve_id_reference(instance, data)
+
 
 def resolve_id_reference(instance, data):
     out = {}
@@ -135,16 +128,16 @@ def resolve_id_reference(instance, data):
         found = False
         if k.endswith('_id') and v:
             if hasattr(instance, k[:-3]):
-                field = instance._meta.get_field( k[:-3])
+                field = instance._meta.get_field(k[:-3])
                 try:
                     out[k[:-3]] = field.remote_field.model.objects.get(pk=v)
-                    found= True
+                    found = True
                 except:
-                    raise Exception(f"{instance.__name__}: relationship from {field.remote_field.model.__name__} : {v} not found ")
+                    raise Exception(
+                        f"{instance.__name__}: relationship from {field.remote_field.model.__name__} : {v} not found ")
         if not found:
-            field = instance._meta.get_field( k)
-            if isinstance(field,(base_datetime.date, base_datetime.datetime)):
+            field = instance._meta.get_field(k)
+            if isinstance(field, (base_datetime.date, base_datetime.datetime)):
                 v = py_datetime.strptime(date_string, "%Y-%m-%d")
-            out[k]=v
+            out[k] = v
     return out
-

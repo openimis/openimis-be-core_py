@@ -65,11 +65,11 @@ class gqlTest(openIMISGraphQLTestCase):
         }
 
         query = """
-            mutation authenticate($username: String!, $password: String!) {  
+            mutation authenticate($username: String!, $password: String!) {
                 tokenAuth(username: $username, password: $password)
-                {        
+                {
                 refreshExpiresIn
-                } 
+                }
             }
         """
         response = self.query(
@@ -83,8 +83,8 @@ class gqlTest(openIMISGraphQLTestCase):
         query = """
             mutation {
             changeUserLanguage(
-                input: {clientMutationId: "b2a639a9-1a85-4643-bf84-69d05160c8ee", 
-                clientMutationLabel: "Change User Language", 
+                input: {clientMutationId: "b2a639a9-1a85-4643-bf84-69d05160c8ee",
+                clientMutationLabel: "Change User Language",
                 languageId: "fr"}
             ) {
                 clientMutationId
