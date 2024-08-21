@@ -53,6 +53,7 @@ DEFAULT_CFG = {
     "secondary_calendar": None,
     "locked_user_password_hash": 'locked',
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
+    "csrf_protect_login": True,
 }
 
 
@@ -98,6 +99,8 @@ class CoreConfig(AppConfig):
     password_symbols = settings.PASSWORD_SYMBOLS
 
     gql_query_enable_viewing_masked_data_perms = []
+
+    csrf_protect_login = None
 
     def _import_module(self, cfg, k):
         logger.info('import %s.%s' %
@@ -174,6 +177,7 @@ class CoreConfig(AppConfig):
         CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
         CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
         CoreConfig.gql_query_enable_viewing_masked_data_perms = cfg["gql_query_enable_viewing_masked_data_perms"]
+        CoreConfig.csrf_protect_login = cfg["csrf_protect_login"]
 
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
         CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
