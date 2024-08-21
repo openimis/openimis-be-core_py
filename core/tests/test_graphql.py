@@ -35,7 +35,7 @@ class gqlTest(openIMISGraphQLTestCase):
             variables=variables
         )
         self.assertResponseNoErrors(response)
-        content = json.loads(response.content)
+        _ = json.loads(response.content)
 
     def test_login_default_successful(self):
         variables = {
@@ -56,7 +56,7 @@ class gqlTest(openIMISGraphQLTestCase):
             variables=variables
         )
         self.assertResponseNoErrors(response)
-        content = json.loads(response.content)
+        _ = json.loads(response.content)
 
     def test_login_wrong_credentials(self):
         variables = {
@@ -77,7 +77,7 @@ class gqlTest(openIMISGraphQLTestCase):
             variables=variables
         )
         self.assertResponseHasErrors(response)
-        content = json.loads(response.content)
+        _ = json.loads(response.content)
 
     def test_change_langue(self):
         query = """
@@ -97,4 +97,4 @@ class gqlTest(openIMISGraphQLTestCase):
             headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
         )
         self.assertResponseNoErrors(response)
-        content = json.loads(response.content)
+        _ = json.loads(response.content)

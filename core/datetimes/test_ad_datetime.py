@@ -28,6 +28,7 @@ class SharedUtilsTest(TestCase):
         self.assertFalse(is_midnight(
             core.datetime.datetime(2019, 4, 29, 0, 0, 0, 987654)))
 
+
 class AdDateTestCase(TestCase):
     def setUp(self):
         core.calendar = importlib.import_module(

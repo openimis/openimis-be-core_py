@@ -112,7 +112,7 @@ class AbsStrategy(object, metaclass=abc.ABCMeta):
         # calculation are loaded on the side, therefore contentType have to be loaded on execution
         from django.contrib.contenttypes.models import ContentType
         list_class = []
-        if class_name != None:
+        if class_name is not None:
             model_class = ContentType.objects.filter(model__iexact=class_name).first()
             if model_class:
                 model_class = model_class.model_class()
