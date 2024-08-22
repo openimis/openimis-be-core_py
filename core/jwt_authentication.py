@@ -52,7 +52,7 @@ class JWTAuthentication(BaseAuthentication):
         rate = settings.RATELIMIT_RATE
         mode = settings.DEBUG
 
-        if mode != 'DEBUG' and is_ratelimited(
+        if mode == 'PROD' and is_ratelimited(
                 request=request,
                 group=group,
                 fn=None,
