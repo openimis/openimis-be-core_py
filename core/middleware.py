@@ -47,6 +47,7 @@ class GraphQLRateLimitMiddleware:
         key = settings.RATELIMIT_KEY
         rate = settings.RATELIMIT_RATE
         mode = settings.DEBUG
+        print("EXECUTION MODE ", mode)
         if mode != 'DEBUG' and request.path == '/api/graphql':
             rate_limited = is_ratelimited(
                 request=request,
