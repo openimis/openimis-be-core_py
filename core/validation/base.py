@@ -5,7 +5,7 @@ from core.models import HistoryModel, VersionedModel
 from django.dispatch import receiver
 from django.db.models.signals import pre_save
 from django.db import models
-from datetime import datetime, datetime, timedelta, datetime as py_datetime
+from datetime import datetime as py_datetime
 import logging
 from django.core.exceptions import ValidationError
 
@@ -38,7 +38,6 @@ class BaseModelValidation(ABC):
         pass
 
 
-
 # enforce object validation on every save
 @receiver(pre_save)
 def validator(sender, instance, **kwargs):
@@ -48,13 +47,13 @@ def validator(sender, instance, **kwargs):
             if hasattr(f, 'default') and not f.default == models.fields.NOT_PROVIDED and not attr:
                 setattr(instance, f.name, f.default() if callable(f.default) else f.default)
             elif attr:
-                if isinstance(f, models.DecimalField) and f.decimal_places :
+                if isinstance(f, models.DecimalField) and f.decimal_places:
                     setattr(instance, f.name, f"{{:.{f.decimal_places}f}}".format(float(attr)))
                 elif isinstance(f, models.IntegerField) and isinstance(attr, str):
                     setattr(instance, f.name, int(attr))
                 elif isinstance(f, models.DateField) and isinstance(attr, str):
                     setattr(instance, f.name, py_datetime.strptime(attr[:10], "%Y-%m-%d"))
-                elif isinstance(f, models.DateTimeField) and not isinstance(attr, datetime):
+                elif isinstance(f, models.DateTimeField) and not isinstance(attr, py_datetime):
                     if hasattr(attr, 'to_ad_datetime'):
                         setattr(instance, f.name, attr.to_ad_datetime())
                     elif isinstance(f, models.DateTimeField) and isinstance(attr, str):

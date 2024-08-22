@@ -77,6 +77,7 @@ def register_service_signal(signal_name: str):
             signal_call_args['result'] = out
             registered_signal.send_signal_after(sender=cls_, **signal_call_args)
             return out
+
         return wrapper_propagate_signal
 
     return decorator

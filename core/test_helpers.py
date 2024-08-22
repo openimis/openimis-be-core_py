@@ -1,33 +1,32 @@
 from core.models import Officer, InteractiveUser, User, TechnicalUser, filter_validity
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
-from core.services.userServices import create_or_update_officer_villages,  create_or_update_interactive_user, create_or_update_core_user
+from core.services.userServices import create_or_update_officer_villages, create_or_update_interactive_user, \
+    create_or_update_core_user
 from core.services import create_or_update_user_roles
 from location.models import Location
-from  uuid import uuid4
-import json
-import time
+from uuid import uuid4
 
-def create_test_officer(valid=True, custom_props={}, villages = []):
 
+def create_test_officer(valid=True, custom_props={}, villages=[]):
     code = custom_props.pop('code', None)
     uuid = custom_props.pop('uuid', None)
     qs_eo = Officer.objects
     eo = None
     data = {
-            "code":  code or "TSTOFF",
-            "uuid":uuid,
-            "last_name": "Officer",
-            "other_names": "Test",
-            "validity_to": None if valid else "2019-06-01",
-            "audit_user_id": -1,
-            "phone": "0000110100",
-            **(custom_props if custom_props else {})
-        }
+        "code": code or "TSTOFF",
+        "uuid": uuid,
+        "last_name": "Officer",
+        "other_names": "Test",
+        "validity_to": None if valid else "2019-06-01",
+        "audit_user_id": -1,
+        "phone": "0000110100",
+        **(custom_props if custom_props else {})
+    }
     if code:
         qs_eo = qs_eo.filter(code=code)
     if uuid:
         qs_eo = qs_eo.filter(uuid=uuid)
-    eo = None        
+    eo = None
     if code or uuid:
         eo = qs_eo.first()
     if eo:
@@ -36,16 +35,18 @@ def create_test_officer(valid=True, custom_props={}, villages = []):
     else:
         data['uuid'] = uuid4()
         eo = Officer.objects.create(**data)
-    if villages == []:
-        villages == Location.objects.filter(*filter_validity(), type = 'V').first()
+    if not villages:
+        villages == Location.objects.filter(*filter_validity(), type='V').first()
     if eo:
-        result = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
+        _ = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
 
-def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe®Pąßw0rd""", roles=None, custom_props=None):
+
+def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\\/pe®Pąßw0rd""", roles=None,
+                                 custom_props=None):
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
-    
+
     i_user = InteractiveUser.objects.filter(login_name=username).first()
     if i_user:
         # TODO add custom prop to existing user
@@ -63,8 +64,8 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe
             }
         )
         user = User.objects.create(
-                username=username,
-                i_user=i_user,
+            username=username,
+            i_user=i_user,
         )
     i_user.set_password(password)
     i_user.save()
@@ -72,9 +73,8 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\/pe
     return user
 
 
-
 def create_test_technical_user(
-        username='TestAdminTechnicalTest', password="S\/pe®Pąßw0rd""", super_user=False,
+        username='TestAdminTechnicalTest', password="S\\/pe®Pąßw0rd""", super_user=False,
         custom_tech_user_props={}, custom_core_user_props={}):
     custom_tech_user_props['password'] = password
     t_user, t_user_created = TechnicalUser.objects.get_or_create(
@@ -94,6 +94,7 @@ def create_test_technical_user(
         **(custom_core_user_props)
     )
     return core_user
+
 
 def compare_dicts(dict1, dict2):
     def recursive_compare(obj1, obj2):
@@ -119,8 +120,8 @@ def compare_dicts(dict1, dict2):
                     return False
 
             return True
-        elif isinstance(obj1 , (float, int)) or (isinstance(obj1, str) and obj1.isnumeric()) \
-                and isinstance(obj2 , (float, int)) or (isinstance(obj2, str) and obj2.isnumeric()):
+        elif isinstance(obj1, (float, int)) or (isinstance(obj1, str) and obj1.isnumeric()) \
+                and isinstance(obj2, (float, int)) or (isinstance(obj2, str) and obj2.isnumeric()):
             # Compare floating-point numbers with a tolerance for decimal precision
             return round(float(obj1), 2) == round(float(obj2), 2)
 
@@ -130,8 +131,7 @@ def compare_dicts(dict1, dict2):
     return recursive_compare(dict1, dict2)
 
 
-
-def AssertMutation(test_obj,mutation_uuid, token ):
+def AssertMutation(test_obj, mutation_uuid, token):
     return openIMISGraphQLTestCase().get_mutation_result(mutation_uuid, token)
 
 

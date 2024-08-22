@@ -9,7 +9,8 @@ import graphene
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
-from rest_framework import exceptions
+
+from graphene_django import DjangoObjectType
 from functools import partial
 from promise import Promise
 
@@ -52,14 +53,17 @@ from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
 from typing import Optional, List, Dict, Any
 
-from .apps import CoreConfig
-from .custom_filters import CustomFilterWizardStorage
-from .gql_queries import *
-from .utils import flatten_dict
-from .models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation
-from .services.roleServices import check_role_unique_name
-from .services.userServices import check_user_unique_email
-from .validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
+from core.apps import CoreConfig
+from core.custom_filters import CustomFilterWizardStorage
+from core.gql_queries import RoleGQLType, RoleRightGQLType, UserGQLType, InteractiveUserGQLType, LanguageGQLType, \
+    CustomFilterGQLType, ModulePermissionsListGQLType, OfficerGQLType, PermissionOpenImisGQLType, \
+    ModulePermissionGQLType, CustomFilterOptionGQLType
+from core.utils import flatten_dict, ExtendedConnection
+from core.models import ModuleConfiguration, FieldControl, MutationLog, Language, RoleMutation, UserMutation, User, \
+    InteractiveUser, Role, RoleRight
+from core.services.roleServices import check_role_unique_name
+from core.services.userServices import check_user_unique_email
+from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -184,7 +188,6 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         abstract = True
 
     internal_id = graphene.Field(graphene.String)
-
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -824,7 +827,6 @@ class Query(graphene.ObjectType):
 
         show_deleted = kwargs.get('showDeleted', False)
         if not show_deleted and not kwargs.get('id', None):
-
             # active_users_ids = [user.id for user in user_query if user.is_active]
             user_filters.append(Q(i_user__isnull=True) | Q(*filter_validity(prefix='i_user__')))
 
@@ -1030,7 +1032,7 @@ class Query(graphene.ObjectType):
 
     @staticmethod
     def _obtain_definition_of_custom_filter_from_hub(
-        module_name, object_type_name, uuid_of_object, additional_params
+            module_name, object_type_name, uuid_of_object, additional_params
     ):
         kwargs = {}
         if uuid_of_object is not None:
@@ -1064,7 +1066,7 @@ class Query(graphene.ObjectType):
         if validity is None:
             validity = py_datetime.now()
         else:
-            d = re.split('\D', validity)
+            d = re.split(r'\d', validity)
             validity = py_datetime(*[int('0' + x) for x in d][:6])
         # is_exposed indicates wherever a configuration
         # is safe to be accessible from api
@@ -1307,7 +1309,7 @@ class DeleteRoleMutation(OpenIMISMutation):
                 errors.append({
                     'title': role,
                     'list': [{'message':
-                              "role.validation.id_does_not_exist" % {'id': role_uuid}}]
+                                  "role.validation.id_does_not_exist" % {'id': role_uuid}}]
                 })
                 continue
             errors += set_role_deleted(role)
@@ -1482,7 +1484,7 @@ class DeleteUserMutation(OpenIMISMutation):
                 errors.append({
                     'title': user,
                     'list': [{'message':
-                              "user.validation.id_does_not_exist" % {'id': user_uuid}}]
+                                  "user.validation.id_does_not_exist" % {'id': user_uuid}}]
                 })
                 continue
             errors += set_user_deleted(user)
@@ -1516,7 +1518,6 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
                     'message': "core.mutation.failed_to_update_user_language",
                     'detail': str(exc)
                 }]
-
 
 
 @transaction.atomic
@@ -1554,7 +1555,7 @@ def update_or_create_user(data, user):
         data.pop('client_mutation_label')
     user_uuid = data.pop('uuid') if 'uuid' in data else None
 
-    if user_uuid == str(user.id) and user.is_imis_admin and imis_administrator_system not in data.get("roles",[]):
+    if user_uuid == str(user.id) and user.is_imis_admin and imis_administrator_system not in data.get("roles", []):
         raise ValidationError("Administrator cannot deprovision himself.")
 
     if UT_INTERACTIVE in data["user_types"]:
@@ -1744,10 +1745,11 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         password = kwargs.get("password")
         request = info.context
 
-        csrf_middleware = CsrfViewMiddleware(lambda req: None)
-        reason = csrf_middleware.process_view(request, None, (), {})
-        if reason:
-            raise PermissionDenied('CSRF token missing or incorrect.')
+        if CoreConfig.csrf_protect_login:
+            csrf_middleware = CsrfViewMiddleware(lambda req: None)
+            reason = csrf_middleware.process_view(request, None, (), {})
+            if reason:
+                raise PermissionDenied('CSRF token missing or incorrect.')
 
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)

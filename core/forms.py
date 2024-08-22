@@ -13,7 +13,8 @@ class TechnicalUserForm(forms.ModelForm):
         strip=False,
         widget=forms.PasswordInput,
         help_text=password_validation.password_validators_help_text_html(),
-    )    
+    )
+
     class Meta:
         model = TechnicalUser
         fields = ['username', 'email', 'is_superuser', 'validity_from', 'validity_to']
@@ -21,10 +22,10 @@ class TechnicalUserForm(forms.ModelForm):
     def save(self, commit=True):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password"])
-        user.is_staff=self.cleaned_data["is_superuser"]
+        user.is_staff = self.cleaned_data["is_superuser"]
         if commit:
             user.save()
-        return user        
+        return user
 
 
 class TechnicalUserAdmin(admin.ModelAdmin):
@@ -37,9 +38,9 @@ class GroupAdminForm(forms.ModelForm):
         exclude = []
 
     users = forms.ModelMultipleChoiceField(
-         queryset=User.objects.all(), 
-         required=False,
-         widget=FilteredSelectMultiple('users', False)
+        queryset=User.objects.all(),
+        required=False,
+        widget=FilteredSelectMultiple('users', False)
     )
 
     def __init__(self, *args, **kwargs):
@@ -53,7 +54,7 @@ class GroupAdminForm(forms.ModelForm):
     def save(self, *args, **kwargs):
         instance = super(GroupAdminForm, self).save(commit=True)
         self.save_m2m()
-        return instance    
+        return instance
 
 
 class GroupAdmin(admin.ModelAdmin):

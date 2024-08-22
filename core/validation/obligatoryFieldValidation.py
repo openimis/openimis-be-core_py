@@ -68,5 +68,7 @@ def validate_payload_for_obligatory_fields(list_of_obligatory_fields, payload_ar
             validator.validate_obligatory_fields(value)
             out = func(*args, **kwargs)
             return out
+
         return wrapper_validate_fields
+
     return decorator

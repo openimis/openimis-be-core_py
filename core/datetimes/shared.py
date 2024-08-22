@@ -5,7 +5,7 @@ __all__ = ["is_midnight", "datetimedelta"]
 
 def _cmperror(x, y):
     raise TypeError("can't compare '%s' to '%s'" % (
-                    type(x).__name__, type(y).__name__))
+        type(x).__name__, type(y).__name__))
 
 
 def is_midnight(dt):
@@ -109,7 +109,7 @@ class datetimedelta(object):
                                  seconds=self.seconds + other.seconds,
                                  microseconds=self.microseconds + other.microseconds)
         elif isinstance(other, (date, datetime)):
-            return self.add_to_date( other)
+            return self.add_to_date(other)
         return NotImplemented
 
     def __radd__(self, other):
@@ -129,7 +129,6 @@ class datetimedelta(object):
             sub = - self
             return sub.__add__(other)
         return self.__sub__(other)
-
 
     def __neg__(self):
         return datetimedelta(years=-self.years,

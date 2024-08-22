@@ -109,7 +109,7 @@ class AdDatetime(py_datetime.datetime):
         return AdDatetime(value.year, value.month, value.day,
                           value.hour, value.minute, value.second, value.microsecond,
                           value.tzinfo)
-    
+
     def __hash__(self):
         return super().__hash__()
 
@@ -118,22 +118,22 @@ class AdDatetime(py_datetime.datetime):
 
     def _date_operation(self, operation, other):
 
-        if not other :
+        if not other:
             return operation(other)
         if isinstance(other, py_datetime.datetime):
             return operation(other)
         if isinstance(other, py_datetime.date):
             return operation(AdDatetime.from_ad_date(other))
-    
-    def __eq__(self, other):
-        result = self._date_operation(super(AdDatetime, self).__eq__,other)
-        return result if result else self - other ==  datetimedelta()
-    
-    def __gt__(self, other):
-        return self._date_operation(super(AdDatetime, self).__gt__,other)
-    def __lt__(self, other):
-        return self._date_operation(super(AdDatetime, self).__lt__,other)
 
+    def __eq__(self, other):
+        result = self._date_operation(super(AdDatetime, self).__eq__, other)
+        return result if result else self - other == datetimedelta()
+
+    def __gt__(self, other):
+        return self._date_operation(super(AdDatetime, self).__gt__, other)
+
+    def __lt__(self, other):
+        return self._date_operation(super(AdDatetime, self).__lt__, other)
 
     @classmethod
     def _convert_op_res(cls, res):

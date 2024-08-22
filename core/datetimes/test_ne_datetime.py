@@ -27,7 +27,7 @@ class NeDateTestCase(TestCase):
         self.assertEquals(ne_today, core.datetime.date.from_ad_date(ad_today))
 
     def test_from_ad_date(self):
-        ad_dt = py_date(2020, 1, 13)       
+        ad_dt = py_date(2020, 1, 13)
         ne_dt = core.datetime.date.from_ad_date(ad_dt)
         self.assertEqual(ne_dt, core.datetime.date(2076, 9, 28))
         looped_dt = ne_dt.to_ad_date()
@@ -35,8 +35,8 @@ class NeDateTestCase(TestCase):
 
         self.assertIsNone(core.datetime.date.from_ad_date(None))
 
-        #it also work if you give a datetime instead of a date...
-        ad_dt = py_datetime(2020, 1, 13)       
+        # it also work if you give a datetime instead of a date...
+        ad_dt = py_datetime(2020, 1, 13)
         ne_dt = core.datetime.date.from_ad_date(ad_dt)
         self.assertEqual(ne_dt, core.datetime.date(2076, 9, 28))
         looped_dt = ne_dt.to_ad_datetime()
@@ -49,7 +49,7 @@ class NeDateTestCase(TestCase):
         looped_dt = ne_dt.to_ad_date()
         self.assertEqual(looped_dt, py_date(2020, 1, 13))
 
-        self.assertIsNone(core.datetime.date.from_ad_datetime(None))        
+        self.assertIsNone(core.datetime.date.from_ad_datetime(None))
 
     def test_to_ad_date(self):
         ne_dt = core.datetime.date(2076, 9, 28)
@@ -214,7 +214,7 @@ class NeDatetimeTestCase(TestCase):
 
     def test_iso_format(self):
         self.assertEquals(
-            "2019-06-15 11:22:33.444444", core.datetime.datetime(2076, 2, 32, 11, 22, 33, 444444).isoformat())        
+            "2019-06-15 11:22:33.444444", core.datetime.datetime(2076, 2, 32, 11, 22, 33, 444444).isoformat())
 
     def test_add_sub_years(self):
         dt = core.datetime.datetime(2075, 10, 22, 5, 33, 24, 786222)
