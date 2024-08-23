@@ -50,8 +50,9 @@ class JWTAuthentication(BaseAuthentication):
         group = settings.RATELIMIT_GROUP
         key = settings.RATELIMIT_KEY
         rate = settings.RATELIMIT_RATE
+        mode = settings.MODE
 
-        if is_ratelimited(
+        if mode == 'PROD' and is_ratelimited(
                 request=request,
                 group=group,
                 fn=None,
