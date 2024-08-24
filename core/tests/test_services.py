@@ -87,7 +87,8 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU2")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        self.assertTrue(i_user.role_id in roles)
+        # user.role_id is not used anywhere
+        #self.assertTrue(i_user.role_id in roles)
         self.assertEquals(i_user.user_roles.count(), 2)
         self.assertEquals(
             list(i_user.user_roles.values_list("role_id", flat=True)), roles

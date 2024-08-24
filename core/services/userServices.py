@@ -30,7 +30,6 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
     }
     data_subset = {v: data.get(k) for k, v in i_fields.items()}
     data_subset["audit_user_id"] = audit_user_id
-    data_subset["role_id"] = data["roles"][0]  # The actual roles are stored in their own table
     data_subset["is_associated"] = connected
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
