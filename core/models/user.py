@@ -206,7 +206,8 @@ class InteractiveUser(VersionedModel):
         null=True,
         help_text="has a claim admin or enrolment officer account",
     )
-    role_id = models.IntegerField(db_column="RoleID", null=False)
+    # deprecated
+    role_id = models.IntegerField(db_column="RoleID", null=True, blank=True)
 
     @property
     def id_for_audit(self):
