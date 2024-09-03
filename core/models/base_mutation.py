@@ -14,6 +14,9 @@ from .user import User, _query_export_path, _get_default_expire_date
 
 
 class ExportableQueryModel(models.Model):
+    class FileFormat(models.TextChoices):
+        CSV = 'csv', 'csv'
+        XLSX = 'xlsx', 'xlsx'
     name = models.CharField(max_length=255)
     model = models.CharField(max_length=255)
     content = models.FileField(upload_to=_query_export_path)
@@ -26,10 +29,13 @@ class ExportableQueryModel(models.Model):
     create_date = DateTimeField(db_column='DateCreated', default=py_datetime.now)
     expire_date = DateTimeField(db_column='DateExpiring', default=_get_default_expire_date)
     is_deleted = models.BooleanField(default=False)
+    file_format = models.CharField(
+        max_length=255, blank=True, null=True, choices=FileFormat.choices, default=FileFormat.CSV
+    )
 
     @staticmethod
     def create_csv_export(qs, values, user, column_names=None,
-                          patches=None):
+                          patches=None, file_format='csv'):
         if patches is None:
             patches = []
         sql = qs.query.sql_with_params()
@@ -39,7 +45,7 @@ class ExportableQueryModel(models.Model):
             content = patch(content)
 
         content.columns = [column_names.get(column) or column for column in content.columns]
-        filename = F"{uuid.uuid4()}.csv"
+        filename = F"{uuid.uuid4()}.{file_format}"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(
             name=filename,
@@ -47,6 +53,7 @@ class ExportableQueryModel(models.Model):
             content=content,
             user=user,
             sql_query=sql,
+            file_format=file_format
         )
         export.save()
         return export

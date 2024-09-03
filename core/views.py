@@ -39,13 +39,23 @@ def fetch_export(request):
     elif export.is_deleted:
         return Response(data='Export csv file was removed from server.', status=status.HTTP_410_GONE)
 
-    export_file_name = F"export_{export.model}_{strftime(export.create_date, '%d_%m_%Y')}.csv"
-    return StreamingHttpResponse(
-        (row for row in export.content.file.readlines()),
-        content_type="text/csv",
-        headers={'Content-Disposition': F'attachment; filename="{export_file_name}"'},
-    )
+    export_file_name = F"export_{export.model}_{strftime(export.create_date, '%d_%m_%Y')}.{export.file_format}"
+    if export.file_format == ExportableQueryModel.FileFormat.CSV:
+        response = StreamingHttpResponse(
+            (row for row in export.content.file.readlines()),
+            content_type="text/csv",
+            headers={'Content-Disposition': F'attachment; filename="{export_file_name}"'},
+        )
+    elif ExportableQueryModel.FileFormat.XLSX:
+        response = StreamingHttpResponse(
+            open(export.content.path, 'rb'),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={'Content-Disposition': F'attachment; filename="{export_file_name}"'},
+        )
+    else:
+        return Response(data='Unsupported file format.', status=status.HTTP_400_BAD_REQUEST)
 
+    return response
 
 def _serialize_job(job):
     return "name: %s, trigger: %s, next run: %s, handler: %s" % (
