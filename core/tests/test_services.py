@@ -54,7 +54,6 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU1")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        # self.assertEquals(i_user.role_id, roles[0])
         self.assertEquals(i_user.user_roles.count(), 1)
         self.assertEquals(i_user.user_roles.first().role_id, 11)
         self.assertEquals(i_user.language.code, "en")
@@ -87,8 +86,6 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU2")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        # user.role_id is not used anywhere
-        #self.assertTrue(i_user.role_id in roles)
         self.assertEquals(i_user.user_roles.count(), 2)
         self.assertEquals(
             list(i_user.user_roles.values_list("role_id", flat=True)), roles
@@ -130,7 +127,6 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU2")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        # self.assertTrue(i_user.role_id in roles)
         self.assertEquals(i_user.user_roles.count(), 2)
         self.assertEquals(
             list(i_user.user_roles.values_list("role_id", flat=True)), roles
@@ -166,7 +162,6 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user2.username, username)
         self.assertEquals(i_user2.last_name, "Last updated")
         self.assertEquals(i_user2.other_names, "Other updated")
-        self.assertTrue(i_user2.role_id in roles2)
         self.assertEquals(
             i_user2.user_roles.filter(validity_to__isnull=True).count(), 2
         )

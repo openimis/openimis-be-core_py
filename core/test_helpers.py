@@ -7,7 +7,12 @@ from location.models import Location
 from uuid import uuid4
 
 
-def create_test_officer(valid=True, custom_props={}, villages=[]):
+def create_test_officer(valid=True, custom_props=None, villages=[]):
+    if custom_props is None:
+        custom_props = {}
+    else:
+        custom_props = {k: v for k, v in custom_props.items() if hasattr(Officer, k)}
+
     code = custom_props.pop('code', None)
     uuid = custom_props.pop('uuid', None)
     qs_eo = Officer.objects
@@ -20,8 +25,9 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
         "validity_to": None if valid else "2019-06-01",
         "audit_user_id": -1,
         "phone": "0000110100",
-        **(custom_props if custom_props else {})
+        **custom_props
     }
+
     if code:
         qs_eo = qs_eo.filter(code=code)
     if uuid:
@@ -35,6 +41,7 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
     else:
         data['uuid'] = uuid4()
         eo = Officer.objects.create(**data)
+    
     if not villages:
         villages == Location.objects.filter(*filter_validity(), type='V').first()
     if eo:
@@ -44,9 +51,13 @@ def create_test_officer(valid=True, custom_props={}, villages=[]):
 
 def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\\/pe®Pąßw0rd""", roles=None,
                                  custom_props=None):
+    if custom_props is None:
+        custom_props = {}
+    else:
+        custom_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)}
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
-
+    user = None
     i_user = InteractiveUser.objects.filter(login_name=username).first()
     if i_user:
         # TODO add custom prop to existing user
@@ -60,9 +71,11 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\
                 "login_name": username,
                 "audit_user_id": -1,
                 "role_id": roles[0],
-                **(custom_props if custom_props else {})
+                **custom_props
             }
         )
+        
+    if not user:
         user = User.objects.create(
             username=username,
             i_user=i_user,
