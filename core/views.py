@@ -42,7 +42,7 @@ def fetch_export(request):
     export_file_name = F"export_{export.model}_{strftime(export.create_date, '%d_%m_%Y')}.{export.file_format}"
     if export.file_format == ExportableQueryModel.FileFormat.CSV:
         response = StreamingHttpResponse(
-            (row for row in export.content.file.readlines()),
+            open(export.content.path, 'rb'),
             content_type="text/csv",
             headers={'Content-Disposition': F'attachment; filename="{export_file_name}"'},
         )
