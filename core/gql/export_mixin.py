@@ -79,6 +79,7 @@ class ExportableQueryMixin:
             field_name = F"{field}_export"
             fld = getattr(cls, field)
             new_args = fld.args
+            new_args['file_format'] = graphene.String()
             new_args['fields'] = graphene.List(of_type=graphene.String)
             new_args['fields_columns'] = GenericScalar()
             setattr(cls, field_name, graphene.Field(graphene.String, args=new_args))
@@ -103,6 +104,7 @@ class ExportableQueryMixin:
             custom_filters = kwargs.pop("customFilters", None)
             export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
             fields_mapping = json.loads(kwargs.pop('fields_columns'))
+            file_format = kwargs.pop('file_format', 'csv')
 
             source_field = getattr(cls, field_name)
             filter_kwargs = {k: v for k, v in kwargs.items() if k in source_field.filtering_args}
@@ -112,7 +114,7 @@ class ExportableQueryMixin:
             qs = cls.__append_custom_filters(custom_filters, qs)
             export_file = ExportableQueryModel\
                 .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
-                                   patches=cls.get_patches_for_field(field_name))
+                                   patches=cls.get_patches_for_field(field_name), file_format=file_format)
 
             return export_file.name
 
