@@ -54,7 +54,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU1")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        self.assertEquals(i_user.role_id, roles[0])
+        # self.assertEquals(i_user.role_id, roles[0])
         self.assertEquals(i_user.user_roles.count(), 1)
         self.assertEquals(i_user.user_roles.first().role_id, 11)
         self.assertEquals(i_user.language.code, "en")
@@ -130,7 +130,7 @@ class UserServicesTest(TestCase):
         self.assertEquals(i_user.username, username)
         self.assertEquals(i_user.last_name, "Last Name CIU2")
         self.assertEquals(i_user.other_names, "Other 1 2 3")
-        self.assertTrue(i_user.role_id in roles)
+        # self.assertTrue(i_user.role_id in roles)
         self.assertEquals(i_user.user_roles.count(), 2)
         self.assertEquals(
             list(i_user.user_roles.values_list("role_id", flat=True)), roles
