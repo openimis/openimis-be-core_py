@@ -43,7 +43,7 @@ class BaseModelValidation(ABC):
 def validator(sender, instance, **kwargs):
     if issubclass(sender, (HistoryModel, VersionedModel)):
         for f in instance._meta.get_fields():
-            attr = getattr(instance, f.name) if not f.one_to_many and hasattr(instance, f.name) else None
+            attr = getattr(instance, f.name) if not f.one_to_many and hasattr(instance, f.name) and not f.many_to_many else None
             if hasattr(f, 'default') and not f.default == models.fields.NOT_PROVIDED and not attr:
                 setattr(instance, f.name, f.default() if callable(f.default) else f.default)
             elif attr:
