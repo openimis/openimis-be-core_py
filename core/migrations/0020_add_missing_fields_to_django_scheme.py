@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('auth', '0012_alter_user_first_name_max_length'),
-        ('location', '0013_auto_20230317_1534'),
+        ('location', '0001_initial'),
         ('core', '0019_extended_field'),
     ]
 
@@ -145,11 +145,6 @@ class Migration(migrations.Migration):
             model_name='officer',
             name='works_to',
             field=models.DateTimeField(blank=True, db_column='WorksTo', null=True),
-        ),
-        migrations.AddField(
-            model_name='roleright',
-            name='role',
-            field=models.ForeignKey(db_column='RoleID', on_delete=django.db.models.deletion.DO_NOTHING, related_name='rights', to='core.role'),
         ),
         migrations.AddField(
             model_name='usergroup',
