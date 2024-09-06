@@ -98,3 +98,24 @@ class gqlTest(openIMISGraphQLTestCase):
         )
         self.assertResponseNoErrors(response)
         _ = json.loads(response.content)
+
+    def test_create_role(self):
+        query = """
+            mutation {
+                createRole(
+                    input: {
+                        name: "SP Enrollment Officer",
+                        isBlocked: false,
+                        isSystem: false,
+                        rightsId: [159001,159002,159003,159004,159005,180001,180002,180003,180004]
+                    }
+                ) {
+                    clientMutationId
+                }
+            }
+        """
+        response = self.query(
+            query,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        self.assertResponseNoErrors(response)
