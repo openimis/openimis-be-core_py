@@ -76,8 +76,9 @@ def filter_validity(arg="validity", prefix="", **kwargs):
     validity = kwargs.get(arg)
     if validity is None:
         return [Q(**{f"{prefix}validity_to__isnull": True})]
-    elif hasattr(validity, 'date'):
-        validity = validity.date()
+    elif isinstance(validity, str):
+        validity = datetime.datetime.strptime(validity)
+    validity = datetime.datetime(validity.year, validity.month, validity.day, 23, 59, 59)
     return [
         Q(**{f"{prefix}validity_from__lte": validity}),
         Q(**{f"{prefix}validity_to__isnull": True}) | Q(**{f"{prefix}validity_to__gte": validity}),
