@@ -7,7 +7,18 @@ from django.core.management import CommandError
 from django.core.management.commands import compilemessages
 from django.core.management.utils import is_ignored_path, find_command
 
-from openimisconf import load_openimis_conf
+
+import os
+import django
+from django.conf import settings
+from django.core.management import call_command
+import shutil
+
+# django.setup()
+
+
+
+from openIMIS.openimisconf import load_openimis_conf
 
 class Command(compilemessages.Command):
     def handle(self, **options):
@@ -17,7 +28,10 @@ class Command(compilemessages.Command):
         self.verbosity = options['verbosity']
         if options['fuzzy']:
             self.program_options = self.program_options + ['-f']
-
+        directory_path = os.path.abspath(os.getcwd()) + '/../extracted_translations_be'
+        if not os.path.exists(directory_path):
+            os.makedirs(directory_path)
+        print(f"saving in {directory_path}")
         if find_command(self.program) is None:
             raise CommandError("Can't find %s. Make sure you have GNU gettext "
                                "tools 0.15 or newer installed." % self.program)
@@ -31,7 +45,10 @@ class Command(compilemessages.Command):
         apps = []
         for mod in load_openimis_conf()["modules"]:
             mod_name = mod["name"]
+            print(f"Makemessage module: {mod_name}")
             with resources.path(mod_name, "__init__.py") as path:
+                os.chdir(path.parent.parent)
+                call_command('makemessages', locale=locale)
                 apps.append(path.parent.parent)  # This might need to be more restrictive
 
         for topdir in ["."] + apps:
@@ -59,7 +76,6 @@ class Command(compilemessages.Command):
         # Account for excluded locales
         locales = locale or all_locales
         locales = set(locales).difference(exclude)
-
         self.has_errors = False
         for basedir in basedirs:
             if locales:
@@ -72,8 +88,18 @@ class Command(compilemessages.Command):
                     locations.extend((dirpath, f) for f in filenames if f.endswith('.po'))
             if locations:
                 self.compile_messages(locations)
+                for l in locations:
+                    source = os.path.join(*l)
+                    target = os.path.join(directory_path,f"{source.split(os.sep)[-5]}.po")
+                    print(f"saving file {source} in {target}")
+                    
+                    shutil.copy(source, target )
+
+            
+         
 
         if self.has_errors:
             raise CommandError('compilemessages generated one or more errors.')
+
 
 
