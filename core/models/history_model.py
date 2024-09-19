@@ -76,9 +76,13 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
             return super(HistoryModel, self).save(*args, **kwargs)
         if self.is_dirty(check_relationship=True):
             if not self.user_created:
-                past= self.objects.filter(pk=self.id).first()
+                past = self.objects.filter(pk=self.id).first()
                 if not past:
-                    self.user_created = user #TODO this could erase a instance, version check might be too light
+                    self.user_created = user
+                    self.user_updated = user
+                    self.date_created = now
+                    self.date_updated = now 
+                # TODO this could erase a instance, version check might be too light
                 elif not self.version == past.version:
                     raise ValidationError('Record has not be updated - the version don\'t match with existing record')
             self.date_updated = now
