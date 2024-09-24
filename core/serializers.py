@@ -4,7 +4,7 @@ from .apps import CoreConfig
 from .models import User, InteractiveUser, TechnicalUser
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from django.core.cache import caches
+from django.core.cache import cache
 
 class CachedModelSerializer(serializers.ModelSerializer):
     cache_ttl = None  # Default cache TTL (infinites)
