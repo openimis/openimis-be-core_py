@@ -23,7 +23,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False)
     def current_user(self, request):
-        serializer = self.get_serializer(request.user, many=False, user=request.user)
+        serializer = self.get_serializer(request.user, many=False)
         return Response(serializer.data)
 
 
