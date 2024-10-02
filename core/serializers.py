@@ -2,9 +2,25 @@ from rest_framework import serializers
 
 from .apps import CoreConfig
 from .models import User, InteractiveUser, TechnicalUser
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.core.cache import cache
 
+class CachedModelSerializer(serializers.ModelSerializer):
+    cache_ttl = None  # Default cache TTL (infinites)
 
-class InteractiveUserSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        cache_key = f"cs_{self.__class__.__name__}_{instance.id}"
+        cached_data = cache.get(cache_key)
+
+        if cached_data is not None:
+            return cached_data
+
+        representation = super().to_representation(instance)
+        cache.set(cache_key, representation, self.cache_ttl)
+        return representation
+
+class InteractiveUserSerializer(CachedModelSerializer):
     language = serializers.PrimaryKeyRelatedField(many=False, read_only=True)
     has_password = serializers.SerializerMethodField()
 
@@ -17,7 +33,9 @@ class InteractiveUserSerializer(serializers.ModelSerializer):
                   'other_names', 'health_facility_id', 'rights', 'has_password')
 
 
-class TechnicalUserSerializer(serializers.ModelSerializer):
+class TechnicalUserSerializer(CachedModelSerializer):
+    cache_ttl = 60 * 60
+    
     class Meta:
         model = TechnicalUser
         fields = ('id', 'language', 'username', 'email')

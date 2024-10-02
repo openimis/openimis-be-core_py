@@ -62,6 +62,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         create_or_update_user_districts(
             i_user, data["districts"], data_subset["audit_user_id"]
         )
+    cache.delete('cs_InteractiveUserSerializer_' + str(i_user.id))
     return i_user, created
 
 
@@ -78,7 +79,7 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
         )
     cache.delete('rights_' + str(i_user.id))
     cache.delete('is_admin_' + str(i_user.id))
-
+    cache.delete('cs_InteractiveUserSerializer_' + str(i_user.id))
 
 # TODO move to location module ?
 def create_or_update_user_districts(i_user, district_ids, audit_user_id):

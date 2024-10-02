@@ -248,17 +248,18 @@ class InteractiveUser(VersionedModel):
 
     @property
     def rights(self):
+        rights = cache.get('rights_' + str(self.id))
+        if rights:
+            return rights
         rights = [rr.right_id for rr in RoleRight.filter_queryset().filter(
             role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
                 user_id=self.id)]).distinct()]
+        cache.set('rights_' + str(self.id), rights, timeout=None)
         return rights
 
     @property
     def rights_str(self):
-        rights = cache.get('rights_' + str(self.id))
-        if rights is None:
-            rights = [str(r) for r in self.rights]
-            cache.set('rights_' + str(self.id), rights, 600)
+        rights = [str(r) for r in self.rights]
         return rights
 
     @cached_property
@@ -446,7 +447,10 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        if i_user is not None and (i_user.is_superuser or perm in i_user.rights_str):
+        if i_user is not None and (
+            i_user.is_superuser or 
+            any(str(right) == perm for right in i_user.rights)
+        ):
             return True
         else:
             return super(User, self).has_perm(perm, obj)
