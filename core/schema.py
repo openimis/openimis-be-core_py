@@ -1526,20 +1526,24 @@ def update_or_create_user(data, user):
     imis_administrator_system = 64
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
-
+    user_uuid = data.pop('uuid', None)
     incoming_email = data.get('email')
-    current_user = InteractiveUser.objects.filter(user__id=data['uuid']).first()
+    if user_uuid:
+        
+        if uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id)) and user.is_imis_admin and imis_administrator_system not in data.get("roles", []):
+            raise ValidationError("Administrator cannot deprovision himself.")
+        current_user = InteractiveUser.objects.filter(user__id=data['uuid']).first()
 
-    current_email = current_user.email if current_user else None
+        current_email = current_user.email if current_user else None
 
-    if incoming_email:
-        if not check_email_validity(incoming_email):
-            raise ValidationError(_("mutation.user_email_invalid"))
-        if current_email != incoming_email:
-            if check_user_unique_email(user_email=data['email']):
-                raise ValidationError(_("mutation.user_email_duplicated"))
-    else:
-        raise ValidationError(_("mutation.user_no_email_provided"))
+        if incoming_email:
+            if not check_email_validity(incoming_email):
+                raise ValidationError(_("mutation.user_email_invalid"))
+            if current_email != incoming_email:
+                if check_user_unique_email(user_email=data['email']):
+                    raise ValidationError(_("mutation.user_email_duplicated"))
+        else:
+            raise ValidationError(_("mutation.user_no_email_provided"))
 
     username = data.get('username')
 
@@ -1553,10 +1557,8 @@ def update_or_create_user(data, user):
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
         data.pop('client_mutation_label')
-    user_uuid = data.pop('uuid') if 'uuid' in data else None
+    
 
-    if uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id)) and user.is_imis_admin and imis_administrator_system not in data.get("roles", []):
-        raise ValidationError("Administrator cannot deprovision himself.")
 
     if UT_INTERACTIVE in data["user_types"]:
         i_user, i_user_created = create_or_update_interactive_user(
