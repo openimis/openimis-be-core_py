@@ -1523,7 +1523,7 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, 'data')
 def update_or_create_user(data, user):
-    imis_administrator_system = 64
+    imis_administrator_system = Role.objects.filter(is_system=64).get().id
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
 
