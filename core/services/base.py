@@ -56,12 +56,12 @@ class BaseService(ABC):
             return output_exception(model_name=self.OBJECT_TYPE.__name__, method="delete", exception=exc)
 
     def save_instance(self, obj_):
-        obj_.save(username=self.user.username)
+        obj_.save(user=self.user, username=self.user.username)
         dict_repr = model_representation(obj_)
         return output_result_success(dict_representation=dict_repr)
 
     def delete_instance(self, obj_):
-        obj_.delete(username=self.user.username)
+        obj_.delete(user=self.user, username=self.user.username)
         return build_delete_instance_payload()
 
     def _adjust_create_payload(self, payload_data):
