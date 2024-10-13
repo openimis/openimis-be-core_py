@@ -275,13 +275,14 @@ class InteractiveUser(VersionedModel):
     def is_officer(self):
         cache_name = f"user_eo_{self.username}"
         is_officer = cache.get(cache_name)
-        if not is_officer:
+        if is_officer is None:
             is_officer = Officer.objects.filter(
                 code=self.username,
                 has_login=True,
                 *filter_validity()
             ).exists()
             cache.set(cache_name, is_officer, None)
+        return is_officer
 
     @property
     def is_claim_admin(self):
@@ -289,14 +290,14 @@ class InteractiveUser(VersionedModel):
         # and it's not granted that the module is installed.
         if 'claim' in sys.modules:
             cache_name = f"user_ca_{self.username}"
-            is_clam_admin = cache.get(cache_name)
-            if not is_clam_admin:
+            is_claim_admin = cache.get(cache_name)
+            if is_claim_admin is None:
                 
                 from claim.models import ClaimAdmin
-                is_clam_admin = ClaimAdmin.objects.filter(
+                is_claim_admin = ClaimAdmin.objects.filter(
                     code=self.username, has_login=True, validity_to__isnull=True).exists()
-                cache.set(cache_name, is_clam_admin, None)
-            return is_clam_admin
+                cache.set(cache_name, is_claim_admin, None)
+            return is_claim_admin
         else:
             return False
 
