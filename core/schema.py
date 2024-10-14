@@ -36,7 +36,7 @@ from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import ValidationError, PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
@@ -1223,11 +1223,11 @@ class CreateRoleMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             if not user.has_perms(CoreConfig.gql_mutation_create_roles_perms):
-                raise PermissionDenied("unauthorized")
+                raise PermissionDenied(_("unauthorized"))
             if check_role_unique_name(data.get('name', None)):
-                raise ValidationError("mutation.duplicate_of_role_name")
+                raise ValidationError(_("mutation.duplicate_of_role_name"))
             from core.utils import TimeUtils
             data['validity_from'] = TimeUtils.now()
             data['audit_user_id'] = user.id_for_audit
@@ -1255,7 +1255,7 @@ class UpdateRoleMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             if not user.has_perms(CoreConfig.gql_mutation_update_roles_perms):
                 raise PermissionDenied("unauthorized")
             if 'uuid' not in data:
@@ -1338,7 +1338,7 @@ class DuplicateRoleMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             if not user.has_perms(CoreConfig.gql_mutation_duplicate_roles_perms):
                 raise PermissionDenied("unauthorized")
             data['audit_user_id'] = user.id_for_audit
@@ -1404,7 +1404,7 @@ class CreateUserMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             if User.objects.filter(username=data['username'], validity_to__isnull=True).exists():
                 raise ValidationError("User with this user name already exists.")
             if not user.has_perms(CoreConfig.gql_mutation_create_users_perms):
@@ -1444,7 +1444,7 @@ class UpdateUserMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             if not user.has_perms(CoreConfig.gql_mutation_update_users_perms):
                 raise PermissionDenied("unauthorized")
             from core.utils import TimeUtils
@@ -1507,7 +1507,7 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             data['audit_user_id'] = user.id_for_audit
             change_user_language(user, language_id=data["language_id"])
 
@@ -1653,7 +1653,7 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
         try:
             user = info.context.user
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError("mutation.authentication_required")
+                raise PermissionDenied(_('mutation.authentication_required'))
             change_user_password(
                 user,
                 username_to_update=username,
