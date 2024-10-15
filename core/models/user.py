@@ -295,7 +295,10 @@ class InteractiveUser(VersionedModel):
                 
                 from claim.models import ClaimAdmin
                 is_claim_admin = ClaimAdmin.objects.filter(
-                    code=self.username, has_login=True, validity_to__isnull=True).exists()
+                    code=self.username,
+                    has_login=True,
+                    *filter_validity()
+                ).exists()
                 cache.set(cache_name, is_claim_admin, None)
             return is_claim_admin
         else:
