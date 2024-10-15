@@ -411,6 +411,11 @@ class DefaultStorageFileHandler:
         default_storage.save(self.file_path, file)
         file.seek(0)
 
+    def save_with_possibility_to_overwrite_file(self, file):
+        self.remove_file()
+        default_storage.save(self.file_path, file)
+        file.seek(0)
+
     def remove_file(self):
         if default_storage.exists(self.file_path):
             default_storage.delete(self.file_path)
