@@ -167,3 +167,17 @@ class gqlTest(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
         self.get_mutation_result("95b431f3-0c12-40ad-bc01-51034702366d", self.admin_token)
     
+    def test_user_district_query(self):
+        query = """
+    {
+      userDistricts
+      {
+        id,uuid,code,name,parent{id, uuid, code, name}
+      }
+    }
+    """
+        response = self.query(
+            query,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        self.assertResponseNoErrors(response)
