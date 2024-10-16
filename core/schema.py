@@ -35,6 +35,7 @@ from core import filter_validity
 from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
+from django.core.cache import cache
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied, ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
@@ -64,6 +65,7 @@ from core.models import ModuleConfiguration, FieldControl, MutationLog, Language
 from core.services.roleServices import check_role_unique_name
 from core.services.userServices import check_user_unique_email
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
+from core.serializers import InteractiveUserSerializer
 
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
@@ -1623,7 +1625,8 @@ def change_user_language(user, language_id):
     updated_user = User.objects.get(id=user.id)
     updated_user.i_user.language_id = language_id
     updated_user.save()
-
+    cache_key = InteractiveUserSerializer().get_cache_key(updated_user.i_user)
+    cache.delete(cache_key)
 
 class ChangePasswordMutation(graphene.relay.ClientIDMutation):
     """
