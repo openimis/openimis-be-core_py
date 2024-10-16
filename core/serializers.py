@@ -10,7 +10,7 @@ class CachedModelSerializer(serializers.ModelSerializer):
     cache_ttl = None  # Default cache TTL (infinites)
 
     def to_representation(self, instance):
-        cache_key = f"cs_{self.__class__.__name__}_{instance.id}"
+        cache_key = self.get_cache_key(instance)
         cached_data = cache.get(cache_key)
 
         if cached_data is not None:
@@ -19,6 +19,9 @@ class CachedModelSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         cache.set(cache_key, representation, self.cache_ttl)
         return representation
+
+    def get_cache_key(self, instance):
+        return f"cs_{self.__class__.__name__}_{instance.id}"
 
 class InteractiveUserSerializer(CachedModelSerializer):
     language = serializers.PrimaryKeyRelatedField(many=False, read_only=True)
