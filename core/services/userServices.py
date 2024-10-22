@@ -256,6 +256,7 @@ def set_user_password(request, username, token, password):
 
 
 def user_authentication(request, username, password):
+    user = None
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
     try:
