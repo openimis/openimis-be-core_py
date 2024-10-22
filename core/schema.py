@@ -4,7 +4,6 @@ import logging
 import re
 import sys
 import uuid
-
 import graphene
 from django.utils.translation import gettext as _
 from copy import copy
@@ -207,37 +206,33 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             logger.debug(f"Expected input_data to be a dict but got {type(input_data)}")
             return input_data
 
-        # Iterate through the input data dictionary
         for key, value in input_data.items():
             if hasattr(input_class, key):
-                # Get the field type from the input class
                 field = getattr(input_class, key)
-                # If the field type is List and the value is a list
+                
                 if field.__class__ == graphene.List and isinstance(value, list):
-                    # Check if the list items need coercion
                     inner_type = field.of_type
                     coerced_list = []
                     for item in value:
                         if isinstance(inner_type, graphene.types.enum.EnumMeta):
-                            coerced_list.append(item)  # Append the item directly for enums
+                            coerced_list.append(item)
                         elif isinstance(item, str):
-                            coerced_list.append(inner_type.parse_value(item))
+                            if isinstance(inner_type, graphene.UUID):
+                                coerced_list.append(cls.parse_uuid(item))
+                            else:
+                                coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
                             coerced_list.append(cls.coerce_mutation_data(item, input_class=inner_type))
                         else:
                             coerced_list.append(item)
                     coerced_data[key] = coerced_list
-                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,
-                                                                                  graphene.types.enum.EnumMeta):
-                    # If the field type is Enum
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.enum.EnumMeta):
                     if hasattr(field.type, value):
                         coerced_data[key] = str(getattr(field.type, value).value)
                     else:
                         coerced_data[key] = value
-                elif field.__class__ == graphene.types.field.Field and isinstance(field.type,
-                                                                                  graphene.types.structures.NonNull) \
+                elif field.__class__ == graphene.types.field.Field and isinstance(field.type, graphene.types.structures.NonNull) \
                         and isinstance(field.type._of_type, graphene.types.enum.EnumMeta):
-                    # If the field type is Enum
                     if hasattr(field.type._of_type, value):
                         coerced_data[key] = str(getattr(field.type._of_type, value).value)
                     else:
@@ -245,14 +240,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 elif field.__class__ == graphene.types.field.Field:
                     coerced_data[key] = cls.coerce_mutation_data(value, input_class=field._type)
                 elif isinstance(value, str):
-                    coerced_data[key] = field.parse_value(value)
+                    if isinstance(field, graphene.UUID):
+                        coerced_data[key] = cls.parse_uuid(value)
+                    else:
+                        coerced_data[key] = field.parse_value(value)
                 else:
                     coerced_data[key] = value
             else:
                 logger.debug(f"key {key} not in {cls.__name__}")
                 coerced_data[key] = value
 
-        return coerced_data
+        return coerced_data 
+      
 
     @classmethod
     def async_mutate(cls, user, **data) -> List[Dict[str, Any]]:
@@ -378,6 +377,19 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             mutation_log.mark_as_failed(exc)
 
         return cls(internal_id=mutation_log.id)
+
+@staticmethod
+def parse_uuid(value):
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        try:
+            # Attempt to decode as base64
+            decoded = base64.b64decode(value).decode('utf-8')
+            return uuid.UUID(decoded)
+        except (ValueError, UnicodeDecodeError):
+            raise ValueError(f"Invalid UUID format or base64 encoding: {value}")
+
 
 
 class FieldControlGQLType(DjangoObjectType):
