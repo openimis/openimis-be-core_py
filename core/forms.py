@@ -1,8 +1,9 @@
 from django import forms
 from django.contrib import admin
 from django.contrib.admin.widgets import FilteredSelectMultiple
-from django.contrib.auth import password_validation, get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
+
 from .models import TechnicalUser
 
 User = get_user_model()
@@ -17,7 +18,7 @@ class TechnicalUserForm(forms.ModelForm):
 
     class Meta:
         model = TechnicalUser
-        fields = ['username', 'email', 'is_superuser', 'validity_from', 'validity_to']
+        fields = ["username", "email", "is_superuser", "validity_from", "validity_to"]
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -40,16 +41,16 @@ class GroupAdminForm(forms.ModelForm):
     users = forms.ModelMultipleChoiceField(
         queryset=User.objects.all(),
         required=False,
-        widget=FilteredSelectMultiple('users', False)
+        widget=FilteredSelectMultiple("users", False),
     )
 
     def __init__(self, *args, **kwargs):
         super(GroupAdminForm, self).__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields['users'].initial = self.instance.user_set.all()
+            self.fields["users"].initial = self.instance.user_set.all()
 
     def save_m2m(self):
-        self.instance.user_set.set(self.cleaned_data['users'])
+        self.instance.user_set.set(self.cleaned_data["users"])
 
     def save(self, *args, **kwargs):
         instance = super(GroupAdminForm, self).save(commit=True)
@@ -59,4 +60,4 @@ class GroupAdminForm(forms.ModelForm):
 
 class GroupAdmin(admin.ModelAdmin):
     form = GroupAdminForm
-    filter_horizontal = ['permissions']
+    filter_horizontal = ["permissions"]

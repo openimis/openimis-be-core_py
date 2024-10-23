@@ -1,21 +1,20 @@
-from datetime import timedelta, date, datetime
+from datetime import date, datetime, timedelta
 
 __all__ = ["is_midnight", "datetimedelta"]
 
 
 def _cmperror(x, y):
-    raise TypeError("can't compare '%s' to '%s'" % (
-        type(x).__name__, type(y).__name__))
+    raise TypeError("can't compare '%s' to '%s'" % (type(x).__name__, type(y).__name__))
 
 
 def is_midnight(dt):
-    if hasattr(dt, 'hour') and dt.hour != 0:
+    if hasattr(dt, "hour") and dt.hour != 0:
         return False
-    if hasattr(dt, 'minute') and dt.minute != 0:
+    if hasattr(dt, "minute") and dt.minute != 0:
         return False
-    if hasattr(dt, 'second') and dt.second != 0:
+    if hasattr(dt, "second") and dt.second != 0:
         return False
-    if hasattr(dt, 'microsecond') and dt.microsecond != 0:
+    if hasattr(dt, "microsecond") and dt.microsecond != 0:
         return False
     return True
 
@@ -26,32 +25,46 @@ def _cmp(x, y):
 
 def _add_month(dt):
     from core import calendar
+
     return dt + timedelta(calendar.monthdayscount(dt.year, dt.month))
 
 
 def _sub_month(dt):
     from core import calendar
+
     if dt.month == 1:
         prev_year = dt.year - 1
-        return dt - \
-            timedelta(calendar.monthdayscount(
-                prev_year, calendar.yearmonthscount(prev_year)))
+        return dt - timedelta(
+            calendar.monthdayscount(prev_year, calendar.yearmonthscount(prev_year))
+        )
     else:
-        return dt - \
-            timedelta(calendar.monthdayscount(
-                dt.year, dt.month - 1))
+        return dt - timedelta(calendar.monthdayscount(dt.year, dt.month - 1))
 
 
 class datetimedelta(object):
-    __slots__ = ['_years', '_months', '_timedelta', '_hashcode']
+    __slots__ = ["_years", "_months", "_timedelta", "_hashcode"]
 
-    def __init__(self, years=0, months=0, weeks=0, days=0,
-                 hours=0, minutes=0, seconds=0, microseconds=0):
+    def __init__(
+        self,
+        years=0,
+        months=0,
+        weeks=0,
+        days=0,
+        hours=0,
+        minutes=0,
+        seconds=0,
+        microseconds=0,
+    ):
         self._years = years
         self._months = months
         self._timedelta = timedelta(
-            weeks=weeks, days=days,
-            hours=hours, minutes=minutes, seconds=seconds, microseconds=microseconds)
+            weeks=weeks,
+            days=days,
+            hours=hours,
+            minutes=minutes,
+            seconds=seconds,
+            microseconds=microseconds,
+        )
         self._hashcode = -1
 
     @property
@@ -76,7 +89,13 @@ class datetimedelta(object):
 
     @classmethod
     def from_timedelta(cls, td):
-        return datetimedelta(years=0, months=0, days=td.days, seconds=td.seconds, microseconds=td.microseconds)
+        return datetimedelta(
+            years=0,
+            months=0,
+            days=td.days,
+            seconds=td.seconds,
+            microseconds=td.microseconds,
+        )
 
     def _add_years(self, dt):
         while True:  # there are many '29/02' in nepali calendar
@@ -103,11 +122,13 @@ class datetimedelta(object):
 
     def __add__(self, other):
         if isinstance(other, (datetimedelta)):
-            return datetimedelta(years=self.years + other.years,
-                                 months=self.months + other.months,
-                                 days=self.days + other.days,
-                                 seconds=self.seconds + other.seconds,
-                                 microseconds=self.microseconds + other.microseconds)
+            return datetimedelta(
+                years=self.years + other.years,
+                months=self.months + other.months,
+                days=self.days + other.days,
+                seconds=self.seconds + other.seconds,
+                microseconds=self.microseconds + other.microseconds,
+            )
         elif isinstance(other, (date, datetime)):
             return self.add_to_date(other)
         return NotImplemented
@@ -117,25 +138,29 @@ class datetimedelta(object):
 
     def __sub__(self, other):
         if isinstance(other, (datetimedelta)):
-            return datetimedelta(years=self.years - other.years,
-                                 months=self.months - other.months,
-                                 days=self.days - other.days,
-                                 seconds=self.seconds - other.seconds,
-                                 microseconds=self.microseconds - other.microseconds)
+            return datetimedelta(
+                years=self.years - other.years,
+                months=self.months - other.months,
+                days=self.days - other.days,
+                seconds=self.seconds - other.seconds,
+                microseconds=self.microseconds - other.microseconds,
+            )
         return NotImplemented
 
     def __rsub__(self, other):
         if isinstance(other, (date, datetime)):
-            sub = - self
+            sub = -self
             return sub.__add__(other)
         return self.__sub__(other)
 
     def __neg__(self):
-        return datetimedelta(years=-self.years,
-                             months=-self.months,
-                             days=-self.days,
-                             seconds=-self.seconds,
-                             microseconds=-self.microseconds)
+        return datetimedelta(
+            years=-self.years,
+            months=-self.months,
+            days=-self.days,
+            seconds=-self.seconds,
+            microseconds=-self.microseconds,
+        )
 
     def __pos__(self):
         return self
@@ -147,16 +172,24 @@ class datetimedelta(object):
             return -self
         if self.years == 0 and self.months == 0:
             td = abs(self._timedelta)
-            return datetimedelta(years=0, months=0, days=td.days, seconds=td.seconds, microseconds=td.microseconds)
+            return datetimedelta(
+                years=0,
+                months=0,
+                days=td.days,
+                seconds=td.seconds,
+                microseconds=td.microseconds,
+            )
         return self
 
     def __mul__(self, other):
         if isinstance(other, int):
-            return datetimedelta(years=self.years * other,
-                                 months=self.months * other,
-                                 days=self.days * other,
-                                 seconds=self.seconds * other,
-                                 microseconds=self.microseconds * other)
+            return datetimedelta(
+                years=self.years * other,
+                months=self.months * other,
+                days=self.days * other,
+                seconds=self.seconds * other,
+                microseconds=self.microseconds * other,
+            )
         return NotImplemented
 
     __rmul__ = __mul__
@@ -203,11 +236,13 @@ class datetimedelta(object):
         return self._hashcode
 
     def __bool__(self):
-        return (self.years != 0 or
-                self.months != 0 or
-                self.days != 0 or
-                self.seconds != 0 or
-                self.microseconds != 0)
+        return (
+            self.years != 0
+            or self.months != 0
+            or self.days != 0
+            or self.seconds != 0
+            or self.microseconds != 0
+        )
 
     def _getstate(self):
         return (self._years, self._months, self._timedelta)
@@ -228,7 +263,9 @@ class datetimedelta(object):
         if self.microseconds:
             args.append("microseconds=%d" % self.microseconds)
         if not args:
-            args.append('0')
-        return "%s.%s(%s)" % (self.__class__.__module__,
-                              self.__class__.__qualname__,
-                              ', '.join(args))
+            args.append("0")
+        return "%s.%s(%s)" % (
+            self.__class__.__module__,
+            self.__class__.__qualname__,
+            ", ".join(args),
+        )

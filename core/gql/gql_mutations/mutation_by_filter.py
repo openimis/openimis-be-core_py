@@ -1,18 +1,20 @@
 import json
 import logging
 from functools import wraps
+from typing import Dict
 
 import django.db.models
 from django.db.models import Q
 from graphene_django import DjangoObjectType
-from typing import Dict
 
 
-def mutation_on_uuids_from_filter(django_object: django.db.models.Model,
-                                  object_gql_type: DjangoObjectType,
-                                  query_filters_field: str = 'additional_filters',
-                                  explicit_filters_handlers: Dict[str, str] = None,
-                                  return_objects: bool = False):
+def mutation_on_uuids_from_filter(
+    django_object: django.db.models.Model,
+    object_gql_type: DjangoObjectType,
+    query_filters_field: str = "additional_filters",
+    explicit_filters_handlers: Dict[str, str] = None,
+    return_objects: bool = False,
+):
     """
     A decorator for async_mutate allowing use of filters instead of directly specifying the UUID in migrations.
     If data argument of async_mutate don't have 'uuids' key it tries to fetch objects by filters. As result uuids of
@@ -43,28 +45,32 @@ def mutation_on_uuids_from_filter(django_object: django.db.models.Model,
     if explicit_filters_handlers is None:
         explicit_filters_handlers = {}
 
-    available_filters = _build_filters_from_gql_filters(object_gql_type._meta.filter_fields)
+    available_filters = _build_filters_from_gql_filters(
+        object_gql_type._meta.filter_fields
+    )
 
     def inner_function(async_mutate):
 
         @wraps(async_mutate)
         def wrapper(cls, user, **data):
-            if not data.get('uuids', None):
+            if not data.get("uuids", None):
                 args = json.loads(data[query_filters_field])
 
-                q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
-                base_query = django_object \
-                    .objects \
-                    .filter(validity_to=None) \
-                    .filter(q_filter) \
-
+                q_filter = map_gql_to_django_filter(
+                    args, available_filters, explicit_filters_handlers
+                )
+                base_query = django_object.objects.filter(validity_to=None).filter(
+                    q_filter
+                )
                 if return_objects:
-                    data['filtered_objects'] = base_query
+                    data["filtered_objects"] = base_query
                 else:
-                    uuids = base_query.values_list('uuid', flat=True).distinct()
-                    data['uuids'] = uuids
+                    uuids = base_query.values_list("uuid", flat=True).distinct()
+                    data["uuids"] = uuids
             return async_mutate(cls, user, **data)
+
         return wrapper
+
     return inner_function
 
 
@@ -73,7 +79,7 @@ def map_gql_to_django_filter(filters: dict, qgl_type_filters, explicit_handlers=
         explicit_handlers = {}
 
     def __disable_notation(k):
-        return k.lower().replace('_', '')
+        return k.lower().replace("_", "")
 
     mapped_filters = []
     for key, param in filters.items():
@@ -82,8 +88,13 @@ def map_gql_to_django_filter(filters: dict, qgl_type_filters, explicit_handlers=
                 mapped_filters.append(Q(**{explicit_handlers[key]: param}))
             else:
                 filter_key = __disable_notation(key)
-                django_filter = next((gql_key for gql_key in qgl_type_filters
-                                      if __disable_notation(gql_key) == filter_key))
+                django_filter = next(
+                    (
+                        gql_key
+                        for gql_key in qgl_type_filters
+                        if __disable_notation(gql_key) == filter_key
+                    )
+                )
                 mapped_filters.append(Q(**{django_filter: param}))
         except StopIteration as s:
             error_msg = f"Could not find mapping for filter key {key}, available keys are {qgl_type_filters}"
@@ -101,19 +112,21 @@ def _build_filters_from_gql_filters(filter_fields):
     fields = []
     for field, compare_types in filter_fields.items():
         for compare_type in compare_types:
-            if compare_type == 'exact':
+            if compare_type == "exact":
                 fields.append(field)
             else:
-                query_filter = F"{field}__{compare_type.lower()}"
+                query_filter = f"{field}__{compare_type.lower()}"
                 fields.append(query_filter)
     return fields
 
 
-def mutation_on_uuids_from_filter_business_model(django_object: django.db.models.Model,
-                                                 object_gql_type: DjangoObjectType,
-                                                 query_filters_field: str = 'extended_filters',
-                                                 explicit_filters_handlers: Dict[str, str] = None,
-                                                 return_objects: bool = False):
+def mutation_on_uuids_from_filter_business_model(
+    django_object: django.db.models.Model,
+    object_gql_type: DjangoObjectType,
+    query_filters_field: str = "extended_filters",
+    explicit_filters_handlers: Dict[str, str] = None,
+    return_objects: bool = False,
+):
     """
     dedicated extended mutation from filter decorator dedicated for BusinessHistoryModel entities (used for example
     in Formal Sector entities). See doc string for mutation_on_uuids_from_filter to read more how this works.
@@ -122,13 +135,15 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
     if explicit_filters_handlers is None:
         explicit_filters_handlers = {}
 
-    available_filters = _build_filters_from_gql_filters(object_gql_type._meta.filter_fields)
+    available_filters = _build_filters_from_gql_filters(
+        object_gql_type._meta.filter_fields
+    )
 
     def inner_function(async_mutate):
         @wraps(async_mutate)
         def wrapper(cls, user, **data):
             # check if uuids exists as a substring in one of the key
-            key_values_match = [key for key, value in data.items() if 'uuids' in key]
+            key_values_match = [key for key, value in data.items() if "uuids" in key]
             uuids_exists = False
             # check also if list of uuids contains any uuids if uuids key exists
             for key in key_values_match:
@@ -137,53 +152,57 @@ def mutation_on_uuids_from_filter_business_model(django_object: django.db.models
                         uuids_exists = True
             if not uuids_exists:
                 args = json.loads(data[query_filters_field])
-                #for contract entities
+                # for contract entities
                 # TODO: need to "pop" based on a section "advanced_search"
                 amount_to = None
                 amount_from = None
-                if 'amountFrom' in args:
-                    amount_from = args['amountFrom']
+                if "amountFrom" in args:
+                    amount_from = args["amountFrom"]
                     args.pop("amountFrom")
-                if 'amountTo' in args:
-                    amount_to = args['amountTo']
+                if "amountTo" in args:
+                    amount_to = args["amountTo"]
                     args.pop("amountTo")
                 # remove validity filter if applied
-                if 'dateValidFrom_Gte' in args:
+                if "dateValidFrom_Gte" in args:
                     args.pop("dateValidFrom_Gte")
-                if 'dateValidTo_Lte' in args:
+                if "dateValidTo_Lte" in args:
                     args.pop("dateValidTo_Lte")
                 # remove isDeleted if applied
-                if 'is_deleted' in args:
+                if "is_deleted" in args:
                     args.pop("is_deleted")
 
-                q_filter = map_gql_to_django_filter(args, available_filters, explicit_filters_handlers)
+                q_filter = map_gql_to_django_filter(
+                    args, available_filters, explicit_filters_handlers
+                )
                 from core import datetime
+
                 now = datetime.datetime.now()
 
-                base_query = django_object \
-                    .objects \
-                    .filter(
-                        Q(date_valid_from__lte=now),
-                        Q(date_valid_to=None) | Q(date_valid_to__gte=now),
-                        Q(is_deleted=False)
-                    ) \
-                    .filter(q_filter) \
-
+                base_query = django_object.objects.filter(
+                    Q(date_valid_from__lte=now),
+                    Q(date_valid_to=None) | Q(date_valid_to__gte=now),
+                    Q(is_deleted=False),
+                ).filter(q_filter)
                 # if mutation is related to contract entities
                 # TODO check type of amount filter to check if we can send signal
-                # TODO: need to send signal for the "pop" based on a search section "advanced_search" (signal should have the advances_search section and the object name)
+                # TODO: need to send signal for the "pop" based on a search section "advanced_search"
+                # (signal should have the advances_search section and the object name)
                 #  (to be implemented in the future) to contract module
-                if django_object.__name__ == 'Contract':
+                if django_object.__name__ == "Contract":
                     if amount_from or amount_to:
-                        base_query = base_query.filter(_append_filter_amount(amount_from, amount_to))
+                        base_query = base_query.filter(
+                            _append_filter_amount(amount_from, amount_to)
+                        )
 
                 if return_objects:
-                    data['filtered_objects'] = base_query
+                    data["filtered_objects"] = base_query
                 else:
-                    uuids = base_query.values_list('id', flat=True).distinct()
-                    data['uuids'] = uuids
+                    uuids = base_query.values_list("id", flat=True).distinct()
+                    data["uuids"] = uuids
             return async_mutate(cls, user, **data)
+
         return wrapper
+
     return inner_function
 
 
@@ -198,23 +217,35 @@ def _append_filter_amount(amount_from, amount_to):
     # scenario - only amount_to set
     if not amount_from and amount_to:
         return (
-             Q(amount_notified__lte=amount_to, state__in=status_notified) |
-             Q(amount_rectified__lte=amount_to, state__in=status_rectified) |
-             Q(amount_due__lte=amount_to, state__in=status_due)
+            Q(amount_notified__lte=amount_to, state__in=status_notified)
+            | Q(amount_rectified__lte=amount_to, state__in=status_rectified)
+            | Q(amount_due__lte=amount_to, state__in=status_due)
         )
 
     # scenario - only amount_from set
     if amount_from and not amount_to:
         return (
-            Q(amount_notified__gte=amount_from, state__in=status_notified) |
-            Q(amount_rectified__gte=amount_from, state__in=status_rectified) |
-            Q(amount_due__gte=amount_from, state__in=status_due)
+            Q(amount_notified__gte=amount_from, state__in=status_notified)
+            | Q(amount_rectified__gte=amount_from, state__in=status_rectified)
+            | Q(amount_due__gte=amount_from, state__in=status_due)
         )
 
     # scenario - both filters set
     if amount_from and amount_to:
         return (
-            Q(amount_notified__gte=amount_from, amount_notified__lte=amount_to, state__in=status_notified) |
-            Q(amount_rectified__gte=amount_from, amount_rectified__lte=amount_to, state__in=status_rectified) |
-            Q(amount_due__gte=amount_from, amount_due__lte=amount_to, state__in=status_due)
+            Q(
+                amount_notified__gte=amount_from,
+                amount_notified__lte=amount_to,
+                state__in=status_notified,
+            )
+            | Q(
+                amount_rectified__gte=amount_from,
+                amount_rectified__lte=amount_to,
+                state__in=status_rectified,
+            )
+            | Q(
+                amount_due__gte=amount_from,
+                amount_due__lte=amount_to,
+                state__in=status_due,
+            )
         )

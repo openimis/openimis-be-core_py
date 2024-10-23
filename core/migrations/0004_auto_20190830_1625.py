@@ -6,18 +6,20 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0003_control_mutationlog'),
+        ("core", "0003_control_mutationlog"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='mutationlog',
-            name='client_mutation_label',
+            model_name="mutationlog",
+            name="client_mutation_label",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
         migrations.AlterField(
-            model_name='mutationlog',
-            name='status',
-            field=models.IntegerField(choices=[(0, 'Received'), (1, 'Error'), (2, 'Success')], default=0),
+            model_name="mutationlog",
+            name="status",
+            field=models.IntegerField(
+                choices=[(0, "Received"), (1, "Error"), (2, "Success")], default=0
+            ),
         ),
     ]

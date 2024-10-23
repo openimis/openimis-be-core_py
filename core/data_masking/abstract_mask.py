@@ -8,13 +8,13 @@ class DataMaskAbs(ABC):
 
     def apply_mask(self, data):
         for field in self.anon_fields:
-            field_parts = field.split('.')
+            field_parts = field.split(".")
             self._anonymize_nested_field(data, field_parts)
         return data
 
     def anonymize(self, value):
         if isinstance(value, str):
-            result = '***************'
+            result = "***************"
             return result
         elif isinstance(value, (int, float)):
             return 0

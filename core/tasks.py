@@ -1,10 +1,12 @@
 from __future__ import absolute_import, unicode_literals
+
 import json
 import logging
 
 from celery import shared_task
-from core.models import MutationLog, Language
 from django.utils import translation
+
+from core.models import Language, MutationLog
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,10 @@ def openimis_mutation_async(mutation_id, module, class_name):
                 translation.activate(lang.code)
             else:
                 translation.activate(lang)
-        error_messages = mutation_class.async_mutate(mutation.user, **mutation_class.coerce_mutation_data(
-            json.loads(mutation.json_content)))
+        error_messages = mutation_class.async_mutate(
+            mutation.user,
+            **mutation_class.coerce_mutation_data(json.loads(mutation.json_content)),
+        )
         if not error_messages:
             mutation.mark_as_successful()
         else:
@@ -45,16 +49,18 @@ def openimis_mutation_async(mutation_id, module, class_name):
     except Exception as exc:
         if mutation:
             mutation.mark_as_failed(str(exc))
-        logger.warning(f"Exception while processing mutation id {mutation_id}", exc_info=True)
+        logger.warning(
+            f"Exception while processing mutation id {mutation_id}", exc_info=True
+        )
         raise exc
 
 
-@shared_task(name='sample_batch')
+@shared_task(name="sample_batch")
 def openimis_test_batch():
     logger.info("sample batch")
 
 
-@shared_task(name='sample_scheduling_method')
+@shared_task(name="sample_scheduling_method")
 def sample_method(scheduler, sample_param, sample_named=0):
     logger.info("Scheduling our own tasks from here")
     # scheduler.add_job(foo.bar, id="name", minutes=10)

@@ -1,8 +1,8 @@
 from abc import ABC
 from contextlib import contextmanager
+from typing import Callable, Union
 
 import websocket
-from typing import Union, Callable
 
 try:
     import thread
@@ -28,10 +28,11 @@ class AbstractWebSocketClient(ABC):
         Opens connection with socket endpoint. Connection has to be opened before any message is sent.
         """
         if not self.websocket:
-            ws = websocket.WebSocketApp(self.socket_url,
-                                        on_message=lambda ws, msg: self._on_recv(msg),
-                                        on_close=lambda: self._on_close(),
-                                        )
+            ws = websocket.WebSocketApp(
+                self.socket_url,
+                on_message=lambda ws, msg: self._on_recv(msg),
+                on_close=lambda: self._on_close(),
+            )
             self.websocket = ws
             thread.start_new_thread(self.websocket.run_forever, ())
 
@@ -58,7 +59,9 @@ class AbstractWebSocketClient(ABC):
         elif isinstance(payload, str):
             self.websocket.send(payload, websocket.ABNF.OPCODE_TEXT)
         else:
-            raise NotImplementedError(F"Sending payload of type {type(payload)} not supported")
+            raise NotImplementedError(
+                f"Sending payload of type {type(payload)} not supported"
+            )
 
     def is_open(self):
         """

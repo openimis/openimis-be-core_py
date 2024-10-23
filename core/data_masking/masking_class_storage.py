@@ -11,6 +11,6 @@ class MaskingClassStorage:
     def get_masking_class(cls, masking_model: str):
         masking_class = None
         for method_info in MaskingClassRegistryPoint.REGISTERED_MASKING_CLASS:
-            if method_info['model'] == masking_model:
-                masking_class = method_info['class_reference']
+            if method_info["model"] == masking_model:
+                masking_class = method_info["class_reference"]
         return masking_class

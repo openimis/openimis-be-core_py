@@ -1,11 +1,11 @@
-from django.db import transaction
-
-from core import TimeUtils
-from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied, ValidationError
-from core.gql.gql_mutations import ObjectNotExistException
+from django.db import transaction
 from django.utils.translation import gettext as _
+
+from core import TimeUtils
+from core.gql.gql_mutations import ObjectNotExistException
+from core.schema import OpenIMISMutation
 
 
 class BaseMutation(OpenIMISMutation):
@@ -25,9 +25,14 @@ class BaseMutation(OpenIMISMutation):
             mutation_result = cls._mutate(user, **data)
             return mutation_result
         except Exception as exc:
-            return [{
-                'message': "Failed to process {} mutation".format(cls._mutation_class),
-                'detail': str(exc)}]
+            return [
+                {
+                    "message": "Failed to process {} mutation".format(
+                        cls._mutation_class
+                    ),
+                    "detail": str(exc),
+                }
+            ]
 
     @classmethod
     def _validate_mutation(cls, user, **data):
@@ -47,12 +52,13 @@ class BaseDeleteMutation(BaseMutation):
     def async_mutate(cls, user, **data):
         output = []
         if "uuids" in data:
-           for uuid in data["uuids"]:
-               deletion_result = super(BaseDeleteMutation, cls)\
-                   .async_mutate(user, uuid=uuid)
-               deletion_result = [None] if deletion_result is None else ["error"]
-               output += deletion_result
-           return None if output == [None] * len(output) else output
+            for uuid in data["uuids"]:
+                deletion_result = super(BaseDeleteMutation, cls).async_mutate(
+                    user, uuid=uuid
+                )
+                deletion_result = [None] if deletion_result is None else ["error"]
+                output += deletion_result
+            return None if output == [None] * len(output) else output
 
 
 class BaseReplaceMutation(BaseMutation):
@@ -67,9 +73,14 @@ class BaseReplaceMutation(BaseMutation):
             mutation_result = cls._mutate(user, **data)
             return mutation_result
         except Exception as exc:
-            return [{
-                'message': "Failed to process {} mutation".format(cls._mutation_class),
-                'detail': str(exc)}]
+            return [
+                {
+                    "message": "Failed to process {} mutation".format(
+                        cls._mutation_class
+                    ),
+                    "detail": str(exc),
+                }
+            ]
 
 
 class BaseCreateMutationMixin:
@@ -81,17 +92,17 @@ class BaseCreateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
     @classmethod
     def _mutate(cls, user, **data):
-        data['user_created'] = user.id_for_audit
-        data['date_created'] = TimeUtils.now()
+        data["user_created"] = user.id_for_audit
+        data["date_created"] = TimeUtils.now()
 
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
+            data.pop("client_mutation_label")
         cls.create_object(data)
 
     @classmethod
@@ -114,22 +125,22 @@ class BaseUpdateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
-        obj_uuid = data['uuid']
-        if cls._model.objects.filter(uuid=data['uuid']).first() is None:
+        obj_uuid = data["uuid"]
+        if cls._model.objects.filter(uuid=data["uuid"]).first() is None:
             cls._object_not_exist_exception(obj_uuid=obj_uuid)
 
     @classmethod
     def _mutate(cls, user, **data):
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
+            data.pop("client_mutation_label")
 
-        data['user_updated'] = user.id_for_audit
-        data['date_updated'] = TimeUtils.now()
-        updated_object = cls._model.objects.filter(uuid=data['uuid']).first()
+        data["user_updated"] = user.id_for_audit
+        data["date_updated"] = TimeUtils.now()
+        updated_object = cls._model.objects.filter(uuid=data["uuid"]).first()
         [setattr(updated_object, key, data[key]) for key in data]
         cls.update_object(updated_object)
 
@@ -156,7 +167,7 @@ class BaseDeleteMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
     @classmethod
     def _mutate(cls, uuid):
@@ -177,14 +188,14 @@ class BaseHistoryModelCreateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
     @classmethod
     def _mutate(cls, user, **data):
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
+            data.pop("client_mutation_label")
         cls.create_object(user=user, object_data=data)
 
     @classmethod
@@ -207,20 +218,20 @@ class BaseHistoryModelUpdateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
-        obj_uuid = data['id']
-        if cls._model.objects.filter(id=data['id']).first() is None:
+            raise PermissionDenied(_("mutation.authentication_required"))
+        obj_uuid = data["id"]
+        if cls._model.objects.filter(id=data["id"]).first() is None:
             cls._object_not_exist_exception(obj_uuid=obj_uuid)
 
     @classmethod
     def _mutate(cls, user, **data):
         if "date_valid_to" not in data:
-            data['date_valid_to'] = None
+            data["date_valid_to"] = None
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
-        updated_object = cls._model.objects.filter(id=data['id']).first()
+            data.pop("client_mutation_label")
+        updated_object = cls._model.objects.filter(id=data["id"]).first()
         [setattr(updated_object, key, data[key]) for key in data]
         cls.update_object(user=user, object_to_update=updated_object)
 
@@ -246,17 +257,17 @@ class BaseHistoryModelDeleteMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
     @classmethod
     def _mutate(cls, user, **data):
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
+            data.pop("client_mutation_label")
 
-        id_ = data.get('uuid', None) or data.get('id', None)
-        ids = data.get('uuids', None) or data.get('ids', None)
+        id_ = data.get("uuid", None) or data.get("id", None)
+        ids = data.get("uuids", None) or data.get("ids", None)
         if id_:
             cls.__delete_single_obj(user=user, id_=id_)
         elif ids:
@@ -289,16 +300,16 @@ class BaseHistoryModelReplaceMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_('mutation.authentication_required'))
+            raise PermissionDenied(_("mutation.authentication_required"))
 
     @classmethod
     def _mutate(cls, user, **data):
         if "client_mutation_id" in data:
-            data.pop('client_mutation_id')
+            data.pop("client_mutation_id")
         if "client_mutation_label" in data:
-            data.pop('client_mutation_label')
-        object_to_replace = cls._model.objects.filter(id=data['uuid']).first()
+            data.pop("client_mutation_label")
+        object_to_replace = cls._model.objects.filter(id=data["uuid"]).first()
         if object_to_replace is None:
-            cls._object_not_exist_exception(data['uuid'])
+            cls._object_not_exist_exception(data["uuid"])
         else:
             object_to_replace.replace_object(data=data, username=user.username)

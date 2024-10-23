@@ -1,4 +1,4 @@
-from core.reports import user_activity, registers_status
+from core.reports import registers_status, user_activity
 
 report_definitions = [
     {

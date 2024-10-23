@@ -6,36 +6,36 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0020_add_missing_fields_to_django_scheme'),
+        ("core", "0020_add_missing_fields_to_django_scheme"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='interactiveuser',
-            options={'managed': True},
+            name="interactiveuser",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='language',
-            options={'managed': True},
+            name="language",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='officer',
-            options={'managed': True},
+            name="officer",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='role',
-            options={'managed': True},
+            name="role",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='roleright',
-            options={'managed': True},
+            name="roleright",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='usergroup',
-            options={'managed': True},
+            name="usergroup",
+            options={"managed": True},
         ),
         migrations.AlterModelOptions(
-            name='userrole',
-            options={'managed': True},
+            name="userrole",
+            options={"managed": True},
         ),
     ]

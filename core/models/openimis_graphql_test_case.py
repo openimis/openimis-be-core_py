@@ -1,12 +1,13 @@
+import datetime
 import json
-from django.conf import settings
-from graphene_django.utils.testing import GraphQLTestCase
-import uuid
 import logging
+import time
+import uuid
+
+from django.conf import settings
 from graphene import Schema
 from graphene.test import Client
-import datetime
-import time
+from graphene_django.utils.testing import GraphQLTestCase
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
     class BaseTestContext:
         def __init__(self, user):
             self.user = user
+
     # client = None
     @classmethod
     def setUpClass(cls):
@@ -100,10 +102,9 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         content = json.loads(response.content)
 
         if follow:
-            mutation_type = list(content['data'].keys())[0]
+            mutation_type = list(content["data"].keys())[0]
             return self.get_mutation_result(
-                content['data'][mutation_type]['clientMutationId'],
-                token
+                content["data"][mutation_type]["clientMutationId"], token
             )
         else:
             return json.loads(response.content)

@@ -1,41 +1,49 @@
-
 from django.core.files.base import ContentFile
 from django.db.models import DO_NOTHING
-
 from pandas import DataFrame
 
-from . import UUIDModel, ExtendableModel
+from . import ExtendableModel, UUIDModel
+from .user import User, _get_default_expire_date, _query_export_path
 from .versioned_model import *
 
 logger = logging.getLogger(__name__)
 
-from .user import User, _query_export_path, _get_default_expire_date
-
-
 
 class ExportableQueryModel(models.Model):
     class FileFormat(models.TextChoices):
-        CSV = 'csv', 'csv'
-        XLSX = 'xlsx', 'xlsx'
+        CSV = "csv", "csv"
+        XLSX = "xlsx", "xlsx"
+
     name = models.CharField(max_length=255)
     model = models.CharField(max_length=255)
     content = models.FileField(upload_to=_query_export_path)
 
     user = models.ForeignKey(
-        User, db_column="User", related_name='data_exports',
-        on_delete=models.deletion.DO_NOTHING, null=False)
+        User,
+        db_column="User",
+        related_name="data_exports",
+        on_delete=models.deletion.DO_NOTHING,
+        null=False,
+    )
 
     sql_query = models.TextField()
-    create_date = DateTimeField(db_column='DateCreated', default=py_datetime.now)
-    expire_date = DateTimeField(db_column='DateExpiring', default=_get_default_expire_date)
+    create_date = DateTimeField(db_column="DateCreated", default=py_datetime.now)
+    expire_date = DateTimeField(
+        db_column="DateExpiring", default=_get_default_expire_date
+    )
     is_deleted = models.BooleanField(default=False)
     file_format = models.CharField(
-        max_length=255, blank=True, null=True, choices=FileFormat.choices, default=FileFormat.CSV
+        max_length=255,
+        blank=True,
+        null=True,
+        choices=FileFormat.choices,
+        default=FileFormat.CSV,
     )
 
     @staticmethod
-    def create_csv_export(qs, values, user, column_names=None,
-                          patches=None, file_format='csv'):
+    def create_csv_export(
+        qs, values, user, column_names=None, patches=None, file_format="csv"
+    ):
         if patches is None:
             patches = []
         sql = qs.query.sql_with_params()
@@ -44,8 +52,10 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = [column_names.get(column) or column for column in content.columns]
-        filename = F"{uuid.uuid4()}.{file_format}"
+        content.columns = [
+            column_names.get(column) or column for column in content.columns
+        ]
+        filename = f"{uuid.uuid4()}.{file_format}"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(
             name=filename,
@@ -53,11 +63,10 @@ class ExportableQueryModel(models.Model):
             content=content,
             user=user,
             sql_query=sql,
-            file_format=file_format
+            file_format=file_format,
         )
         export.save()
         return export
-    
 
 
 class MutationLog(UUIDModel, ExtendableModel):
@@ -66,6 +75,7 @@ class MutationLog(UUIDModel, ExtendableModel):
     immediately to the client and have longer processing in the various backend modules.
     The ID of this table will be used for reference.
     """
+
     RECEIVED = 0
     ERROR = 1
     SUCCESS = 2
@@ -78,10 +88,8 @@ class MutationLog(UUIDModel, ExtendableModel):
     json_content = models.TextField()
     user = models.ForeignKey(User, on_delete=DO_NOTHING, blank=True, null=True)
     request_date_time = models.DateTimeField(auto_now_add=True)
-    client_mutation_id = models.CharField(
-        max_length=255, blank=True, null=True)
-    client_mutation_label = models.CharField(
-        max_length=255, blank=True, null=True)
+    client_mutation_id = models.CharField(max_length=255, blank=True, null=True)
+    client_mutation_label = models.CharField(max_length=255, blank=True, null=True)
     client_mutation_details = models.TextField(blank=True, null=True)
     status = models.IntegerField(choices=STATUS_CHOICES, default=RECEIVED)
     error = models.TextField(blank=True, null=True)
@@ -97,8 +105,11 @@ class MutationLog(UUIDModel, ExtendableModel):
         method will only set the mutation_log as successful if it is in RECEIVED status.
         :return True if the status was updated, False if it was in ERROR or already in SUCCESS status
         """
-        affected_rows = MutationLog.objects.filter(id=self.id) \
-            .filter(status=MutationLog.RECEIVED).update(status=MutationLog.SUCCESS)
+        affected_rows = (
+            MutationLog.objects.filter(id=self.id)
+            .filter(status=MutationLog.RECEIVED)
+            .update(status=MutationLog.SUCCESS)
+        )
         self.refresh_from_db()
         return affected_rows > 0
 
@@ -107,8 +118,9 @@ class MutationLog(UUIDModel, ExtendableModel):
         Do not alter the mutation_log and then save it as it might override changes from another process.
         This method will force the status to ERROR and set its error accordingly.
         """
-        MutationLog.objects.filter(id=self.id) \
-            .update(status=MutationLog.ERROR, error=error)
+        MutationLog.objects.filter(id=self.id).update(
+            status=MutationLog.ERROR, error=error
+        )
         self.refresh_from_db()
 
 
@@ -137,35 +149,50 @@ class ObjectMutation:
     """
 
     @classmethod
-    def object_mutated(cls, user, mutation_log_id=None, client_mutation_id=None, *args, **kwargs):
+    def object_mutated(
+        cls, user, mutation_log_id=None, client_mutation_id=None, *args, **kwargs
+    ):
         # This method should fail silently to not disrupt the actual mutation
         # noinspection PyBroadException
         try:
-            args_models = {k + "_id": v.id for k, v in kwargs.items() if isinstance(v, models.Model)}
+            args_models = {
+                k + "_id": v.id
+                for k, v in kwargs.items()
+                if isinstance(v, models.Model)
+            }
             if len(args_models) == 0 or len(args_models) > 1:
-                logger.error("Trying to update ObjectMutationLink with several models in params: %s",
-                             ", ".join(args_models.keys()))
+                logger.error(
+                    "Trying to update ObjectMutationLink with several models in params: %s",
+                    ", ".join(args_models.keys()),
+                )
                 return
             if mutation_log_id:
                 cls.objects.get_or_create(mutation_id=mutation_log_id, **args_models)
             elif client_mutation_id:
-                mutations = MutationLog.objects \
-                    .filter(client_mutation_id=client_mutation_id) \
-                    .filter(user=user) \
-                    .values_list("id", flat=True) \
-                    .order_by("-request_date_time")[:2]  # Only ask for 2 for the warning, we'll only use 1
+                mutations = (
+                    MutationLog.objects.filter(client_mutation_id=client_mutation_id)
+                    .filter(user=user)
+                    .values_list("id", flat=True)
+                    .order_by("-request_date_time")[:2]
+                )  # Only ask for 2 for the warning, we'll only use 1
                 if len(mutations) == 2:
                     # Warning because if done too often, this would cause performance issues in this query
-                    logger.warning("Two or more mutations found for id %s, using the most recent one",
-                                   client_mutation_id)
+                    logger.warning(
+                        "Two or more mutations found for id %s, using the most recent one",
+                        client_mutation_id,
+                    )
                 if len(mutations) == 0:
-                    logger.debug("No mutation found for client_mutation_id %s, ignoring", client_mutation_id)
+                    logger.debug(
+                        "No mutation found for client_mutation_id %s, ignoring",
+                        client_mutation_id,
+                    )
                     return
                 cls.objects.get_or_create(mutation_id=mutations[0], **args_models)
             else:
                 logger.warning(
-                    "Trying to update a %s without either mutation id or client_mutation_id, ignoring", cls.__name__)
+                    "Trying to update a %s without either mutation id or client_mutation_id, ignoring",
+                    cls.__name__,
+                )
         except Exception as exc:
             # The mutation shouldn't fail because we couldn't store the UUID
             logger.error("Error updating the %s object", cls.__name__, exc_info=True)
-

@@ -16,6 +16,9 @@ class Patcher:
 
     def _move_not_valid_entries_to_historical_table(self):
         history_model = get_history_model_for_model(self.model)
-        data_fields = [x.name for x in self.model._meta.get_fields() if isinstance(x, models.fields.Field)]
+        data_fields = [
+            x.name
+            for x in self.model._meta.get_fields()
+            if isinstance(x, models.fields.Field)
+        ]
         print(data_fields)
-

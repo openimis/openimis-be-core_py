@@ -1,7 +1,8 @@
-import sys
-import os
 import importlib
 import logging
+import os
+import sys
+
 from django.apps import AppConfig
 from django.conf import settings
 
@@ -23,7 +24,11 @@ DEFAULT_CFG = {
     "longstrfdate": "%a %d %B %Y",
     "iso_raw_date": "False",
     "age_of_majority": "18",
-    "async_mutations": "True" if os.environ.get("ASYNC", os.environ.get("MODE", "PROD")) == "PROD" else "False",
+    "async_mutations": (
+        "True"
+        if os.environ.get("ASYNC", os.environ.get("MODE", "PROD")) == "PROD"
+        else "False"
+    ),
     "password_reset_template": "password_reset.txt",
     "currency": "$",
     "gql_query_users_perms": ["121701"],
@@ -51,14 +56,14 @@ DEFAULT_CFG = {
     "fields_controls_eo": {},
     "is_valid_health_facility_contract_required": False,
     "secondary_calendar": None,
-    "locked_user_password_hash": 'locked',
+    "locked_user_password_hash": "locked",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
 }
 
 
 class CoreConfig(AppConfig):
-    default_auto_field = 'django.db.models.AutoField'  # Django 3.1+
+    default_auto_field = "django.db.models.AutoField"  # Django 3.1+
     name = MODULE_NAME
     username_code_length = 12
     username_changeable = True
@@ -103,22 +108,27 @@ class CoreConfig(AppConfig):
     csrf_protect_login = None
 
     def _import_module(self, cfg, k):
-        logger.info('import %s.%s' %
-                    (cfg["%s_module" % k], cfg["%s_package" % k]))
+        logger.info("import %s.%s" % (cfg["%s_module" % k], cfg["%s_package" % k]))
         return importlib.import_module(
-            cfg["%s_module" % k], package=cfg["%s_package" % k])
+            cfg["%s_module" % k], package=cfg["%s_package" % k]
+        )
 
     def _configure_calendar(self, cfg):
         this.shortstrfdate = cfg["shortstrfdate"]
         this.longstrfdate = cfg["longstrfdate"]
-        this.iso_raw_date = False if cfg["iso_raw_date"] is None else cfg["iso_raw_date"].lower(
-        ) == "true"
+        this.iso_raw_date = (
+            False
+            if cfg["iso_raw_date"] is None
+            else cfg["iso_raw_date"].lower() == "true"
+        )
         try:
             this.calendar = self._import_module(cfg, "calendar")
             this.datetime = self._import_module(cfg, "datetime")
         except Exception:
-            logger.error('Failed to configure calendar, using default!\n%s: %s' % (
-                sys.exc_info()[0].__name__, sys.exc_info()[1]))
+            logger.error(
+                "Failed to configure calendar, using default!\n%s: %s"
+                % (sys.exc_info()[0].__name__, sys.exc_info()[1])
+            )
             this.calendar = self._import_module(DEFAULT_CFG, "calendar")
             this.datetime = self._import_module(DEFAULT_CFG, "datetime")
 
@@ -135,59 +145,106 @@ class CoreConfig(AppConfig):
         this.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
-        if bool(os.environ.get('NO_DATABASE', False)):
-            logger.info('env NO_DATABASE set to True: no user auto provisioning possible!')
+        if bool(os.environ.get("NO_DATABASE", False)):
+            logger.info(
+                "env NO_DATABASE set to True: no user auto provisioning possible!"
+            )
             return
         group = cfg["auto_provisioning_user_group"]
         this.auto_provisioning_user_group = group
         try:
             from .models import Group
+
             Group.objects.get(name=group)
         except Group.DoesNotExist:
             g = Group(name=group)
             g.save()
             from django.contrib.auth.models import Permission
+
             p = Permission.objects.get(codename="view_user")
             g.permissions.add(p)
             g.save()
         except Exception as e:
-            logger.warning('Failed set auto_provisioning_user_group ' + str(e))
+            logger.warning("Failed set auto_provisioning_user_group " + str(e))
 
     def _configure_graphql(self, cfg):
-        this.async_mutations = True if cfg["async_mutations"] is None else cfg["async_mutations"].lower() == "true"
+        this.async_mutations = (
+            True
+            if cfg["async_mutations"] is None
+            else cfg["async_mutations"].lower() == "true"
+        )
 
     def _configure_permissions(self, cfg):
         CoreConfig.gql_query_roles_perms = cfg["gql_query_roles_perms"]
-        CoreConfig.gql_mutation_create_roles_perms = cfg["gql_mutation_create_roles_perms"]
-        CoreConfig.gql_mutation_update_roles_perms = cfg["gql_mutation_update_roles_perms"]
-        CoreConfig.gql_mutation_replace_roles_perms = cfg["gql_mutation_replace_roles_perms"]
-        CoreConfig.gql_mutation_duplicate_roles_perms = cfg["gql_mutation_duplicate_roles_perms"]
-        CoreConfig.gql_mutation_delete_roles_perms = cfg["gql_mutation_delete_roles_perms"]
+        CoreConfig.gql_mutation_create_roles_perms = cfg[
+            "gql_mutation_create_roles_perms"
+        ]
+        CoreConfig.gql_mutation_update_roles_perms = cfg[
+            "gql_mutation_update_roles_perms"
+        ]
+        CoreConfig.gql_mutation_replace_roles_perms = cfg[
+            "gql_mutation_replace_roles_perms"
+        ]
+        CoreConfig.gql_mutation_duplicate_roles_perms = cfg[
+            "gql_mutation_duplicate_roles_perms"
+        ]
+        CoreConfig.gql_mutation_delete_roles_perms = cfg[
+            "gql_mutation_delete_roles_perms"
+        ]
         CoreConfig.gql_query_users_perms = cfg["gql_query_users_perms"]
-        CoreConfig.gql_mutation_create_users_perms = cfg["gql_mutation_create_users_perms"]
-        CoreConfig.gql_mutation_update_users_perms = cfg["gql_mutation_update_users_perms"]
-        CoreConfig.gql_mutation_delete_users_perms = cfg["gql_mutation_delete_users_perms"]
-        CoreConfig.gql_query_enrolment_officers_perms = cfg["gql_query_enrolment_officers_perms"]
-        CoreConfig.gql_mutation_create_enrolment_officers_perms = cfg["gql_mutation_create_enrolment_officers_perms"]
-        CoreConfig.gql_mutation_update_enrolment_officers_perms = cfg["gql_mutation_update_enrolment_officers_perms"]
-        CoreConfig.gql_mutation_delete_enrolment_officers_perms = cfg["gql_mutation_delete_enrolment_officers_perms"]
-        CoreConfig.gql_query_claim_administrator_perms = cfg["gql_query_claim_administrator_perms"]
-        CoreConfig.gql_mutation_create_claim_administrator_perms = cfg["gql_mutation_create_claim_administrator_perms"]
-        CoreConfig.gql_mutation_update_claim_administrator_perms = cfg["gql_mutation_update_claim_administrator_perms"]
-        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
-        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg["gql_mutation_delete_claim_administrator_perms"]
-        CoreConfig.gql_query_enable_viewing_masked_data_perms = cfg["gql_query_enable_viewing_masked_data_perms"]
+        CoreConfig.gql_mutation_create_users_perms = cfg[
+            "gql_mutation_create_users_perms"
+        ]
+        CoreConfig.gql_mutation_update_users_perms = cfg[
+            "gql_mutation_update_users_perms"
+        ]
+        CoreConfig.gql_mutation_delete_users_perms = cfg[
+            "gql_mutation_delete_users_perms"
+        ]
+        CoreConfig.gql_query_enrolment_officers_perms = cfg[
+            "gql_query_enrolment_officers_perms"
+        ]
+        CoreConfig.gql_mutation_create_enrolment_officers_perms = cfg[
+            "gql_mutation_create_enrolment_officers_perms"
+        ]
+        CoreConfig.gql_mutation_update_enrolment_officers_perms = cfg[
+            "gql_mutation_update_enrolment_officers_perms"
+        ]
+        CoreConfig.gql_mutation_delete_enrolment_officers_perms = cfg[
+            "gql_mutation_delete_enrolment_officers_perms"
+        ]
+        CoreConfig.gql_query_claim_administrator_perms = cfg[
+            "gql_query_claim_administrator_perms"
+        ]
+        CoreConfig.gql_mutation_create_claim_administrator_perms = cfg[
+            "gql_mutation_create_claim_administrator_perms"
+        ]
+        CoreConfig.gql_mutation_update_claim_administrator_perms = cfg[
+            "gql_mutation_update_claim_administrator_perms"
+        ]
+        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg[
+            "gql_mutation_delete_claim_administrator_perms"
+        ]
+        CoreConfig.gql_mutation_delete_claim_administrator_perms = cfg[
+            "gql_mutation_delete_claim_administrator_perms"
+        ]
+        CoreConfig.gql_query_enable_viewing_masked_data_perms = cfg[
+            "gql_query_enable_viewing_masked_data_perms"
+        ]
         CoreConfig.csrf_protect_login = cfg["csrf_protect_login"]
 
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
         CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
 
     def _configure_additional_settings(self, cfg):
-        CoreConfig.is_valid_health_facility_contract_required = cfg["is_valid_health_facility_contract_required"]
+        CoreConfig.is_valid_health_facility_contract_required = cfg[
+            "is_valid_health_facility_contract_required"
+        ]
         CoreConfig.secondary_calendar = cfg["secondary_calendar"]
 
     def ready(self):
         from .models import ModuleConfiguration
+
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_user_config(cfg)
@@ -203,5 +260,6 @@ class CoreConfig(AppConfig):
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler
+
         if settings.SCHEDULER_AUTOSTART:
             scheduler.start()

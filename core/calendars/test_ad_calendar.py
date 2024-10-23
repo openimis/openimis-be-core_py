@@ -1,15 +1,15 @@
 import importlib
-import core
+
 from django.test import TestCase
+
+import core
 
 
 class CalendarTestCase(TestCase):
     def setUp(self):
         super(CalendarTestCase, self).setUp()
-        core.calendar = importlib.import_module(
-            '.calendars.ad_calendar', 'core')
-        core.datetime = importlib.import_module(
-            '.datetimes.ad_datetime', 'core')
+        core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
+        core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
 
     def test_weekfirstday(self):
         dte = core.datetime.date(2019, 3, 19)

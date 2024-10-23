@@ -1,30 +1,37 @@
 import logging
 import sys
 import uuid
-from datetime import timedelta, datetime as py_datetime
-from django.core.cache import cache
+from datetime import datetime as py_datetime
+from datetime import timedelta
+
 from cached_property import cached_property
 from django.apps import apps
+
+# from core.datetimes.ad_datetime import datetime as py_datetime
 from django.conf import settings
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    Group,
+    PermissionsMixin,
+)
+
+# from core.utils import validate_password
+from django.contrib.auth.password_validation import validate_password
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.db import models
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
+from rest_framework import exceptions
+
 import core
-
-
-# from core.utils import validate_password
-from django.contrib.auth.password_validation import validate_password
-#from core.datetimes.ad_datetime import datetime as py_datetime
-from django.conf import settings
 
 from ..utils import filter_validity
 from .base import *
 from .versioned_model import *
 
 logger = logging.getLogger(__name__)
-from rest_framework import exceptions
 
 
 class UserManager(BaseUserManager):
@@ -41,29 +48,28 @@ class UserManager(BaseUserManager):
         return tech
 
     def create_user(self, username, password, email=None, **extra_fields):
-        extra_fields.setdefault('is_staff', False)
-        extra_fields['is_superuser'] = False
+        extra_fields.setdefault("is_staff", False)
+        extra_fields["is_superuser"] = False
         self._create_tech_user(username, email, password, **extra_fields)
 
     def create_superuser(self, username, password=None, email=None, **extra_fields):
-        extra_fields['is_staff'] = True
-        extra_fields['is_superuser'] = True
+        extra_fields["is_staff"] = True
+        extra_fields["is_superuser"] = True
         self._create_tech_user(username, email, password, **extra_fields)
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user
         try:
             i_user = InteractiveUser.objects.get(
-                login_name=kwargs['username'],
-                *filter_validity())
+                login_name=kwargs["username"], *filter_validity()
+            )
         except InteractiveUser.DoesNotExist as e:
             raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS") from e
         user = self._create_core_user(**kwargs)
         user.i_user = i_user
         user.save()
         if core.auto_provisioning_user_group:
-            group = Group.objects.filter(
-                name=core.auto_provisioning_user_group).first()
+            group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
             if group:
                 user_group = UserGroup(user=user, group=group)
                 user_group.save()
@@ -83,18 +89,19 @@ class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(blank=True, null=True)
-    language = 'en'
+    language = "en"
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    validity_from = models.DateTimeField(blank=True, null=True, default = py_datetime.now)
+    validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
     validity_to = models.DateTimeField(blank=True, null=True)
     is_imis_admin = False
+
     @property
     def id_for_audit(self):
         return -1
 
-    USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['password']
+    USERNAME_FIELD = "username"
+    REQUIRED_FIELDS = ["password"]
 
     def _bind_User(self):
         save_required = False
@@ -116,19 +123,21 @@ class TechnicalUser(AbstractBaseUser):
 
     class Meta:
         managed = True
-        db_table = 'core_TechnicalUser'
+        db_table = "core_TechnicalUser"
 
 
 class Role(VersionedModel):
-    id = models.AutoField(db_column='RoleID', primary_key=True)
-    uuid = models.CharField(db_column='RoleUUID', max_length=36, default=uuid.uuid4, unique=True)
-    name = models.CharField(db_column='RoleName', max_length=50)
+    id = models.AutoField(db_column="RoleID", primary_key=True)
+    uuid = models.CharField(
+        db_column="RoleUUID", max_length=36, default=uuid.uuid4, unique=True
+    )
+    name = models.CharField(db_column="RoleName", max_length=50)
     alt_language = models.CharField(
-        db_column='AltLanguage', max_length=50, blank=True, null=True)
-    is_system = models.IntegerField(db_column='IsSystem')
-    is_blocked = models.BooleanField(db_column='IsBlocked')
-    audit_user_id = models.IntegerField(
-        db_column='AuditUserID', blank=True, null=True)
+        db_column="AltLanguage", max_length=50, blank=True, null=True
+    )
+    is_system = models.IntegerField(db_column="IsSystem")
+    is_blocked = models.BooleanField(db_column="IsBlocked")
+    audit_user_id = models.IntegerField(db_column="AuditUserID", blank=True, null=True)
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -142,16 +151,16 @@ class Role(VersionedModel):
 
     class Meta:
         managed = True
-        db_table = 'tblRole'
+        db_table = "tblRole"
 
 
 class RoleRight(VersionedModel):
-    id = models.AutoField(db_column='RoleRightID', primary_key=True)
-    role = models.ForeignKey(Role, models.DO_NOTHING,
-                             db_column='RoleID', related_name="rights")
-    right_id = models.IntegerField(db_column='RightID')
-    audit_user_id = models.IntegerField(
-        db_column='AuditUserId', blank=True, null=True)
+    id = models.AutoField(db_column="RoleRightID", primary_key=True)
+    role = models.ForeignKey(
+        Role, models.DO_NOTHING, db_column="RoleID", related_name="rights"
+    )
+    right_id = models.IntegerField(db_column="RightID")
+    audit_user_id = models.IntegerField(db_column="AuditUserId", blank=True, null=True)
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -165,12 +174,14 @@ class RoleRight(VersionedModel):
 
     class Meta:
         managed = True
-        db_table = 'tblRoleRight'
+        db_table = "tblRoleRight"
 
 
 class InteractiveUser(VersionedModel):
     id = models.AutoField(db_column="UserID", primary_key=True)
-    uuid = models.CharField(db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True)
+    uuid = models.CharField(
+        db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True
+    )
     language = models.ForeignKey(Language, models.DO_NOTHING, db_column="LanguageID")
     last_name = models.CharField(db_column="LastName", max_length=100)
     other_names = models.CharField(db_column="OtherNames", max_length=100)
@@ -241,22 +252,27 @@ class InteractiveUser(VersionedModel):
     def is_staff(self):
         return self.is_superuser
 
-
     @property
     def is_superuser(self):
         return self.is_imis_admin
 
-
-
     @property
     def rights(self):
-        rights = cache.get('rights_' + str(self.id))
+        rights = cache.get("rights_" + str(self.id))
         if rights:
             return rights
-        rights = [rr.right_id for rr in RoleRight.filter_queryset().filter(
-            role_id__in=[r.role_id for r in UserRole.filter_queryset().filter(
-                user_id=self.id)]).distinct()]
-        cache.set('rights_' + str(self.id), rights, timeout=None)
+        rights = [
+            rr.right_id
+            for rr in RoleRight.filter_queryset()
+            .filter(
+                role_id__in=[
+                    r.role_id
+                    for r in UserRole.filter_queryset().filter(user_id=self.id)
+                ]
+            )
+            .distinct()
+        ]
+        cache.set("rights_" + str(self.id), rights, timeout=None)
         return rights
 
     @property
@@ -278,9 +294,7 @@ class InteractiveUser(VersionedModel):
         is_officer = cache.get(cache_name)
         if is_officer is None:
             is_officer = Officer.objects.filter(
-                code=self.login_name,
-                has_login=True,
-                *filter_validity()
+                code=self.login_name, has_login=True, *filter_validity()
             ).exists()
             cache.set(cache_name, is_officer, None)
         return is_officer
@@ -289,16 +303,15 @@ class InteractiveUser(VersionedModel):
     def is_claim_admin(self):
         # Unlike Officer ClaimAdmin model was moved to the claim module,
         # and it's not granted that the module is installed.
-        if 'claim' in sys.modules:
+        if "claim" in sys.modules:
             cache_name = f"user_ca_{self.login_name}"
             is_claim_admin = cache.get(cache_name)
             if is_claim_admin is None:
-                
+
                 from claim.models import ClaimAdmin
+
                 is_claim_admin = ClaimAdmin.objects.filter(
-                    code=self.login_name,
-                    has_login=True,
-                    *filter_validity()
+                    code=self.login_name, has_login=True, *filter_validity()
                 ).exists()
                 cache.set(cache_name, is_claim_admin, None)
             return is_claim_admin
@@ -307,21 +320,22 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_imis_admin(self):
-        is_admin = cache.get('is_admin_' + str(self.id))
+        is_admin = cache.get("is_admin_" + str(self.id))
         if is_admin is None:
             is_admin = Role.objects.filter(
                 is_system=64,
                 user_roles__user=self,
                 validity_to__isnull=True,
                 user_roles__validity_to__isnull=True,
-                user_roles__user__validity_to__isnull=True
+                user_roles__user__validity_to__isnull=True,
             ).exists()
-            cache.set('is_admin_' + str(self.id), is_admin, 600)
+            cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
+
         validate_password(raw_password)
         self.private_key = token_hex(128)
         pwd_hash = sha256()
@@ -336,7 +350,8 @@ class InteractiveUser(VersionedModel):
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         pwd_hash = pwd_hash.hexdigest()
-        # logger.debug("pwd_hash %s -> %s, stored: %s", f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.password)
+        # logger.debug("pwd_hash %s -> %s, stored: %s",
+        # f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.password)
         # hashlib gives a lowercase digest while the legacy gives an uppercase one
         return pwd_hash == self.password.lower()
 
@@ -363,31 +378,43 @@ class InteractiveUser(VersionedModel):
 
     class Meta:
         managed = True
-        db_table = 'tblUsers'
+        db_table = "tblUsers"
 
 
 class UserRole(VersionedModel):
-    id = models.AutoField(db_column='UserRoleID', primary_key=True)
+    id = models.AutoField(db_column="UserRoleID", primary_key=True)
     user = models.ForeignKey(
-        InteractiveUser, models.DO_NOTHING, db_column='UserID', related_name="user_roles")
-    role = models.ForeignKey(Role, models.DO_NOTHING,
-                             db_column='RoleID', related_name="user_roles")
-    audit_user_id = models.IntegerField(
-        db_column='AudituserID', blank=True, null=True)
+        InteractiveUser,
+        models.DO_NOTHING,
+        db_column="UserID",
+        related_name="user_roles",
+    )
+    role = models.ForeignKey(
+        Role, models.DO_NOTHING, db_column="RoleID", related_name="user_roles"
+    )
+    audit_user_id = models.IntegerField(db_column="AudituserID", blank=True, null=True)
 
     class Meta:
         managed = True
-        db_table = 'tblUserRole'
+        db_table = "tblUserRole"
 
 
 class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=50)
-    t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
-    i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
-    officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
-    claim_admin = models.ForeignKey("claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True)
+    t_user = models.ForeignKey(
+        TechnicalUser, on_delete=models.CASCADE, blank=True, null=True
+    )
+    i_user = models.ForeignKey(
+        InteractiveUser, on_delete=models.CASCADE, blank=True, null=True
+    )
+    officer = models.ForeignKey(
+        "Officer", on_delete=models.CASCADE, blank=True, null=True
+    )
+    claim_admin = models.ForeignKey(
+        "claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True
+    )
 
-    USERNAME_FIELD = 'username'
+    USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
 
     objects = UserManager()
@@ -458,17 +485,16 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
         if self._u.validity_from is None and self._u.validity_to is None:
             return True
         now = py_datetime.now()
-        if not self._u.validity_from is None and self._u.validity_from > now:
+        if self._u.validity_from is not None and self._u.validity_from > now:
             return False
-        if not self._u.validity_to is None and self._u.validity_to < now:
+        if self._u.validity_to is not None and self._u.validity_to < now:
             return False
         return True
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
         if i_user is not None and (
-            i_user.is_superuser or 
-            any(str(right) == perm for right in i_user.rights)
+            i_user.is_superuser or any(str(right) == perm for right in i_user.rights)
         ):
             return True
         else:
@@ -506,11 +532,11 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
         return self.get_health_facility()
 
     def __getattr__(self, name):
-        if name == '_u':
-            raise ValueError('wrapper has not been initialised')
-        elif name == '__name__':
+        if name == "_u":
+            raise ValueError("wrapper has not been initialised")
+        elif name == "__name__":
             return self.username
-        elif name == 'get_session_auth_hash':
+        elif name == "get_session_auth_hash":
             return False
         elif hasattr(self._u, name):
             return getattr(self._u, name)
@@ -518,7 +544,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
             return self.__dict__[name]
         else:
             raise AttributeError(f"User has no attribute {name}")
-        
+
     def __call__(self, *args, **kwargs):
         # if not self._u:
         #     raise ValueError('wrapper has not been initialised')
@@ -530,15 +556,15 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     def __str__(self):
         if self.i_user:
-            utype = 'i'
+            utype = "i"
         elif self.t_user:
-            utype = 't'
+            utype = "t"
         elif self.officer:
-            utype = 'o'
+            utype = "o"
         elif self.claim_admin:
-            utype = 'c'
+            utype = "c"
         else:
-            utype = '?'
+            utype = "?"
         return "(%s) %s [%s]" % (utype, self.username, self.id)
 
     def save(self, *args, **kwargs):
@@ -547,7 +573,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
         super().save(*args, **kwargs)
 
     def shallow_save(self, *args, **kwargs):
-        """ Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion """
+        """Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion"""
         super().save(*args, **kwargs)
 
     @classmethod
@@ -562,7 +588,7 @@ class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
 
     class Meta:
         managed = True
-        db_table = 'core_User'
+        db_table = "core_User"
 
 
 class UserGroup(models.Model):
@@ -571,34 +597,54 @@ class UserGroup(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'core_User_groups'
-        unique_together = (('user', 'group'),)
+        db_table = "core_User_groups"
+        unique_together = (("user", "group"),)
 
 
 class Officer(VersionedModel, ExtendableModel):
-    id = models.AutoField(db_column='OfficerID', primary_key=True)
-    uuid = models.CharField(db_column='OfficerUUID',
-                            max_length=36, default=uuid.uuid4, unique=True)
-    code = models.CharField(db_column='Code', max_length=50)
-    last_name = models.CharField(db_column='LastName', max_length=100)
-    other_names = models.CharField(db_column='OtherNames', max_length=100)
-    dob = models.DateField(db_column='DOB', blank=True, null=True)
-    phone = models.CharField(db_column='Phone', max_length=50, blank=True, null=True)
-    location = models.ForeignKey('location.Location', models.DO_NOTHING, db_column='LocationId', blank=True, null=True)
-    substitution_officer = models.ForeignKey('self', models.DO_NOTHING, db_column='OfficerIDSubst', blank=True,
-                                             null=True)
-    works_to = models.DateTimeField(db_column='WorksTo', blank=True, null=True)
-    veo_code = models.CharField(db_column='VEOCode', max_length=50, blank=True, null=True)
-    veo_last_name = models.CharField(db_column='VEOLastName', max_length=100, blank=True, null=True)
-    veo_other_names = models.CharField(db_column='VEOOtherNames', max_length=100, blank=True, null=True)
-    veo_dob = models.DateField(db_column='VEODOB', blank=True, null=True)
-    veo_phone = models.CharField(db_column='VEOPhone', max_length=25, blank=True, null=True)
-    audit_user_id = models.IntegerField(db_column='AuditUserID')
+    id = models.AutoField(db_column="OfficerID", primary_key=True)
+    uuid = models.CharField(
+        db_column="OfficerUUID", max_length=36, default=uuid.uuid4, unique=True
+    )
+    code = models.CharField(db_column="Code", max_length=50)
+    last_name = models.CharField(db_column="LastName", max_length=100)
+    other_names = models.CharField(db_column="OtherNames", max_length=100)
+    dob = models.DateField(db_column="DOB", blank=True, null=True)
+    phone = models.CharField(db_column="Phone", max_length=50, blank=True, null=True)
+    location = models.ForeignKey(
+        "location.Location",
+        models.DO_NOTHING,
+        db_column="LocationId",
+        blank=True,
+        null=True,
+    )
+    substitution_officer = models.ForeignKey(
+        "self", models.DO_NOTHING, db_column="OfficerIDSubst", blank=True, null=True
+    )
+    works_to = models.DateTimeField(db_column="WorksTo", blank=True, null=True)
+    veo_code = models.CharField(
+        db_column="VEOCode", max_length=50, blank=True, null=True
+    )
+    veo_last_name = models.CharField(
+        db_column="VEOLastName", max_length=100, blank=True, null=True
+    )
+    veo_other_names = models.CharField(
+        db_column="VEOOtherNames", max_length=100, blank=True, null=True
+    )
+    veo_dob = models.DateField(db_column="VEODOB", blank=True, null=True)
+    veo_phone = models.CharField(
+        db_column="VEOPhone", max_length=25, blank=True, null=True
+    )
+    audit_user_id = models.IntegerField(db_column="AuditUserID")
     # rowid = models.TextField(db_column='RowID', blank=True, null=True)   This field type is a guess.
-    email = models.CharField(db_column='EmailId', max_length=200, blank=True, null=True)
-    phone_communication = models.BooleanField(db_column='PhoneCommunication', blank=True, null=True)
-    address = models.CharField(db_column="permanentaddress", max_length=100, blank=True, null=True)
-    has_login = models.BooleanField(db_column='HasLogin', blank=True, null=True)
+    email = models.CharField(db_column="EmailId", max_length=200, blank=True, null=True)
+    phone_communication = models.BooleanField(
+        db_column="PhoneCommunication", blank=True, null=True
+    )
+    address = models.CharField(
+        db_column="permanentaddress", max_length=100, blank=True, null=True
+    )
+    has_login = models.BooleanField(db_column="HasLogin", blank=True, null=True)
 
     # user = models.ForeignKey(User, db_column='UserID', blank=True, null=True, on_delete=models.CASCADE)
 
@@ -646,9 +692,9 @@ class Officer(VersionedModel, ExtendableModel):
         """
         Returns uuid of all locations allowed for given officer
         """
-        from location.models import OfficerVillage, Location
-        villages = OfficerVillage.objects\
-            .filter(officer=self, validity_to__isnull=True)
+        from location.models import Location, OfficerVillage
+
+        villages = OfficerVillage.objects.filter(officer=self, validity_to__isnull=True)
         all_allowed_uuids = []
         for village in villages:
             allowed_uuids = [village.location.uuid]
@@ -669,9 +715,8 @@ class Officer(VersionedModel, ExtendableModel):
 
     class Meta:
         managed = True
-        db_table = 'tblOfficer'
+        db_table = "tblOfficer"
 
-    
 
 def _get_default_expire_date():
     return py_datetime.now() + timedelta(days=1)
@@ -679,5 +724,4 @@ def _get_default_expire_date():
 
 def _query_export_path(instance, filename):
     # file will be uploaded to MEDIA_ROOT/user_<id>/<filename>
-    return F'query_exports/user_{instance.user.uuid}/{filename}'
-
+    return f"query_exports/user_{instance.user.uuid}/{filename}"
