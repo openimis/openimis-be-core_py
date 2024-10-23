@@ -5,6 +5,7 @@ import re
 import sys
 import uuid
 import graphene
+import base64
 from django.utils.translation import gettext as _
 from copy import copy
 from datetime import datetime as py_datetime
@@ -218,7 +219,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                             coerced_list.append(item)
                         elif isinstance(item, str):
                             if isinstance(inner_type, graphene.UUID):
-                                coerced_list.append(cls.parse_uuid(item))
+                                coerced_list.append(cls.parse_uuid(item), field)
                             else:
                                 coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
@@ -241,7 +242,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     coerced_data[key] = cls.coerce_mutation_data(value, input_class=field._type)
                 elif isinstance(value, str):
                     if isinstance(field, graphene.UUID):
-                        coerced_data[key] = cls.parse_uuid(value)
+                        coerced_data[key] = cls.parse_uuid(value, field)
                     else:
                         coerced_data[key] = field.parse_value(value)
                 else:
@@ -377,19 +378,19 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             mutation_log.mark_as_failed(exc)
 
         return cls(internal_id=mutation_log.id)
-
-@staticmethod
-def parse_uuid(value):
-    try:
-        return uuid.UUID(value)
-    except ValueError:
+    
+    @staticmethod
+    def parse_uuid(value, field):
         try:
-            # Attempt to decode as base64
-            decoded = base64.b64decode(value).decode('utf-8')
-            return uuid.UUID(decoded)
-        except (ValueError, UnicodeDecodeError):
-            raise ValueError(f"Invalid UUID format or base64 encoding: {value}")
-
+            return uuid.UUID(value)
+        except (ValueError, AttributeError) as ex:
+            try:
+                # Attempt to decode as base64
+                decoded = base64.b64decode(value).decode('utf-8')
+                return uuid.UUID(decoded)
+            except (ValueError, UnicodeDecodeError):
+                return field.parse_value(value)
+        
 
 
 class FieldControlGQLType(DjangoObjectType):
