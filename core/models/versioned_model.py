@@ -1,19 +1,23 @@
+import datetime
+import logging
 import uuid
 from copy import copy
 from datetime import datetime as py_datetime
+
 from django.db import models
-#from core.datetimes.ad_datetime import datetime as py_datetime
 
 from ..fields import DateTimeField
 from ..utils import filter_validity
-import logging
-import datetime
+
+# from core.datetimes.ad_datetime import datetime as py_datetime
+
 
 logger = logging.getLogger(__name__)
 
+
 class BaseVersionedModel(models.Model):
-    validity_from = DateTimeField(db_column='ValidityFrom', default=py_datetime.now)
-    validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
+    validity_from = DateTimeField(db_column="ValidityFrom", default=py_datetime.now)
+    validity_to = DateTimeField(db_column="ValidityTo", blank=True, null=True)
 
     def save_history(self, **kwargs):
         if not self.id:  # only copy if the data is being updated
@@ -46,18 +50,14 @@ class BaseVersionedModel(models.Model):
 
 
 class VersionedModel(BaseVersionedModel):
-    legacy_id = models.IntegerField(
-        db_column='LegacyID', blank=True, null=True)
+    legacy_id = models.IntegerField(db_column="LegacyID", blank=True, null=True)
 
     class Meta:
         abstract = True
 
 
 class UUIDVersionedModel(BaseVersionedModel):
-    legacy_id = models.UUIDField(
-        db_column='LegacyID', blank=True, null=True)
+    legacy_id = models.UUIDField(db_column="LegacyID", blank=True, null=True)
 
     class Meta:
         abstract = True
-
-

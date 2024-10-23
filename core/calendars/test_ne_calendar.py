@@ -1,22 +1,20 @@
 import importlib
-import core
-from django.test import TestCase
 from datetime import date as py_date
+
+from django.test import TestCase
+
+import core
 
 
 class CalendarTestCase(TestCase):
     def setUp(self):
         super(CalendarTestCase, self).setUp()
-        core.calendar = importlib.import_module(
-            '.calendars.ne_calendar', 'core')
-        core.datetime = importlib.import_module(
-            '.datetimes.ne_datetime', 'core')
+        core.calendar = importlib.import_module(".calendars.ne_calendar", "core")
+        core.datetime = importlib.import_module(".datetimes.ne_datetime", "core")
 
     def tearDown(self):
-        core.calendar = importlib.import_module(
-            '.calendars.ad_calendar', 'core')
-        core.datetime = importlib.import_module(
-            '.datetimes.ad_datetime', 'core')
+        core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
+        core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
 
     def test_from_ad_date(self):
         dt = core.datetime.date.from_ad_date(py_date(2020, 1, 13))

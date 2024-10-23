@@ -1,10 +1,14 @@
-from core.models import Officer, InteractiveUser, User, TechnicalUser, filter_validity
-from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
-from core.services.userServices import create_or_update_officer_villages, create_or_update_interactive_user, \
-    create_or_update_core_user
-from core.services import create_or_update_user_roles
-from location.models import Location
 from uuid import uuid4
+
+from core.models import InteractiveUser, Officer, TechnicalUser, User, filter_validity
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
+from core.services import create_or_update_user_roles
+from core.services.userServices import (
+    create_or_update_core_user,
+    create_or_update_interactive_user,
+    create_or_update_officer_villages,
+)
+from location.models import Location
 
 
 def create_test_officer(valid=True, custom_props=None, villages=[]):
@@ -13,8 +17,8 @@ def create_test_officer(valid=True, custom_props=None, villages=[]):
     else:
         custom_props = {k: v for k, v in custom_props.items() if hasattr(Officer, k)}
 
-    code = custom_props.pop('code', None)
-    uuid = custom_props.pop('uuid', None)
+    code = custom_props.pop("code", None)
+    uuid = custom_props.pop("uuid", None)
     qs_eo = Officer.objects
     eo = None
     data = {
@@ -25,7 +29,7 @@ def create_test_officer(valid=True, custom_props=None, villages=[]):
         "validity_to": None if valid else "2019-06-01",
         "audit_user_id": -1,
         "phone": "0000110100",
-        **custom_props
+        **custom_props,
     }
 
     if code:
@@ -36,25 +40,31 @@ def create_test_officer(valid=True, custom_props=None, villages=[]):
     if code or uuid:
         eo = qs_eo.first()
     if eo:
-        data['uuid'] = eo.uuid
+        data["uuid"] = eo.uuid
         eo.update(data)
     else:
-        data['uuid'] = uuid4()
+        data["uuid"] = uuid4()
         eo = Officer.objects.create(**data)
-    
+
     if not villages:
-        villages == Location.objects.filter(*filter_validity(), type='V').first()
+        villages == Location.objects.filter(*filter_validity(), type="V").first()
     if eo:
         _ = create_or_update_officer_villages(eo, [v.id for v in villages], 1)
         return eo
 
 
-def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\\/pe®Pąßw0rd""", roles=None,
-                                 custom_props=None):
+def create_test_interactive_user(
+    username="TestInteractiveTest",
+    password="S\\:\\/pe®Pąßw0rd" "",
+    roles=None,
+    custom_props=None,
+):
     if custom_props is None:
         custom_props = {}
     else:
-        custom_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)}
+        custom_props = {
+            k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)
+        }
     if roles is None:
         roles = [7, 1, 2, 3, 4, 5, 6]
     user = None
@@ -71,10 +81,10 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\
                 "login_name": username,
                 "audit_user_id": -1,
                 "role_id": roles[0],
-                **custom_props
+                **custom_props,
             }
         )
-        
+
     if not user:
         user = User.objects.create(
             username=username,
@@ -87,24 +97,26 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\
 
 
 def create_test_technical_user(
-        username='TestAdminTechnicalTest', password="S\\/pe®Pąßw0rd""", super_user=False,
-        custom_tech_user_props={}, custom_core_user_props={}):
-    custom_tech_user_props['password'] = password
+    username="TestAdminTechnicalTest",
+    password="S\\/pe®Pąßw0rd" "",
+    super_user=False,
+    custom_tech_user_props={},
+    custom_core_user_props={},
+):
+    custom_tech_user_props["password"] = password
     t_user, t_user_created = TechnicalUser.objects.get_or_create(
         **{
             "username": username,
             "email": "test_tech_user@openimis.org",
             "is_staff": super_user,
             "is_superuser": super_user,
-            **(custom_tech_user_props)
+            **(custom_tech_user_props),
         }
     )
     # Just for safety and retrieving the User because TechnicalUser will automatically create its User
-    custom_core_user_props['password'] = password
+    custom_core_user_props["password"] = password
     core_user, core_user_created = User.objects.get_or_create(
-        username=username,
-        t_user=t_user,
-        **(custom_core_user_props)
+        username=username, t_user=t_user, **(custom_core_user_props)
     )
     return core_user
 
@@ -133,8 +145,12 @@ def compare_dicts(dict1, dict2):
                     return False
 
             return True
-        elif isinstance(obj1, (float, int)) or (isinstance(obj1, str) and obj1.isnumeric()) \
-                and isinstance(obj2, (float, int)) or (isinstance(obj2, str) and obj2.isnumeric()):
+        elif (
+            isinstance(obj1, (float, int))
+            or (isinstance(obj1, str) and obj1.isnumeric())
+            and isinstance(obj2, (float, int))
+            or (isinstance(obj2, str) and obj2.isnumeric())
+        ):
             # Compare floating-point numbers with a tolerance for decimal precision
             return round(float(obj1), 2) == round(float(obj2), 2)
 
@@ -163,16 +179,19 @@ class LogInHelper:
         }
 
     def get_or_create_user_api(self, **kwargs):
-        username = kwargs.get('username') or self.test_user_name
+        username = kwargs.get("username") or self.test_user_name
         user = User.objects.filter(username=username).first()
         if user is None:
             user = self._create_user_interactive_core(**kwargs)
         return user
 
     def _create_user_interactive_core(self, **kwargs):
-        username = kwargs.get('username') or self.test_user_name
+        username = kwargs.get("username") or self.test_user_name
         i_user, i_user_created = create_or_update_interactive_user(
-            user_id=None, data={**self.test_data_user, **kwargs}, audit_user_id=999, connected=False)
-        create_or_update_core_user(
-            user_uuid=None, username=username, i_user=i_user)
+            user_id=None,
+            data={**self.test_data_user, **kwargs},
+            audit_user_id=999,
+            connected=False,
+        )
+        create_or_update_core_user(user_uuid=None, username=username, i_user=i_user)
         return User.objects.get(username=username)

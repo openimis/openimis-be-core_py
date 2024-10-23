@@ -2,25 +2,27 @@
 from django.conf import settings
 from django.db import migrations
 
-
-NEWID_FUNC = "replace(lower(newid()), '-', '')" if settings.MSSQL else "gen_random_uuid()"
+NEWID_FUNC = (
+    "replace(lower(newid()), '-', '')" if settings.MSSQL else "gen_random_uuid()"
+)
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0012_users_officers_admins'),
+        ("core", "0012_users_officers_admins"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='usermutation',
-            old_name='user',
-            new_name='core_user',
+            model_name="usermutation",
+            old_name="user",
+            new_name="core_user",
         ),
         # The following migrations are not related to users api but a continuation of the previous one
         # It is necessary to support PostgreSQL without breaking existing setups
-        migrations.RunSQL(sql=f"""
+        migrations.RunSQL(
+            sql=f"""
             insert into "core_User" (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
             select {NEWID_FUNC}, o."Code", u."UserID", null, max(o."OfficerID"), null
             from "tblOfficer" o
@@ -28,16 +30,22 @@ class Migration(migrations.Migration):
             where not exists (select 1 from "core_User" where username=o."Code")
             and o."ValidityTo" is null and u."ValidityTo" is null
             group by o."Code", u."UserID";
-            """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+            """,
+            reverse_sql="",
+        ),
+        migrations.RunSQL(
+            sql=f"""
             update "core_User"
             set officer_id=maxofficer.maxid
             from "core_User" cu inner join
                 (select "Code", max("OfficerID") as maxid from "tblOfficer" where "ValidityTo" is null group by "Code") maxofficer
                     on "Code"=cu.username
             where cu.officer_id is null;
-            """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+            """,
+            reverse_sql="",
+        ),
+        migrations.RunSQL(
+            sql=f"""
             insert into "core_User" (id, username, i_user_id, t_user_id, officer_id, claim_admin_id)
             select {NEWID_FUNC} as uuid, ca."ClaimAdminCode", u."UserID", null as t, null as o, max(ca."ClaimAdminId") as max_id
             from "tblClaimAdmin" ca
@@ -45,13 +53,18 @@ class Migration(migrations.Migration):
             where not exists (select 1 from "core_User" where username=ca."ClaimAdminCode")
             and ca."ValidityTo" is null and u."ValidityTo" is null
             group by ca."ClaimAdminCode", u."UserID";
-            """, reverse_sql=""),
-            migrations.RunSQL(sql=f"""
+            """,
+            reverse_sql="",
+        ),
+        migrations.RunSQL(
+            sql=f"""
             update "core_User"
             set claim_admin_id=maxca.maxid
             from "core_User" cu inner join
                 (select "ClaimAdminCode", max("ClaimAdminId") as maxid from "tblClaimAdmin" where "ValidityTo" is null group by "ClaimAdminCode") maxca
                     on "ClaimAdminCode"=cu.username
             where cu.claim_admin_id is null;
-        """, reverse_sql="")
+        """,
+            reverse_sql="",
+        ),
     ]

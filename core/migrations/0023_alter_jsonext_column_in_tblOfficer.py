@@ -5,16 +5,16 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
 
-    psql_code = 'select 1'
-    mssql_code = 'ALTER TABLE [tblOfficer] ALTER COLUMN [JsonExt]'
+    psql_code = "select 1"
+    mssql_code = "ALTER TABLE [tblOfficer] ALTER COLUMN [JsonExt]"
 
     dependencies = [
-        ('core', '0022_auto_20230516_1742'),
+        ("core", "0022_auto_20230516_1742"),
     ]
 
     operations = [
-        migrations.RunSQL(f'{mssql_code} NVARCHAR(MAX)'
-                          if settings.MSSQL else psql_code,
-                          reverse_sql=f'{mssql_code} TEXT'
-                          if settings.MSSQL else psql_code),
+        migrations.RunSQL(
+            f"{mssql_code} NVARCHAR(MAX)" if settings.MSSQL else psql_code,
+            reverse_sql=f"{mssql_code} TEXT" if settings.MSSQL else psql_code,
+        ),
     ]

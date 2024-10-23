@@ -1,6 +1,8 @@
-import sys
 import importlib
+import sys
+
 from django.test import TestCase
+
 from .shared import datetimedelta
 
 
@@ -17,8 +19,7 @@ class SharedDatetimedeltaTest(TestCase):
         self.assertEquals(abs(delta), datetimedelta(years=7, days=3))
 
         delta = datetimedelta(years=7, months=5, days=-3)
-        self.assertEquals(abs(delta), datetimedelta(
-            years=7, months=5, days=-3))
+        self.assertEquals(abs(delta), datetimedelta(years=7, months=5, days=-3))
 
     def test_add_sub(self):
         d1 = datetimedelta(days=7)

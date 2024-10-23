@@ -4,8 +4,12 @@ from django.utils.translation import gettext as _
 
 class StringFieldValidationMixin:
     CODE_STRING_EMPTY_MSG = _("core.validation.stringFieldValidationMixin.empty_string")
-    CODE_STRING_WHITESPACE_START_MSG = _("core.validation.stringFieldValidationMixin.string_starts_with_whitespace")
-    CODE_STRING_WHITESPACE_END_MSG = _("core.validation.stringFieldValidationMixin.string_ends_with_whitespace")
+    CODE_STRING_WHITESPACE_START_MSG = _(
+        "core.validation.stringFieldValidationMixin.string_starts_with_whitespace"
+    )
+    CODE_STRING_WHITESPACE_END_MSG = _(
+        "core.validation.stringFieldValidationMixin.string_ends_with_whitespace"
+    )
 
     @classmethod
     def validate_empty_string(cls, string):

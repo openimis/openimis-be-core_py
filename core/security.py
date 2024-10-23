@@ -1,8 +1,9 @@
+from os import environ
+
 from django.contrib.auth.middleware import (
     RemoteUserMiddleware as dj_RemoteUserMiddleware,
 )
 from rest_framework import permissions
-from os import environ
 from rest_framework.permissions import IsAuthenticated
 
 

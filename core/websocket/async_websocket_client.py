@@ -1,10 +1,9 @@
-import concurrent.futures
 import asyncio
+import concurrent.futures
 import logging
 import time
 from contextlib import asynccontextmanager
 from functools import partial, wraps
-
 from typing import Callable, Coroutine
 
 from asgiref.sync import sync_to_async
@@ -34,7 +33,7 @@ class AsyncWebSocketClient(BaseWebSocketClient):
             for action in self.recv_actions:
                 loop.run_until_complete(action(message))
         except Exception as e:
-            logger.error(F'Failed to execute action, reason: {e}')
+            logger.error(f"Failed to execute action, reason: {e}")
         finally:
             loop.close()
         if not self.recv_actions:

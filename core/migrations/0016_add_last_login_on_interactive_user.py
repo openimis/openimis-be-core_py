@@ -11,9 +11,11 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunSQL(
-            "ALTER TABLE tblUsers ADD LastLogin [datetime] NULL"
-            if settings.MSSQL else
-            'ALTER TABLE "tblUsers" ADD "LastLogin" timestamp NULL',
+            (
+                "ALTER TABLE tblUsers ADD LastLogin [datetime] NULL"
+                if settings.MSSQL
+                else 'ALTER TABLE "tblUsers" ADD "LastLogin" timestamp NULL'
+            ),
             reverse_sql='ALTER TABLE "tblUsers" DROP COLUMN "LastLogin"',
         ),
     ]

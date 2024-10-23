@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0024_alter_usergroup_options'),
+        ("core", "0024_alter_usergroup_options"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='mutationlog',
-            name='json_ext',
-            field=models.JSONField(blank=True, db_column='JsonExt', null=True),
+            model_name="mutationlog",
+            name="json_ext",
+            field=models.JSONField(blank=True, db_column="JsonExt", null=True),
         ),
     ]

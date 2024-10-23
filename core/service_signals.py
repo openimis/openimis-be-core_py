@@ -1,9 +1,8 @@
 import queue
-
 from enum import Enum
+from typing import Callable
 
 from django import dispatch
-from typing import Callable
 
 
 class ServiceSignalBindType(Enum):
@@ -22,8 +21,10 @@ class RegisteredServiceSignal:
         are queued and connected to actual signal after the registration. Whether registration took place
         is defined by providing_args. If argument is None, signal is considered not registered.
         """
-        self.__signal_results = {'before': None, 'after': None}
-        self.__connection_queue = {type_: queue.Queue() for type_ in ServiceSignalBindType}
+        self.__signal_results = {"before": None, "after": None}
+        self.__connection_queue = {
+            type_: queue.Queue() for type_ in ServiceSignalBindType
+        }
         self.__signals_before = []
         self.__signals_after = []
 
@@ -32,22 +33,19 @@ class RegisteredServiceSignal:
             self.__after_service_signal = None
         else:
             self.__before_service_signal = dispatch.Signal(providing_args)
-            self.__after_service_signal = dispatch.Signal(providing_args + ['result'])
+            self.__after_service_signal = dispatch.Signal(providing_args + ["result"])
 
     @property
     def connected_signals(self):
-        return {
-            'before': self.__signals_before,
-            'after': self.__signals_after
-        }
+        return {"before": self.__signals_before, "after": self.__signals_after}
 
     def send_signal_before(self, sender, **signal_call_args):
         result = self.before_service_signal.send(sender=sender, **signal_call_args)
-        self.__signal_results['before'] = result
+        self.__signal_results["before"] = result
 
     def send_signal_after(self, sender, **signal_call_args):
         result = self.after_service_signal.send(sender=sender, **signal_call_args)
-        self.__signal_results['after'] = result
+        self.__signal_results["after"] = result
 
     @property
     def signal_results(self):
@@ -61,7 +59,11 @@ class RegisteredServiceSignal:
     def after_service_signal(self):
         return self.__after_service_signal
 
-    def connect_signal(self, func: Callable, bind_type: ServiceSignalBindType = ServiceSignalBindType.BEFORE_AND_AFTER):
+    def connect_signal(
+        self,
+        func: Callable,
+        bind_type: ServiceSignalBindType = ServiceSignalBindType.BEFORE_AND_AFTER,
+    ):
         if self.is_signal_registered():
             self._add_connection(func, bind_type)
         else:
@@ -72,11 +74,14 @@ class RegisteredServiceSignal:
             raise ValueError(f"Signal {self} already registered.")
 
         self.__before_service_signal = dispatch.Signal(providing_args)
-        self.__after_service_signal = dispatch.Signal(providing_args + ['result'])
+        self.__after_service_signal = dispatch.Signal(providing_args + ["result"])
         self._connect_queued()
 
     def is_signal_registered(self):
-        return self.__before_service_signal is not None and self.__after_service_signal is not None
+        return (
+            self.__before_service_signal is not None
+            and self.__after_service_signal is not None
+        )
 
     def _add_connection(self, func, bind_type):
         if bind_type == ServiceSignalBindType.BEFORE:
@@ -91,7 +96,9 @@ class RegisteredServiceSignal:
             self.__signals_after.append(func)
             self.__signals_before.append(func)
         else:
-            raise AttributeError(f"Invalid bind_type {bind_type}, should be one of {ServiceSignalBindType}.")
+            raise AttributeError(
+                f"Invalid bind_type {bind_type}, should be one of {ServiceSignalBindType}."
+            )
 
     def _connect_queued(self):
         for binding_type, awaiting_queue in self.__connection_queue.items():

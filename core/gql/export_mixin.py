@@ -3,19 +3,18 @@ import json
 import logging
 import types
 import uuid
-from typing import Dict, List, Callable
+from typing import Callable, Dict, List
 
 import graphene
 import pandas as pd
 from django.db import models
 from graphene.types.generic import GenericScalar
+from graphql.utils.ast_to_dict import ast_to_dict
 from pandas import DataFrame
 
 from core import fields
 from core.custom_filters import CustomFilterWizardStorage
 from core.models import ExportableQueryModel
-from graphql.utils.ast_to_dict import ast_to_dict
-
 
 logger = logging.getLogger(__file__)
 
@@ -28,7 +27,7 @@ class ExportableQueryMixin:
 
     @classmethod
     def get_module_name(cls) -> str:
-        if not hasattr(cls, 'module_name') or getattr(cls, 'module_name') is None:
+        if not hasattr(cls, "module_name") or getattr(cls, "module_name") is None:
             error_msg = (
                 "The class using `ExportableQueryMixin` must specify the `module_name` property "
                 "when the customFilters argument is specified. Please override the `module_name` "
@@ -39,7 +38,7 @@ class ExportableQueryMixin:
 
     @classmethod
     def get_object_type(cls) -> str:
-        if not hasattr(cls, 'object_type') or getattr(cls, 'object_type') is None:
+        if not hasattr(cls, "object_type") or getattr(cls, "object_type") is None:
             error_msg = (
                 "The class using `ExportableQueryMixin` must specify the `object_type` property "
                 "when the customFilters argument is specified. Please override the `object_type` "
@@ -50,16 +49,17 @@ class ExportableQueryMixin:
 
     @classmethod
     def get_related_field(cls):
-        if not hasattr(cls, 'related_field') or getattr(cls, 'related_field') is None:
+        if not hasattr(cls, "related_field") or getattr(cls, "related_field") is None:
             return None
         return cls.related_field
 
     @classmethod
     def get_exportable_fields(cls):
-        if not hasattr(cls, 'exportable_fields'):
+        if not hasattr(cls, "exportable_fields"):
             raise NotImplementedError(
                 "Class using `ExportableQueryMixin` has to provide either exportable_fields "
-                "or overwrite`get_exportable_fields` to provide list of fields that can be exported.")
+                "or overwrite`get_exportable_fields` to provide list of fields that can be exported."
+            )
         return cls.exportable_fields
 
     @classmethod
@@ -71,50 +71,61 @@ class ExportableQueryMixin:
     @classmethod
     def __init_subclass_with_meta__(cls, **meta_options):
         cls._setup_exportable_fields(**meta_options)
-        return super(ExportableQueryMixin, cls).__init_subclass_with_meta__(**meta_options)
+        return super(ExportableQueryMixin, cls).__init_subclass_with_meta__(
+            **meta_options
+        )
 
     @classmethod
     def _setup_exportable_fields(cls, **meta_options):
         for field in cls.get_exportable_fields():
-            field_name = F"{field}_export"
+            field_name = f"{field}_export"
             fld = getattr(cls, field)
             new_args = fld.args
-            new_args['file_format'] = graphene.String()
-            new_args['fields'] = graphene.List(of_type=graphene.String)
-            new_args['fields_columns'] = GenericScalar()
+            new_args["file_format"] = graphene.String()
+            new_args["fields"] = graphene.List(of_type=graphene.String)
+            new_args["fields_columns"] = GenericScalar()
             setattr(cls, field_name, graphene.Field(graphene.String, args=new_args))
             cls.create_export_function(field)
 
     @classmethod
     def _adjust_notation(cls, field):
-        from graphene.utils.str_converters import to_snake_case, to_camel_case
-        return to_snake_case(field.replace('.', '__'))
+        from graphene.utils.str_converters import to_camel_case, to_snake_case
+
+        return to_snake_case(field.replace(".", "__"))
 
     @classmethod
     def create_export_function(cls, field_name):
         new_function_name = f"resolve_{field_name}_export"
-        default_resolve = getattr(cls, F"resolve_{field_name}", None)
+        default_resolve = getattr(cls, f"resolve_{field_name}", None)
 
         if not default_resolve:
             raise AttributeError(
                 f"Query {cls} doesn't provide resolve function for {field_name}. "
-                f"CSV export cannot be created")
+                f"CSV export cannot be created"
+            )
 
         def exporter(cls, self, info, **kwargs):
             custom_filters = kwargs.pop("customFilters", None)
-            export_fields = [cls._adjust_notation(f) for f in kwargs.pop('fields')]
-            fields_mapping = json.loads(kwargs.pop('fields_columns'))
-            file_format = kwargs.pop('file_format', 'csv')
+            export_fields = [cls._adjust_notation(f) for f in kwargs.pop("fields")]
+            fields_mapping = json.loads(kwargs.pop("fields_columns"))
+            file_format = kwargs.pop("file_format", "csv")
 
             source_field = getattr(cls, field_name)
-            filter_kwargs = {k: v for k, v in kwargs.items() if k in source_field.filtering_args}
+            filter_kwargs = {
+                k: v for k, v in kwargs.items() if k in source_field.filtering_args
+            }
 
             qs = default_resolve(None, info, **kwargs)
             qs = qs.filter(**filter_kwargs)
             qs = cls.__append_custom_filters(custom_filters, qs)
-            export_file = ExportableQueryModel\
-                .create_csv_export(qs, export_fields, info.context.user, column_names=fields_mapping,
-                                   patches=cls.get_patches_for_field(field_name), file_format=file_format)
+            export_file = ExportableQueryModel.create_csv_export(
+                qs,
+                export_fields,
+                info.context.user,
+                column_names=fields_mapping,
+                patches=cls.get_patches_for_field(field_name),
+                file_format=file_format,
+            )
 
             return export_file.name
 
@@ -131,6 +142,6 @@ class ExportableQueryMixin:
                 object_type,
                 custom_filters,
                 queryset,
-                relation=related_field
+                relation=related_field,
             )
         return queryset

@@ -2,7 +2,7 @@ import functools
 from inspect import getfullargspec
 
 
-class ObligatoryFieldValidationError(Exception):
+class ObligatoryFieldValidationError(Exception): 
     ...
 
 
@@ -20,28 +20,33 @@ class ObligatoryFieldValidation:
         :return: None
         """
         for field_name, control in self.obligatory_field_list.items():
-            if control not in ('O', 'H', 'M'):
+            if control not in ("O", "H", "M"):
                 raise ObligatoryFieldValidationError(
-                    F'Invalid configuration for field {field_name}, value {control}'
-                    F'is not proper value. Allowed values are:'
-                    F'- [O] - Optional\n'
-                    F'- [H] - Hidden\n'
-                    F'- [M] - Mandatory\n'
-                    F'Contact Administrator to fix this.'
+                    f"Invalid configuration for field {field_name}, value {control}"
+                    f"is not proper value. Allowed values are:"
+                    f"- [O] - Optional\n"
+                    f"- [H] - Hidden\n"
+                    f"- [M] - Mandatory\n"
+                    f"Contact Administrator to fix this."
                 )
-            if control == 'O':
+            if control == "O":
                 return
-            elif control == 'H':
+            elif control == "H":
                 if payload.get(field_name):
                     raise ObligatoryFieldValidationError(
-                        F'Field {field_name} is set as hidden, but payload provides value. '
-                        F'Does field {field_name} have default?')
-            elif control == 'M' and not (payload.get(field_name)):
-                raise ObligatoryFieldValidationError(F'Field {field_name} is mandatory, '
-                                                     F'but payload does not provide value')
+                        f"Field {field_name} is set as hidden, but payload provides value. "
+                        f"Does field {field_name} have default?"
+                    )
+            elif control == "M" and not (payload.get(field_name)):
+                raise ObligatoryFieldValidationError(
+                    f"Field {field_name} is mandatory, "
+                    f"but payload does not provide value"
+                )
 
 
-def validate_payload_for_obligatory_fields(list_of_obligatory_fields, payload_arg='data'):
+def validate_payload_for_obligatory_fields(
+    list_of_obligatory_fields, payload_arg="data"
+):
     """
     Function decorator used for conveniently validate payload in functions.
     It creates instance of ObligatoryFieldValidation using list_of_obligatory_fields argument as obligatory

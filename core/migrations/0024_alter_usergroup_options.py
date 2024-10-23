@@ -6,12 +6,12 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0023_alter_jsonext_column_in_tblOfficer'),
+        ("core", "0023_alter_jsonext_column_in_tblOfficer"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='usergroup',
-            options={'managed': False},
+            name="usergroup",
+            options={"managed": False},
         ),
     ]

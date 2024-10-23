@@ -6,13 +6,19 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0029_alter_interactiveuser_role_id'),
+        ("core", "0029_alter_interactiveuser_role_id"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='exportablequerymodel',
-            name='file_format',
-            field=models.CharField(blank=True, choices=[('csv', 'csv'), ('xlsx', 'xlsx')], default='csv', max_length=255, null=True),
+            model_name="exportablequerymodel",
+            name="file_format",
+            field=models.CharField(
+                blank=True,
+                choices=[("csv", "csv"), ("xlsx", "xlsx")],
+                default="csv",
+                max_length=255,
+                null=True,
+            ),
         ),
     ]

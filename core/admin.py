@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth.models import Group, Permission
+
+from .forms import GroupAdmin, TechnicalUserAdmin
 from .models import FieldControl, ModuleConfiguration, TechnicalUser
-from .forms import TechnicalUserAdmin, GroupAdmin
 
 admin.site.unregister(Group)
 

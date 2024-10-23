@@ -43,7 +43,10 @@ def check_permissions(permissions=None):
 def model_representation(model):
     uuid_string = str(model.id)
     dict_representation = model_to_dict(model)
-    dict_representation["id"], dict_representation["uuid"] = (str(uuid_string), str(uuid_string))
+    dict_representation["id"], dict_representation["uuid"] = (
+        str(uuid_string),
+        str(uuid_string),
+    )
     return dict_representation
 
 

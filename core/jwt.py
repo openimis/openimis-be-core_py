@@ -1,14 +1,14 @@
-from calendar import timegm
-
-import jwt
-from graphql_jwt.settings import jwt_settings
-from graphql_jwt.signals import token_issued
-from django.apps import apps
-from django.utils import timezone
-from django.dispatch import receiver
 import logging
 import uuid
+from calendar import timegm
 from datetime import datetime
+
+import jwt
+from django.apps import apps
+from django.dispatch import receiver
+from django.utils import timezone
+from graphql_jwt.settings import jwt_settings
+from graphql_jwt.signals import token_issued
 
 logger = logging.getLogger(__file__)
 
@@ -22,8 +22,8 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
-    payload['jti'] = str(uuid.uuid4())
-    payload['nbf'] = timegm(datetime.utcnow().utctimetuple())
+    payload["jti"] = str(uuid.uuid4())
+    payload["nbf"] = timegm(datetime.utcnow().utctimetuple())
 
     token = jwt.encode(
         payload,
@@ -42,9 +42,9 @@ def jwt_decode_user_key(token, context=None):
         token,
         get_jwt_key(encode=False, context=context),
         options={
-            'verify_exp': jwt_settings.JWT_VERIFY_EXPIRATION,
-            'verify_aud': jwt_settings.JWT_AUDIENCE is not None,
-            'verify_signature': False,
+            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
+            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
+            "verify_signature": False,
         },
         leeway=jwt_settings.JWT_LEEWAY,
         audience=jwt_settings.JWT_AUDIENCE,
@@ -53,10 +53,11 @@ def jwt_decode_user_key(token, context=None):
     )
     if not_validated and not_validated.get("username"):
         user_class = apps.get_model("core", "User")
-        db_user = user_class.objects \
-            .filter(username=not_validated.get("username")) \
-            .only("i_user__private_key") \
+        db_user = (
+            user_class.objects.filter(username=not_validated.get("username"))
+            .only("i_user__private_key")
             .first()
+        )
         if db_user and db_user.private_key:
             key = db_user.private_key
         else:
@@ -67,9 +68,9 @@ def jwt_decode_user_key(token, context=None):
         token,
         key,
         options={
-            'verify_exp': jwt_settings.JWT_VERIFY_EXPIRATION,
-            'verify_aud': jwt_settings.JWT_AUDIENCE is not None,
-            'verify_signature': jwt_settings.JWT_VERIFY,
+            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
+            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
+            "verify_signature": jwt_settings.JWT_VERIFY,
         },
         leeway=jwt_settings.JWT_LEEWAY,
         audience=jwt_settings.JWT_AUDIENCE,

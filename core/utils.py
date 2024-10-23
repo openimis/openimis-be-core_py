@@ -1,11 +1,11 @@
 import ast
+import datetime
 import json
 import logging
 import uuid
 from importlib import import_module
 from typing import Any, Dict, Type
 
-import core
 import graphene
 import jsonschema
 from django.apps import AppConfig
@@ -18,7 +18,9 @@ from django.utils.translation import gettext as _
 from graphql import GraphQLError
 from password_validator import PasswordValidator
 from zxcvbn import zxcvbn
-import datetime
+
+import core
+
 logger = logging.getLogger(__file__)
 
 __all__ = [
@@ -72,21 +74,24 @@ def comparable(cls):
 
 
 def filter_validity(arg="validity", prefix="", **kwargs):
-    
+
     validity = kwargs.get(arg)
     if validity is None:
         return [Q(**{f"{prefix}validity_to__isnull": True})]
     elif isinstance(validity, str):
         validity = datetime.datetime.strptime(validity)
-    validity = datetime.datetime(validity.year, validity.month, validity.day, 23, 59, 59)
+    validity = datetime.datetime(
+        validity.year, validity.month, validity.day, 23, 59, 59
+    )
     return [
         Q(**{f"{prefix}validity_from__lte": validity}),
-        Q(**{f"{prefix}validity_to__isnull": True}) | Q(**{f"{prefix}validity_to__gte": validity}),
+        Q(**{f"{prefix}validity_to__isnull": True})
+        | Q(**{f"{prefix}validity_to__gte": validity}),
     ]
 
 
 def filter_validity_business_model(
-        arg="dateValidFrom__Gte", arg2="dateValidTo__Lte", **kwargs
+    arg="dateValidFrom__Gte", arg2="dateValidTo__Lte", **kwargs
 ):
     date_valid_from = kwargs.get(arg)
     date_valid_to = kwargs.get(arg2)
@@ -233,7 +238,7 @@ class ExtendedConnection(graphene.Connection):
 
 def block_update(update_dict, current_object, attribute_name, Ex=ValueError):
     if attribute_name in update_dict and update_dict["code"] != getattr(
-            current_object, attribute_name
+        current_object, attribute_name
     ):
         raise Ex("That {attribute_name} field is not editable")
 
@@ -301,9 +306,8 @@ def insert_role_right_for_system(system_role, right_id, apps):
                 RoleRight.objects.create(
                     role=existing_role,
                     right_id=right_id,
-                    validity_from=datetime.datetime.now()
+                    validity_from=datetime.datetime.now(),
                 )
-
 
 
 def remove_role_right_for_system(system_role, right_id, apps):
@@ -358,11 +362,17 @@ def validate_json_schema(schema):
         return []
     except jsonschema.exceptions.SchemaError as schema_error:
         return [
-            {"message": _("core.utils.schema_validation.invalid_schema") % {"error": str(schema_error)}}
+            {
+                "message": _("core.utils.schema_validation.invalid_schema")
+                % {"error": str(schema_error)}
+            }
         ]
     except ValueError as json_error:
         return [
-            {"message": _("core.utils.schema_validation.invalid_json") % {"error": str(json_error)}}
+            {
+                "message": _("core.utils.schema_validation.invalid_json")
+                % {"error": str(json_error)}
+            }
         ]
 
 

@@ -1,21 +1,22 @@
+import datetime
 import importlib
 import logging
 
-from django.db import connection
-from django.test.client import RequestFactory
 from django.apps import apps
-import datetime
+from django.db import connection
+from django.test import TestCase
+from django.test.client import RequestFactory
+
 import core
 from core.models import InteractiveUser, Officer, UserRole
 from core.services import (
-    create_or_update_interactive_user,
-    create_or_update_core_user,
-    create_or_update_officer,
     create_or_update_claim_admin,
+    create_or_update_core_user,
+    create_or_update_interactive_user,
+    create_or_update_officer,
     reset_user_password,
     set_user_password,
 )
-from django.test import TestCase
 from location.models import OfficerVillage
 
 logger = logging.getLogger(__file__)
@@ -232,7 +233,10 @@ class UserServicesTest(TestCase):
         officer, created = create_or_update_officer(
             user_id=None,
             data=dict(
-                username=username, last_name="Last Name O1", other_names="Other 1 2 3", phone="+12345678"
+                username=username,
+                last_name="Last Name O1",
+                other_names="Other 1 2 3",
+                phone="+12345678",
             ),
             audit_user_id=999,
             connected=False,

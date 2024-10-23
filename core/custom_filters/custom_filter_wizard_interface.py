@@ -1,16 +1,17 @@
 from collections import namedtuple
-from django.db.models.query import QuerySet
 from typing import List
+
+from django.db.models.query import QuerySet
 
 
 class CustomFilterWizardInterface:
     """
-        Interface responsible for delivering signatures of methods for
-        building custom filters for a particular kind of object.
+    Interface responsible for delivering signatures of methods for
+    building custom filters for a particular kind of object.
 
-        Constants:
-            FILTERS_BASED_ON_FIELD_TYPE: kind of mapper to indicate what kind of filters should be used
-            depends on the type of the particular field.
+    Constants:
+        FILTERS_BASED_ON_FIELD_TYPE: kind of mapper to indicate what kind of filters should be used
+        depends on the type of the particular field.
     """
 
     FILTERS_BASED_ON_FIELD_TYPE = {
@@ -48,7 +49,9 @@ class CustomFilterWizardInterface:
         """
         pass
 
-    def apply_filter_to_queryset(self, custom_filters: List[namedtuple], query: QuerySet, relation=None):
+    def apply_filter_to_queryset(
+        self, custom_filters: List[namedtuple], query: QuerySet, relation=None
+    ):
         """
         Apply custom filters to a queryset.
 

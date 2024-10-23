@@ -1,10 +1,8 @@
 import logging
 import os
-
 from typing import List
 
-from core.custom_filters import CustomFilterWizardInterface
-
+from core.custom_filters.custom_filter_wizard_interface import CustomFilterWizardInterface
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +32,7 @@ class CustomFilterRegistryPoint:
     def register_custom_filters(
         cls,
         module_name: str,
-        custom_filter_class_list: List[CustomFilterWizardInterface]
+        custom_filter_class_list: List[CustomFilterWizardInterface],
     ) -> None:
         """
         Register custom filter wizards for a specific module in the openIMIS application.
@@ -50,20 +48,17 @@ class CustomFilterRegistryPoint:
         :return: This method does not return anything.
         :rtype: None
         """
-        logger.debug(F"registering custom filter in {module_name} module")
+        logger.debug(f"registering custom filter in {module_name} module")
         for custom_filter_class in custom_filter_class_list:
             cls.__collect_custom_filter_wizards(module_name, custom_filter_class)
-            logger.debug(F"Such module {module_name} provides custom filters wizards")
+            logger.debug(f"Such module {module_name} provides custom filters wizards")
 
     @classmethod
     def __collect_custom_filter_wizards(
-        cls,
-        module_name: str,
-        custom_filter_class: CustomFilterWizardInterface
+        cls, module_name: str, custom_filter_class: CustomFilterWizardInterface
     ) -> None:
         if module_name not in cls.REGISTERED_CUSTOM_FILTER_WIZARDS:
             cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"] = []
-        cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"].append({
-            "class_reference": custom_filter_class,
-            "module": module_name
-        })
+        cls.REGISTERED_CUSTOM_FILTER_WIZARDS[f"{module_name}"].append(
+            {"class_reference": custom_filter_class, "module": module_name}
+        )

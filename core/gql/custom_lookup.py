@@ -1,4 +1,4 @@
-from django.db.models import Lookup, Field
+from django.db.models import Field, Lookup
 
 
 class NotEqual(Lookup):
