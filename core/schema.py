@@ -1793,8 +1793,7 @@ def update_or_create_user(data, user):
             and imis_administrator_system not in data.get("roles", [])
         ):
             raise ValidationError("Administrator cannot deprovision himself.")
-        current_user = InteractiveUser.objects.filter(user__id=data["uuid"]).first()
-
+        current_user = InteractiveUser.objects.filter(user__id=user_uuid).first()
         current_email = current_user.email if current_user else None
 
         if incoming_email:

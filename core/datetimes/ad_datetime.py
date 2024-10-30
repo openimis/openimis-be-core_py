@@ -1,5 +1,6 @@
 import datetime as py_datetime
 import sys
+from functools import total_ordering
 
 from .shared import datetimedelta
 
@@ -15,7 +16,7 @@ core = sys.modules["core"]
 tzinfo = py_datetime.tzinfo
 timezone = py_datetime.timezone
 
-
+@total_ordering
 class AdDate(py_datetime.date):
 
     @classmethod
@@ -80,13 +81,32 @@ class AdDate(py_datetime.date):
         if L[-1] == 0:
             del L[-1]
         return "%s.date(%s)" % (self.__class__.__module__, ", ".join(map(str, L)))
+    
+    def _date_operation(self, operation, other):
 
+        if not other:
+            return operation(other)
+        if isinstance(other, py_datetime.date):
+            return operation(other)
+        if isinstance(other, py_datetime.datetime):
+            return operation(AdDatetime.from_ad_datetime(other))
 
+    def __eq__(self, other):
+        result = self._date_operation(super(AdDate, self).__eq__, other)
+        return result if result else self - other == datetimedelta()
+
+    def __gt__(self, other):
+        return self._date_operation(super(AdDate, self).__gt__, other)
+
+    def __lt__(self, other):
+        return self._date_operation(super(AdDate, self).__lt__, other)
+
+    
 date = AdDate
 date.min = AdDate(1, 1, 1)
 date.max = AdDate(9999, 12, 31)
 
-
+@total_ordering
 class AdDatetime(py_datetime.datetime):
 
     @classmethod
