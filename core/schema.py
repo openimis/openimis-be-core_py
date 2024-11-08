@@ -28,8 +28,7 @@ from core.services import (
     change_user_password,
     reset_user_password,
     set_user_password,
-    user_authentication,
-    wait_for_mutation
+    user_authentication
 )
 from core.tasks import openimis_mutation_async
 from core import filter_validity
@@ -794,7 +793,6 @@ class Query(graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
-            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         show_history = kwargs.get('show_history', False)
@@ -850,7 +848,6 @@ class Query(graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
-            wait_for_mutation(client_mutation_id)
             user_filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         if email:
@@ -939,9 +936,7 @@ class Query(graphene.ObjectType):
             filters.append(Q(name__icontains=text_search))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
-        
         if client_mutation_id:
-            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         show_history = kwargs.get('show_history', False)
@@ -1155,7 +1150,6 @@ def update_or_create_role(data, user):
                 }
             ) for right_id in rights_id]
         if client_mutation_id:
-            wait_for_mutation(client_mutation_id)
             RoleMutation.object_mutated(user, role=role, client_mutation_id=client_mutation_id)
         return role
     return role
@@ -1212,7 +1206,6 @@ def duplicate_role(data, user):
         ) for role_right in role_rights_currently_assigned]
 
     if client_mutation_id:
-        wait_for_mutation(client_mutation_id)
         RoleMutation.object_mutated(user, role=duplicated_role, client_mutation_id=client_mutation_id)
 
     return duplicated_role
@@ -1588,7 +1581,6 @@ def update_or_create_user(data, user):
         user_uuid=user_uuid, username=username, i_user=i_user, officer=officer, claim_admin=claim_admin)
 
     if client_mutation_id:
-        wait_for_mutation(client_mutation_id)
         UserMutation.object_mutated(user, core_user=core_user, client_mutation_id=client_mutation_id)
     return core_user
 
