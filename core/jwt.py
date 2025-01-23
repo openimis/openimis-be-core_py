@@ -6,6 +6,7 @@ from graphql_jwt.signals import token_issued
 from django.apps import apps
 from django.utils import timezone
 from django.dispatch import receiver
+from core.models import InteractiveUser
 import logging
 import uuid
 from datetime import datetime
@@ -93,10 +94,8 @@ def get_jwt_key(encode=True, context=None, payload=None):
 
 def extract_private_key_from_payload(payload):
     # Get user private key from payload. This covers the refresh token mutation
-    from core.models import User
-
-    if "username" in payload:
-        return User.objects.get(username=payload["username"]).private_key
+        if "username" in payload:
+            return InteractiveUser.objects.get(login_name=payload["username"]).private_key
 
 
 def extract_private_key_from_context(context):

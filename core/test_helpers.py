@@ -75,7 +75,16 @@ def create_test_interactive_user(username='TestInteractiveTest', password="S\\:\
             }
         )
         
+        
     if not user:
+        user = User.objects.filter(
+            username=username,
+        ).first()
+        if user:
+            user.i_user = i_user
+            user.save()
+        
+    if not user:    
         user = User.objects.create(
             username=username,
             i_user=i_user,

@@ -169,6 +169,9 @@ class RoleRight(VersionedModel):
 
 
 class InteractiveUser(VersionedModel):
+    
+    USERNAME_FIELD = 'login_name'
+    
     id = models.AutoField(db_column="UserID", primary_key=True)
     uuid = models.CharField(db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True)
     language = models.ForeignKey(Language, models.DO_NOTHING, db_column="LanguageID")
