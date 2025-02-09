@@ -77,6 +77,38 @@ class BaseVersionedModel(models.Model):
     # Use our custom CachedManager for object retrieval
     objects = CachedManager()
 
+    def save(self, *args, **kwargs):
+        """
+        Overrides the default save to update the cache after saving the instance.
+        """
+        # First, perform the DB save.
+        super().save(*args, **kwargs)
+
+        # Build the cache key using the same logic as in the CachedManager.
+        # (Assuming lookups are done using pk/id/uuid)
+        cache_key = f"{self.__class__.__name__}:{self.pk}"
+        # Optionally, check for a uuid attribute:
+        # if hasattr(self, "uuid") and self.uuid:
+        #     cache_key = f"{self.__class__.__name__}:{str(self.uuid)}"
+        
+        # Update the cache with the latest version.
+        cache.set(cache_key, self, timeout=None)
+        print("Saved and cached instance: %s", cache_key)
+        logger.debug("Saved and cached instance: %s", cache_key)
+        return self
+
+    def delete(self, *args, **kwargs):
+        """
+        Overrides the default delete to remove the instance from the cache.
+        """
+        # Build the cache key prior to deletion.
+        cache_key = f"{self.__class__.__name__}:{self.pk}"
+        # Delete the cache entry.
+        cache.delete(cache_key)
+        logger.debug("Removed instance from cache: %s", cache_key)
+        # Then perform the actual deletion.
+        return super().delete(*args, **kwargs)
+
     def save_history(self, **kwargs):
         if not self.id:  # only copy if the data is being updated
             return None
