@@ -1,4 +1,4 @@
-import decimal
+ifimport decimal
 import json
 import logging
 import re
@@ -1537,7 +1537,7 @@ def update_or_create_user(data, user):
     # client_mutation_label = data.get("client_mutation_label", None)
 
     incoming_email = data.get('email')
-
+    user_uuid = data.pop('uuid', None)
     if user_uuid:
         if uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id)) and user.is_imis_admin and imis_administrator_system not in data.get("roles", []):
             raise ValidationError("Administrator cannot deprovision himself.")
@@ -1565,8 +1565,6 @@ def update_or_create_user(data, user):
         data.pop('client_mutation_id')
     if "client_mutation_label" in data:
         data.pop('client_mutation_label')
-
-    user_uuid = data.pop('uuid') if 'uuid' in data else None
 
     if UT_INTERACTIVE in data["user_types"]:
         i_user, i_user_created = create_or_update_interactive_user(
