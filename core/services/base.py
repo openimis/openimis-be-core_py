@@ -1,9 +1,9 @@
 from abc import ABC
 from typing import Type
-
+import asyncio
 from django.db import transaction
 
-from core.models import HistoryModel
+from core.models import HistoryModel, MutationLog
 from core.services.utils import check_authentication as check_authentication, output_exception, \
     model_representation, output_result_success, build_delete_instance_payload
 from core.validation.base import BaseModelValidation
@@ -56,12 +56,12 @@ class BaseService(ABC):
             return output_exception(model_name=self.OBJECT_TYPE.__name__, method="delete", exception=exc)
 
     def save_instance(self, obj_):
-        obj_.save(username=self.user.username)
+        obj_.save(user=self.user, username=self.user.username)
         dict_repr = model_representation(obj_)
         return output_result_success(dict_representation=dict_repr)
 
     def delete_instance(self, obj_):
-        obj_.delete(username=self.user.username)
+        obj_.delete(user=self.user, username=self.user.username)
         return build_delete_instance_payload()
 
     def _adjust_create_payload(self, payload_data):
@@ -72,3 +72,16 @@ class BaseService(ABC):
 
     def _base_payload_adjust(self, obj_data):
         return obj_data
+
+
+def wait_for_mutation(client_mutation_id):
+    mutation = MutationLog.objects.filter(
+        client_mutation_id=client_mutation_id
+    ).first()
+    if not mutation:
+        return
+    loop_count = 0
+    while mutation.status == MutationLog.RECEIVED and loop_count<10:
+        asyncio.sleep(0.3)
+        loop_count += 1
+    return

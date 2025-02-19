@@ -3,8 +3,9 @@ from django.db import transaction
 from core import TimeUtils
 from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from core.gql.gql_mutations import ObjectNotExistException
+from django.utils.translation import gettext as _
 
 
 class BaseMutation(OpenIMISMutation):
@@ -80,7 +81,7 @@ class BaseCreateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
     @classmethod
     def _mutate(cls, user, **data):
@@ -113,7 +114,7 @@ class BaseUpdateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
         obj_uuid = data['uuid']
         if cls._model.objects.filter(uuid=data['uuid']).first() is None:
@@ -155,7 +156,7 @@ class BaseDeleteMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
     @classmethod
     def _mutate(cls, uuid):
@@ -176,7 +177,7 @@ class BaseHistoryModelCreateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
     @classmethod
     def _mutate(cls, user, **data):
@@ -206,7 +207,7 @@ class BaseHistoryModelUpdateMutationMixin:
     @classmethod
     def _validate_mutation(cls, user, **data):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
         obj_uuid = data['id']
         if cls._model.objects.filter(id=data['id']).first() is None:
             cls._object_not_exist_exception(obj_uuid=obj_uuid)
@@ -245,7 +246,7 @@ class BaseHistoryModelDeleteMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
     @classmethod
     def _mutate(cls, user, **data):
@@ -288,7 +289,7 @@ class BaseHistoryModelReplaceMutationMixin:
     @classmethod
     def _validate_user(cls, user):
         if type(user) is AnonymousUser or not user.id:
-            raise ValidationError("mutation.authentication_required")
+            raise PermissionDenied(_('mutation.authentication_required'))
 
     @classmethod
     def _mutate(cls, user, **data):

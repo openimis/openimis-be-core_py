@@ -56,14 +56,13 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def save_history(self):
         pass
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, user=None, username=None, **kwargs):
         # get the user data so as to assign later his uuid id in fields user_updated etc
-        if 'username' in kwargs:
-            user = User.objects.get(username=kwargs.pop('username'))
-        elif 'user' in kwargs and isinstance(kwargs.get('user', None), User):
-            user = kwargs.pop('user', None)
-        else:
-            raise ValidationError('Save error! Provide the username of the current user in `username` argument')
+        if not user:
+            if username:
+                user = User.objects.get(username=username)
+            else:
+                raise ValidationError('Save error! Provide user or the username of the current user in `username` argument')
         now = py_datetime.now()
         # check if object has been newly created
         if self.id is None:
@@ -99,13 +98,12 @@ class HistoryModel(DirtyFieldsMixin, models.Model):
     def delete_history(self):
         pass
 
-    def delete(self, *args, **kwargs):
-        if 'username' in kwargs:
-            user = User.objects.get(username=kwargs.pop('username'))
-        elif 'user' in kwargs:
-            user = kwargs.pop('user')
-        else:
-            raise ValidationError('Delete error! Provide the username of the current user in `username` argument')
+    def delete(self, *args, user=None, username=None, **kwargs):
+        if not user:
+            if username:
+                user = User.objects.get(username=username)
+            else:
+                raise ValidationError('Save error! Provide user or the username of the current user in `username` argument')
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
 
             now = py_datetime.now()

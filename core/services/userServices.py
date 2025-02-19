@@ -14,6 +14,8 @@ from core.models.user import User, InteractiveUser, Officer, UserRole, UserManag
 from core.validation.obligatoryFieldValidation import validate_payload_for_obligatory_fields
 from django.contrib.auth import authenticate
 from rest_framework import exceptions
+from core.utils import filter_validity
+from django.db.models import Q
 
 logger = logging.getLogger(__file__)
 
@@ -284,7 +286,15 @@ def check_user_unique_email(user_email):
 
 
 def reset_user_password(request, username):
-    user = User.objects.get(username=username)
+    user = User.objects.filter(
+        Q(username=username) | Q(i_user__email=username), 
+        *filter_validity(),
+        *filter_validity(prefix='i_user__')
+    ).first()
+    # we don't want to inform is a username was not found
+    if not user:
+        return None
+     
     user.clear_refresh_tokens()
 
     if not user.email:

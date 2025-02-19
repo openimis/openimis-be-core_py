@@ -119,3 +119,64 @@ class gqlTest(openIMISGraphQLTestCase):
             headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
         )
         self.assertResponseNoErrors(response)
+
+
+    def test_create_user_with_null_uuid(self):
+        query = """
+            mutation (
+                $input: CreateUserMutationInput!
+            ){     
+                createUser(input: $input) 
+                {   
+                    clientMutationId       
+                    internalId
+                }
+            }
+        """
+        variables = {
+            "input": {
+                "uuid": None,
+                "username": "OCM-176",
+                "userTypes": [
+                    "INTERACTIVE"
+                ],
+                "lastName": "add",
+                "otherNames": "user",
+                "email": "ocm-176@openimis.org",
+                "password": "pOCM-176!OCM-176",
+                "healthFacilityId": None,
+                "districts": [
+                    self.disctict.id
+                ],
+                "locationId": None,
+                "language": "en",
+                "roles": [
+                    "4"
+                ],
+                "substitutionOfficerId": None,
+                "clientMutationLabel": "Create user",
+                "clientMutationId": "95b431f3-0c12-40ad-bc01-51034702366d"
+            }
+        }
+        response = self.query(
+            query,
+            variables=variables,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        self.assertResponseNoErrors(response)
+        self.get_mutation_result("95b431f3-0c12-40ad-bc01-51034702366d", self.admin_token)
+    
+    def test_user_district_query(self):
+        query = """
+    {
+      userDistricts
+      {
+        id,uuid,code,name,parent{id, uuid, code, name}
+      }
+    }
+    """
+        response = self.query(
+            query,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        self.assertResponseNoErrors(response)
