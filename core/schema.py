@@ -1,4 +1,4 @@
-ifimport decimal
+import decimal
 import json
 import logging
 import re
