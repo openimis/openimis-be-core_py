@@ -1,4 +1,5 @@
 import json
+import os
 from django.conf import settings
 from graphene_django.utils.testing import GraphQLTestCase
 from django.core.management import call_command
@@ -20,20 +21,16 @@ logger = logging.getLogger(__name__)
 
 MODEL_NOT_TO_FLUSH = [
     'gender',
-    'role',
-    'roleright',
     'profession',
     'familytype',
-    'location',
-    'healthfacility',
     'permission'
-    
 ]
-TABLE_TO_FLUSH = ['tblLogins', 'tblHealthStatus'] 
 
 class openIMISGraphQLTestCase(TransactionTestCase):
     GRAPHQL_URL = f"/{settings.SITE_ROOT()}graphql"
     GRAPHQL_SCHEMA = True
+
+    
     
     def query(self, query, **kwargs):
         """
@@ -51,30 +48,17 @@ class openIMISGraphQLTestCase(TransactionTestCase):
         super().setUp()
 
 
+    @classmethod
+    def tearDownClass(cls):
+        call_command(
+            'flush',
+            verbosity=0,
+            interactive=False,
+            database='default',
+            reset_sequences=False,
+            allow_cascade=True,  # Enable cascading truncation
+        )
 
-    def _fixture_teardown(self):
-        with transaction.atomic(), connection.cursor() as cursor:
-            for table_name in TABLE_TO_FLUSH:
-                cursor.execute(f'TRUNCATE TABLE "{table_name}"')
-            
-            for app in apps.get_app_configs():
-                models_dict = app.models
-                # Print model names and their classes
-                for model_name, model_class in models_dict.items():
-                    if (
-                         model_name.lower()  not in MODEL_NOT_TO_FLUSH
-                         and model_class._meta.db_table
-                         and not 'View' in model_class._meta.db_table
-                         and not model_class._meta.swapped
-                    ):
-                        savepoint = transaction.savepoint()
-                        try:
-                            cursor.execute(f'TRUNCATE TABLE "{model_class._meta.db_table}"')
-                        except Exception as e:
-                            # Roll back to the savepoint (only this operation will be undone)
-                            transaction.savepoint_rollback(savepoint)
-
-            
     @classmethod
     def setUpClass(cls):
         # cls.client=Client(cls.schema)
