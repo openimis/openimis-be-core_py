@@ -33,7 +33,13 @@ class BaseVersionedModel(models.Model):
         self.validity_from = now
         self.validity_to = now
         self.save()
+    
+    def update(self, data_dict):
+        self.save_history()
+        [setattr(self, k, v) for k, v in data_dict.items()]
+        self.save()
 
+        
     class Meta:
         abstract = True
 
@@ -51,6 +57,7 @@ class VersionedModel(BaseVersionedModel):
 
     class Meta:
         abstract = True
+        
 
 
 class UUIDVersionedModel(BaseVersionedModel):
