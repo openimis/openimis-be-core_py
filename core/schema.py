@@ -14,7 +14,7 @@ from graphene_django import DjangoObjectType
 from functools import partial
 from promise import Promise
 
-from functools import reduce
+from functools import reduce, wraps
 from django.utils.translation import gettext_lazy
 from graphql.error import GraphQLError
 from graphene.types.generic import GenericScalar
@@ -43,7 +43,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from django.middleware.csrf import CsrfViewMiddleware
 from django.utils import translation
 from django.utils.timezone import now
@@ -74,6 +74,21 @@ MIN_SMALLINT = -32768
 core = sys.modules["core"]
 
 logger = logging.getLogger(__name__)
+
+
+def enforce_json_content_type(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if len(args) >= 2:
+            info = args[2]
+            if hasattr(info, "context") and hasattr(info.context, "content_type"):
+                if info.context.content_type != "application/json":
+                    return HttpResponse(
+                        _("Unsupported Media Type: The server only accepts application/json requests."),
+                        status=415,
+                    )
+        return func(*args, **kwargs)
+    return wrapper
 
 
 class SmallInt(graphene.Int):
@@ -271,6 +286,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         pass
 
     @classmethod
+    @enforce_json_content_type
     def mutate_and_get_payload(cls, root, info, **data):
         mutation_log = MutationLog.objects.create(
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
@@ -505,6 +521,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         return qs
 
     @classmethod
+    @enforce_json_content_type
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
