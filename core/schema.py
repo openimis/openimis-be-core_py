@@ -76,21 +76,6 @@ core = sys.modules["core"]
 logger = logging.getLogger(__name__)
 
 
-def enforce_json_content_type(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if len(args) >= 2:
-            info = args[2]
-            if hasattr(info, "context") and hasattr(info.context, "content_type"):
-                if info.context.content_type != "application/json":
-                    return HttpResponse(
-                        _("Unsupported Media Type: The server only accepts application/json requests."),
-                        status=415,
-                    )
-        return func(*args, **kwargs)
-    return wrapper
-
-
 class SmallInt(graphene.Int):
     """
     This represents a small Integer, with values ranging from -32768 to +32767
@@ -286,8 +271,13 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         pass
 
     @classmethod
-    @enforce_json_content_type
     def mutate_and_get_payload(cls, root, info, **data):
+        request = getattr(info, "context", None)
+        if not request or getattr(request, "content_type", "") != "application/json":
+            return HttpResponse(
+                _("Unsupported Media Type: The server only accepts application/json requests."),
+                status=415,
+            )
         mutation_log = MutationLog.objects.create(
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
@@ -521,10 +511,15 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         return qs
 
     @classmethod
-    @enforce_json_content_type
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
+        request = getattr(info, "context", None)
+        if not request or getattr(request, "content_type", "") != "application/json":
+            return HttpResponse(
+                _("Unsupported Media Type: The server only accepts application/json requests."),
+                status=415,
+            )
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
