@@ -1792,7 +1792,8 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         info.context.user = user_authentication(request, username, password)
 
         csrf_token = get_token(request)
-        cache.set(f"csrf_token_{info.context.user.id}", csrf_token, timeout=None)
+        if info.context.user:
+            cache.set(f"csrf_token_{info.context.user.id}", csrf_token, timeout=None)
         jwt_response = super().mutate(cls, info, **kwargs)
         jwt_response_data = jwt_response.__dict__
         jwt_response_data["csrf_token"] = csrf_token
