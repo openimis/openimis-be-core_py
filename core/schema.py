@@ -280,7 +280,6 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         csrf_token = request.headers.get("X-CSRFToken")
         stored_token = cache.get(f"csrf_token_{request.user.id}")
         if not csrf_token or csrf_token != stored_token:
-            print('raise error')
             raise HttpError(HttpResponseForbidden((_("Forbidden: Invalid CSRF token."))))
 
         mutation_log = MutationLog.objects.create(
@@ -524,7 +523,6 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         csrf_token = request.headers.get("X-CSRFToken")
         stored_token = cache.get(f"csrf_token_{request.user.id}")
         if not csrf_token or csrf_token != stored_token:
-            print('raise error')
             raise HttpError(HttpResponseForbidden((_("Forbidden: Invalid CSRF token."))))
 
         if not info.context.user.is_authenticated:
