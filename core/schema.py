@@ -20,7 +20,9 @@ from django.utils.translation import gettext_lazy
 from graphql.error import GraphQLError
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
+from django.http.response import HttpResponseForbidden
 import graphene_django_optimizer as gql_optimizer
+from graphene_django.views import HttpError
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
@@ -39,12 +41,12 @@ from django import dispatch
 from django.conf import settings
 from django.core.cache import cache
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import PermissionDenied, ValidationError, PermissionDenied
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
 from django.middleware.csrf import CsrfViewMiddleware, get_token
 from django.utils import translation
 from django.utils.timezone import now
@@ -278,13 +280,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         csrf_token = request.headers.get("X-CSRFToken")
         stored_token = cache.get(f"csrf_token_{request.user.id}")
         if not csrf_token or csrf_token != stored_token:
-            raise PermissionDenied(_("Forbidden: Invalid CSRF token."))
-
-        if not request or getattr(request, "content_type", "") != "application/json":
-            raise ValidationError(
-                _("Unsupported Media Type: The server only accepts application/json requests."),
-                code=415,
-            )
+            print('raise error')
+            raise HttpError(HttpResponseForbidden((_("Forbidden: Invalid CSRF token."))))
 
         mutation_log = MutationLog.objects.create(
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
@@ -527,13 +524,8 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         csrf_token = request.headers.get("X-CSRFToken")
         stored_token = cache.get(f"csrf_token_{request.user.id}")
         if not csrf_token or csrf_token != stored_token:
-            raise PermissionDenied(_("Forbidden: Invalid CSRF token."))
-
-        if not request or getattr(request, "content_type", "") != "application/json":
-            raise ValidationError(
-                _("Unsupported Media Type: The server only accepts application/json requests."),
-                code=415,
-            )
+            print('raise error')
+            raise HttpError(HttpResponseForbidden((_("Forbidden: Invalid CSRF token."))))
 
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
