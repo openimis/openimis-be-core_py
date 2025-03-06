@@ -7,6 +7,7 @@ from core.models import HistoryModel, MutationLog
 from core.services.utils import check_authentication as check_authentication, output_exception, \
     model_representation, output_result_success, build_delete_instance_payload
 from core.validation.base import BaseModelValidation
+from core.utils import to_json_safe_value
 
 
 class BaseService(ABC):
@@ -68,18 +69,28 @@ class BaseService(ABC):
         return self._base_payload_adjust(payload_data)
 
     def _adjust_update_payload(self, payload_data):
+        self._align_json_ext(payload_data)
         return self._base_payload_adjust(payload_data)
+
+    def _align_json_ext(self, payload_data):
+        json_ext = payload_data.get('json_ext')
+        if isinstance(json_ext, dict):
+            for key, value in payload_data.items():
+                if key in json_ext and json_ext[key] != value:
+                    json_ext[key] = to_json_safe_value(value)
 
     def _base_payload_adjust(self, obj_data):
         return obj_data
 
 
 def wait_for_mutation(client_mutation_id):
-    mutation = MutationLog(client_mutation_id=client_mutation_id)
+    mutation = MutationLog.objects.filter(
+        client_mutation_id=client_mutation_id
+    ).first()
     if not mutation:
         return
     loop_count = 0
     while mutation.status == MutationLog.RECEIVED and loop_count<10:
         asyncio.sleep(0.3)
-        loop_count+= 1
+        loop_count += 1
     return

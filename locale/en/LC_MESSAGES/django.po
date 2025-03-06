@@ -24,6 +24,9 @@ msgstr ""
 msgid "unauthorized"
 msgstr "User not authorized for this operation"
 
+msgid "unauthorized.location"
+msgstr "User not authorized for this operation due to limited location permissions"
+
 #: core/schema.py:1537
 msgid "mutation.user_email_invalid"
 msgstr ""

@@ -222,6 +222,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         if isinstance(inner_type, graphene.types.enum.EnumMeta):
                             coerced_list.append(item)  # Append the item directly for enums
                         elif isinstance(item, str):
+                            if type(inner_type) != graphene.types.structures.NonNull:
+                                coerced_list.append(inner_type.parse_value(item))
+                            else:
+                                coerced_list.append(item)
                             coerced_list.append(inner_type.parse_value(item))
                         elif inner_type.__class__ == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta:
                             coerced_list.append(cls.coerce_mutation_data(item, input_class=inner_type))

@@ -79,7 +79,7 @@ class MutationLog(UUIDModel, ExtendableModel):
     user = models.ForeignKey(User, on_delete=DO_NOTHING, blank=True, null=True)
     request_date_time = models.DateTimeField(auto_now_add=True)
     client_mutation_id = models.CharField(
-        max_length=255, blank=True, null=True)
+        max_length=255, blank=True, null=True, db_index=True)
     client_mutation_label = models.CharField(
         max_length=255, blank=True, null=True)
     client_mutation_details = models.TextField(blank=True, null=True)

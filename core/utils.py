@@ -366,6 +366,14 @@ def validate_json_schema(schema):
         ]
 
 
+def to_json_safe_value(value):
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return str(value)
+
+
 class CustomPasswordValidator:
     def __init__(self, uppercase=0, lowercase=0, digits=0, symbols=0):
         self.schema = PasswordValidator()
