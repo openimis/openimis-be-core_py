@@ -82,7 +82,25 @@ class AdminLogoutMiddleware:
         response = self.get_response(request)
 
         if request.path.startswith(self.LOGOUT_URL):
+            self.clear_user_sessions(request)
             response.delete_cookie('JWT')
+            self.delete_all_session_cookies(request, response)
             logger.info(f"Cleared all sessions after admin panel logout")
 
         return response
+
+    def clear_user_sessions(self, request):
+        """
+        Clears all active sessions for the logged-in admin user upon logout.
+        """
+        user_sessions = Session.objects.filter(session_key__in=request.session.keys())
+        user_sessions.delete()
+        logger.info(f"Cleared sessions for user: {request.user.username}")
+
+    def delete_all_session_cookies(self, request, response):
+        """
+        Deletes all session-related cookies from the response.
+        """
+        for cookie in request.COOKIES:
+            response.delete_cookie(cookie)
+            logger.info(f"Deleted session cookie: {cookie}")
