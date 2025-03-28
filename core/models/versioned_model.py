@@ -59,7 +59,6 @@ class CachedManager(models.Manager):
             # Not in cache; perform DB lookup.
         instance = super().get(*args, **kwargs)
         cache.set(cache_key, instance, timeout=None)
-        print("Cached instance %s after DB lookup", cache_key)
         logger.debug("Cached instance %s after DB lookup", cache_key)
         return instance
 
