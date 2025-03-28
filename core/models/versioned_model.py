@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 CACHE_TIMEOUT = 3600 * 24
 cache = caches["default"]
 
+
 class CachedManager(models.Manager):
     
     def get(self, *args, **kwargs):
@@ -23,11 +24,7 @@ class CachedManager(models.Manager):
         Overrides the get() method to check Redis cache before
         performing a DB lookup for simple unique lookups.
         """
-        #print("Get on Cached Manager")
-        #print(kwargs)
-        #print(args)
-        
-        unique_fields = ('pk','id','uuid')
+        unique_fields = ('pk', 'id', 'uuid')
         cache_key = None
 
         # Case 1: Simple kwargs lookup.
@@ -67,7 +64,6 @@ class CachedManager(models.Manager):
         return instance
 
 
-
 class BaseVersionedModel(models.Model):
     validity_from = DateTimeField(db_column='ValidityFrom', default=py_datetime.now)
     validity_to = DateTimeField(db_column='ValidityTo', blank=True, null=True)
@@ -75,7 +71,6 @@ class BaseVersionedModel(models.Model):
     # Use our custom CachedManager for object retrieval
     objects = CachedManager()
 
- 
     def update(self, *args, **kwargs):
         """
         Overrides the default update to update the cache after saving the instance.
@@ -83,20 +78,17 @@ class BaseVersionedModel(models.Model):
         super().update(*args, **kwargs)
         cache.set(get_cache_key(self.__class__, self.id), self,  timeout=CACHE_TIMEOUT)
 
- 
     def save(self, *args, **kwargs):
         """
         Overrides the default save to update the cache after saving the instance.
         """
+        super().save(*args, **kwargs)
         caching = kwargs.get('cache_update', True)
         if caching:
-            # First, perform the DB save.
-            super().save(*args, **kwargs)
-
             # Build the cache key using the same logic as in the CachedManager.
             # (Assuming lookups are done using pk/id/uuid)
             cache.set(get_cache_key(self.__class__, self.id), self,  timeout=CACHE_TIMEOUT)
-            logger.debug("Saved and cached instance: %s", cache_key)
+            logger.debug("Saved and cached instance: %s", self)
         else:
             clear_cache(self)
         return self
@@ -107,7 +99,7 @@ class BaseVersionedModel(models.Model):
         """
         # Build the cache key prior to deletion.
         clear_cache(self)
-        logger.debug("Clear cached instance: %s", cache_key)
+        logger.debug("Clear cached instance: %s", self)
         # Then perform the actual deletion.
         return super().delete(*args, **kwargs)
 
