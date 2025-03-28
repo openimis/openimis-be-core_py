@@ -130,6 +130,9 @@ class Role(VersionedModel):
     audit_user_id = models.IntegerField(
         db_column='AuditUserID', blank=True, null=True)
 
+    def natural_key(self):
+        return (self.uuid,)
+
     @classmethod
     def get_queryset(cls, queryset, user):
         if isinstance(user, ResolveInfo):
@@ -162,6 +165,14 @@ class RoleRight(VersionedModel):
         if settings.ROW_SECURITY:
             pass
         return queryset
+
+    @classmethod
+    def _get_by_uuid(cls, uuid_value):
+        """Custom method to look up Role by UUID, which will be used when importing the fixture."""
+        try:
+            return Role.objects.get(uuid=uuid_value)
+        except ObjectDoesNotExist:
+            raise ValueError(f"Role with UUID {uuid_value} does not exist")
 
     class Meta:
         managed = True

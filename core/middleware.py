@@ -1,7 +1,14 @@
+import logging
+from django.contrib.auth import logout
+from django.contrib.sessions.models import Session
 from django.utils.timezone import now
 from django_ratelimit.core import is_ratelimited
+from django.http import HttpResponse
 from rest_framework.exceptions import JsonResponse
 from django.conf import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class DefaultAxesAttributesMiddleware:
@@ -59,4 +66,23 @@ class GraphQLRateLimitMiddleware:
             if rate_limited:
                 return JsonResponse({'detail': 'Rate limit exceeded'}, status=429)
         response = self.get_response(request)
+        return response
+
+
+class AdminLogoutMiddleware:
+    """
+    Middleware to clear all user sessions when they log out from Django Admin.
+    """
+    LOGOUT_URL = f"/{settings.SITE_ROOT()}admin/logout/"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+
+        if request.path.startswith(self.LOGOUT_URL):
+            response.delete_cookie('JWT')
+            logger.info(f"Cleared all sessions after admin panel logout")
+
         return response

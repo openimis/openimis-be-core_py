@@ -26,3 +26,4 @@ ExportableQueryModel = base_mutation.ExportableQueryModel
 UserMutation = user_mutation.UserMutation
 RoleMutation = user_mutation.RoleMutation
 ObjectMutation = base_mutation.ObjectMutation
+CachedManager = versioned_model.CachedManager

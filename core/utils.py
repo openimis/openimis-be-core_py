@@ -10,6 +10,7 @@ import graphene
 import jsonschema
 from django.apps import AppConfig
 from django.conf import settings
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.storage import default_storage
 from django.db.models import Q
@@ -485,3 +486,11 @@ class ConfigUtilMixin:
                 function_name,
                 str(e),
             )
+
+
+def clear_cache(instance):
+    cache.delete(get_cache_key(instance.__class__, instance.id))
+
+
+def get_cache_key(model, id):
+    return f"cs_{model.__name__}_{id}"
