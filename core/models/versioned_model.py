@@ -82,8 +82,8 @@ class BaseVersionedModel(models.Model):
         """
         Overrides the default save to update the cache after saving the instance.
         """
+        caching = kwargs.pop('cache_update', True)
         super().save(*args, **kwargs)
-        caching = kwargs.get('cache_update', True)
         if caching:
             # Build the cache key using the same logic as in the CachedManager.
             # (Assuming lookups are done using pk/id/uuid)
