@@ -528,11 +528,11 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
             raise PermissionDenied(_("unauthorized"))
 
         user_agent = request.headers.get("User-Agent", "")
-        if not any(bypass in user_agent for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])):
-            csrf_middleware = CsrfViewMiddleware(lambda req: None)
-            reason = csrf_middleware.process_view(request, None, (), {})
-            if reason:
-                raise PermissionDenied("CSRF token missing or incorrect.")
+        # if not any(bypass in user_agent for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])):
+        #     csrf_middleware = CsrfViewMiddleware(lambda req: None)
+        #     reason = csrf_middleware.process_view(request, None, (), {})
+        #     if reason:
+        #         raise PermissionDenied("CSRF token missing or incorrect.")
 
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
             connection, iterable, info, args
