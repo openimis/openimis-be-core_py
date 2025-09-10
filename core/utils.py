@@ -23,6 +23,7 @@ from password_validator import PasswordValidator
 from zxcvbn import zxcvbn
 import datetime
 from django.core.cache import caches
+from contextlib import  contextmanager
 
 logger = logging.getLogger(__file__)
 
@@ -216,6 +217,13 @@ def patient_category_mask(insuree, target_date):
 
 
 
+@contextmanager
+def suppress_with_log(*exceptions):
+    try:
+        yield
+    except exceptions as e:
+        logger.warning(f"Suppressed {type(e).__name__}: {e}")
+
 class CachedManager(models.Manager):
     UNIQUE_FIELDS = {'pk', 'id', 'uuid'}
     CACHED_FK = {}
@@ -288,7 +296,8 @@ class CachedManager(models.Manager):
         """Handle cache lookup for exact or in queries."""
         if lookup == 'exact':
             cache_key = get_cache_key(self.model, self._normalize_value(value))
-            cached_data = cache.get(cache_key)
+            with suppress_with_log(redis.exceptions.ConnectionError):
+                cached_data = cache.get(cache_key)
             if cached_data:
                 if isinstance(cached_data, dict):
                     # Instantiate from dict to ensure proper __init__ and dirtyfields state
@@ -313,7 +322,8 @@ class CachedManager(models.Manager):
                 return None
             values = [self._normalize_value(v) for v in value]
             cache_keys = [get_cache_key(self.model, v) for v in values]
-            cached_results = cache.get_many(cache_keys)
+            with suppress_with_log(redis.exceptions.ConnectionError):
+                cached_results = cache.get_many(cache_keys)
             cached_instances = []
             uncached_values = []
 
@@ -479,7 +489,8 @@ class CachedModelMixin:
         Updates the cache for this object after saving.
         """
         if self.USE_CACHE:
-            cache.set(get_cache_key(self.__class__, self.pk), clean_fk(self), timeout=settings.CACHE_OBJECT_TTL)
+            with suppress_with_log(redis.exceptions.ConnectionError):
+                cache.set(get_cache_key(self.__class__, self.pk), clean_fk(self), timeout=settings.CACHE_OBJECT_TTL)
 
             unique_fields = getattr(self.__class__.objects, 'UNIQUE_FIELDS', {'id', 'uuid', 'pk'})
             for f in unique_fields:
@@ -494,7 +505,8 @@ class CachedModelMixin:
         """
         if self.USE_CACHE:
             cache_key = f"{self.__class__.__name__}:{self.pk}"
-            cache.delete(cache_key)
+            with suppress_with_log(redis.exceptions.ConnectionError):
+                cache.delete(cache_key)
             logger.debug(f"Removed instance from cache: {cache_key}")
 
 class ExtendedConnection(graphene.Connection):
@@ -776,7 +788,8 @@ class ConfigUtilMixin:
 
 
 def clear_cache(instance):
-    cache.delete(get_cache_key(instance.__class__, instance.pk))
+    with suppress_with_log(redis.exceptions.ConnectionError):
+        cache.delete(get_cache_key(instance.__class__, instance.pk))
 
 
 def get_cache_key(model, id):
