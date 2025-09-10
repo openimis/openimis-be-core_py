@@ -296,7 +296,7 @@ class CachedManager(models.Manager):
         """Handle cache lookup for exact or in queries."""
         if lookup == 'exact':
             cache_key = get_cache_key(self.model, self._normalize_value(value))
-            with suppress_with_log(redis.exceptions.ConnectionError):
+            with suppress_with_log(Exception):
                 cached_data = cache.get(cache_key)
             if cached_data:
                 if isinstance(cached_data, dict):
@@ -322,7 +322,7 @@ class CachedManager(models.Manager):
                 return None
             values = [self._normalize_value(v) for v in value]
             cache_keys = [get_cache_key(self.model, v) for v in values]
-            with suppress_with_log(redis.exceptions.ConnectionError):
+            with suppress_with_log(Exception):
                 cached_results = cache.get_many(cache_keys)
             cached_instances = []
             uncached_values = []
@@ -489,7 +489,7 @@ class CachedModelMixin:
         Updates the cache for this object after saving.
         """
         if self.USE_CACHE:
-            with suppress_with_log(redis.exceptions.ConnectionError):
+            with suppress_with_log(Exception):
                 cache.set(get_cache_key(self.__class__, self.pk), clean_fk(self), timeout=settings.CACHE_OBJECT_TTL)
 
             unique_fields = getattr(self.__class__.objects, 'UNIQUE_FIELDS', {'id', 'uuid', 'pk'})
@@ -505,7 +505,7 @@ class CachedModelMixin:
         """
         if self.USE_CACHE:
             cache_key = f"{self.__class__.__name__}:{self.pk}"
-            with suppress_with_log(redis.exceptions.ConnectionError):
+            with suppress_with_log(Exception):
                 cache.delete(cache_key)
             logger.debug(f"Removed instance from cache: {cache_key}")
 
@@ -788,7 +788,7 @@ class ConfigUtilMixin:
 
 
 def clear_cache(instance):
-    with suppress_with_log(redis.exceptions.ConnectionError):
+    with suppress_with_log(Exception):
         cache.delete(get_cache_key(instance.__class__, instance.pk))
 
 
