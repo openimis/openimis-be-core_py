@@ -31,7 +31,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
-
+from faker import Faker
 # Local app imports
 from claim.models import Claim, ClaimItem, ClaimService
 from core.models import Officer
@@ -62,48 +62,21 @@ class PostgreSQLOptimizer: #for quick generation , this is only for developement
 
 
 class DataGenerator:
-    """Generate realistic test data without external dependencies like Faker, Faker would be great choice and is in TODO""" 
+    """Generate realistic test data using Faker library"""
+    
     def __init__(self):
-        self.first_names = [
-            'John', 'Mary', 'James', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda',
-            'William', 'Elizabeth', 'David', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica',
-            'Thomas', 'Sarah', 'Charles', 'Karen', 'Christopher', 'Nancy', 'Daniel', 'Lisa',
-            'Matthew', 'Betty', 'Anthony', 'Helen', 'Mark', 'Sandra', 'Donald', 'Donna',
-            'Steven', 'Carol', 'Paul', 'Ruth', 'Andrew', 'Sharon', 'Joshua', 'Michelle',
-            'Kenneth', 'Laura', 'Kevin', 'Kimberly', 'Brian', 'Deborah', 'George', 'Dorothy',
-            'Edward', 'Amy', 'Ronald', 'Angela', 'Timothy', 'Ashley', 'Jason', 'Brenda',
-            'Jeffrey', 'Emma', 'Ryan', 'Olivia', 'Jacob', 'Cynthia', 'Gary', 'Marie'
-        ]
-
-        self.last_names = [
-            'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
-            'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson',
-            'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson',
-            'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
-            'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill',
-            'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell',
-            'Mitchell', 'Carter', 'Roberts', 'Gomez', 'Phillips', 'Evans', 'Turner', 'Diaz'
-        ]
-
-        self.streets = [ 
-            'Main St', 'First St', 'Second St', 'Park Ave', 'Oak St', 'Pine St', 'Maple Ave',
-            'Cedar St', 'Elm St', 'Washington St', 'Lake St', 'Hill St', 'Church St',
-            'School St', 'High St', 'Union St', 'Water St', 'Broadway', 'Market St',
-            'Mill St', 'South St', 'North St', 'West St', 'East St', 'Center St'
-        ]
-
-        self.cities = [
-            'Springfield', 'Franklin', 'Georgetown', 'Madison', 'Riverside', 'Arlington',
-            'Fairview', 'Salem', 'Kingston', 'Clinton', 'Greenwood', 'Bristol', 'Oxford',
-            'Ashland', 'Burlington', 'Manchester', 'Auburn', 'Dayton', 'Lexington',
-            'Milford', 'Hudson', 'Hampton', 'Lincoln', 'Newport', 'Chester'
-        ]
-
-        self.chf_id_counter = random.randint(100000000, 200000000) #chf_id counter , relevant for large dataset between these integer value
-
-    def get_first_name(self): return random.choice(self.first_names)
-    def get_last_name(self): return random.choice(self.last_names)
-    def get_address(self): return f"{random.randint(1, 9999)} {random.choice(self.streets)}, {random.choice(self.cities)}"
+        self.faker = Faker()
+        self.chf_id_counter = random.randint(100000000, 200000000)
+    
+    def get_first_name(self):
+        return self.faker.first_name()
+    
+    def get_last_name(self):
+        return self.faker.last_name()
+    
+    def get_address(self):
+        return self.faker.street_address() + ", " + self.faker.city()
+    
     def get_unique_chf_id(self):
         self.chf_id_counter += 1
         return f"CHF{self.chf_id_counter:09d}"
@@ -362,10 +335,8 @@ class Command(BaseCommand):
             if input(f"\n{self.style.WARNING('WARNING:')} This will create a large amount of test data. Continue? (yes/no): ").lower() not in ['yes', 'y']:
                 self.stdout.write(self.style.ERROR("Operation cancelled.")); return
         
-        try:
-            with transaction.atomic():
-                generator = BulkInsureeGenerator(batch_size=batch_size, stdout=self.stdout)
-                results = generator.generate_bulk_data(config['families'], config['members'], config['claims'])
-            self.stdout.write(self.style.SUCCESS(f"\n Successfully generated synthetic data in {results['duration']:.2f} seconds!"))
-        except Exception as e:
-            raise CommandError(f'Data generation failed: {e}')
+        with transaction.atomic():
+            generator = BulkInsureeGenerator(batch_size=batch_size, stdout=self.stdout)
+            results = generator.generate_bulk_data(config['families'], config['members'], config['claims'])
+        
+        self.stdout.write(self.style.SUCCESS(f"\n Successfully generated synthetic data in {results['duration']:.2f} seconds!"))
