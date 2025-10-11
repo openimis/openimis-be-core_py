@@ -12,13 +12,13 @@ Django Management Command for Bulk Synthetic Data Generation
 TODO: to generate this data more realistic and diversion, based on HF, location, Claim, Family that looks more realistic approach
 Usage:
     # Generate 1000 families with 4 members each, and 2 claims per insuree
-    python manage.py generate_synthetic_data --families 1000 --members 4 --claims 2
+    python manage.py seed_synthetic_health_data --families 1000 --members 4 --claims 2
 
     # Generate 50,000 families with 5 members each, no claims
-    python manage.py generate_synthetic_data --families 50000 --members 5
+    python manage.py seed_synthetic_health_data --families 50000 --members 5
 
     # Use a preset for medium size data generation and skip the confirmation prompt
-    python manage.py generate_synthetic_data --preset medium --claims 1 --no-confirm
+    python manage.py seed_synthetic_health_data --preset medium --claims 1 --no-confirm
 """
 
 import gc
