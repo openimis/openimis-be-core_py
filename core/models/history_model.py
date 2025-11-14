@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F
 from simple_history.models import HistoricalRecords
-from core.utils import CachedManager, CachedModelMixin
+from core.utils import CachedManager, CachedModelMixin, get_current_user
 
 # from core.datetimes.ad_datetime import datetime as py_datetime
 
@@ -104,15 +104,24 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, models.Model):
             self.save(*args, user=user, username=user, **kwargs)
         return self
 
+    def _get_user(self, user=None, username=None):
+
+        audit_user = get_current_user()
+        if audit_user:
+            return audit_user
+        elif user:
+            return user
+        elif username:
+            audit_user = User.objects.get(username=username, *User.filter_validity())
+            return audit_user
+        else:
+            raise ValidationError(
+                "Save error! Provide user or the username of the current user in `username` argument"
+            )
+
     def save(self, *args, user=None, username=None, **kwargs):
         # get the user data so as to assign later his uuid id in fields user_updated etc
-        if not user:
-            if username:
-                user = User.objects.get(username=username)
-            else:
-                raise ValidationError(
-                    "Save error! Provide user or the username of the current user in `username` argument"
-                )
+        user = self._get_user(user, username)
         now = py_datetime.now()
         # check if object has been newly created
         if self.id is None:
@@ -150,9 +159,10 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, models.Model):
                     raise ValidationError(
                         "Update error! You cannot update replaced entity"
                     )
-            result = super(HistoryModel, self).save(*args, **kwargs)
-            self.update_cache()
-            return result
+            errors = super(HistoryModel, self).save(*args, **kwargs)
+            if not errors:
+                self.update_cache()
+            return errors
         else:
             raise ValidationError(
                 "Record has not be updated - there are no changes in fields"
@@ -162,13 +172,7 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, models.Model):
         pass
 
     def delete(self, *args, user=None, username=None, **kwargs):
-        if not user:
-            if username:
-                user = User.objects.get(username=username)
-            else:
-                raise ValidationError(
-                    "Save error! Provide user or the username of the current user in `username` argument"
-                )
+        user = self._get_user(user, username)
         if not self.is_dirty(check_relationship=True) and not self.is_deleted:
 
             now = py_datetime.now()

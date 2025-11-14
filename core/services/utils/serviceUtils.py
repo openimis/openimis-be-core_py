@@ -5,11 +5,14 @@ from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.forms.models import model_to_dict
+from core.utils import get_current_user
 
 
 def check_authentication(function):
     def wrapper(self, *args, **kwargs):
-        if type(self.user) is AnonymousUser or not self.user.id:
+        if not self.user:
+            self.user = get_current_user()
+        if type(self.user) is AnonymousUser or (not self.user and not self.user.id):
             return {
                 "success": False,
                 "message": "Authentication required",

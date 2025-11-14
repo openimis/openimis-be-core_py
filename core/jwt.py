@@ -20,7 +20,6 @@ def on_token_issued(sender, request, user, **kwargs):
     if user.i_user:
         user.i_user.last_login = timezone.now()
         user.i_user.save()
-    pass
 
 
 def jwt_encode_user_key(payload, context=None):

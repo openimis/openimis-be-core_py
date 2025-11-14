@@ -12,7 +12,8 @@ from graphql_jwt.shortcuts import get_token as get_token_jwt
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
-
+from core.utils import clear_current_user
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +107,33 @@ class BaseTestContext:
 class openIMISGraphQLTestCase(GraphQLTestCase):
     GRAPHQL_URL = f"/{settings.SITE_ROOT()}graphql"
     GRAPHQL_SCHEMA = True
+    """
+    Enhanced version that wraps every test in an atomic transaction.
+    Prevents GraphQL validation errors (400) from closing the DB connection.
+    """
+    def _execute_test(self):
+        with transaction.atomic():
+            super()._execute_test()
 
-    # client = None
+    def run(self, result=None):
+        """
+        Override run() to ensure atomic block even when pytest-django calls it.
+        """
+        with transaction.atomic():
+            super().run(result)
+
     @classmethod
     def setUpClass(cls):
         # cls.client=Client(cls.schema)
+        clear_current_user()
+        cache.clear()
         super(openIMISGraphQLTestCase, cls).setUpClass()
+
+    def setUp(self):
+        # cls.client=Client(cls.schema)
+        clear_current_user()
+        cache.clear()
+        super().setUp()
 
     def get_mutation_result(
         self, mutation_uuid, token, internal=False, allow_exceptions=True
@@ -255,8 +277,10 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
     # This validates the status code and if you get errors
     def build_params(self, params):
         def wrap_arg(v):
+            if isinstance(v, uuid.UUID):
+                return f'"{str(v).lower()}"'
             if isinstance(v, str):
-                return f'"{v}"'
+                return f'"{str(v)}"'
             if isinstance(v, list):
                 return f"[{','.join([str(wrap_arg(vv)) for vv in v])}]"
             if isinstance(v, dict):
@@ -274,6 +298,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         ]
         return ", ".join(params_as_args)
 
-    def tearDwon(self):
+    def tearDown(self):
         cache.clear()
-        super().tearDwon()
+        clear_current_user()
+        super().tearDown()

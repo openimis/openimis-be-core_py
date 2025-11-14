@@ -237,7 +237,7 @@ class BaseHistoryModelUpdateMutationMixin:
 
     @classmethod
     def update_object(cls, user, object_to_update):
-        object_to_update.save(username=user.username)
+        object_to_update.save(user=user)
         return object_to_update
 
 
