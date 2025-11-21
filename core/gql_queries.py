@@ -123,6 +123,39 @@ class InteractiveUserGQLType(DjangoObjectType):
         }
         connection_class = ExtendedConnection
 
+    def resolve_last_name(self, info):
+        # Prefer Keycloak base firstName/lastName, fallback to DB
+        kc_profile = None
+        if hasattr(self, '_get_keycloak_profile'):
+            try:
+                kc_profile = self._get_keycloak_profile()
+            except Exception:
+                kc_profile = None
+        if kc_profile and kc_profile.get('lastName'):
+            return kc_profile.get('lastName')
+        return self.last_name
+
+    def resolve_other_names(self, info):
+        # other_names is not a standard Keycloak base field — use DB
+        return self.other_names
+
+    def resolve_email(self, info):
+        # Prefer Keycloak email, fallback to DB
+        kc_profile = None
+        if hasattr(self, '_get_keycloak_profile'):
+            try:
+                kc_profile = self._get_keycloak_profile()
+            except Exception:
+                kc_profile = None
+        if kc_profile and kc_profile.get('email'):
+            return kc_profile.get('email')
+        return self.email
+
+    def resolve_phone(self, info):
+        # Phone is not guaranteed in Keycloak base fields; use DB as fallback
+        # (If you later configure phone in Keycloak user profile, we could extend _get_keycloak_profile)
+        return self.phone
+
     def resolve_health_facility(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
@@ -134,6 +167,13 @@ class InteractiveUserGQLType(DjangoObjectType):
     def resolve_roles(self, info, **kwargs):
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
+        # Try Keycloak openimis_roles attribute first
+        kc_roles = None
+        if hasattr(self, '_get_keycloak_roles'):
+            kc_roles = self._get_keycloak_roles()
+        if kc_roles is not None:
+            return Role.objects.filter(validity_to__isnull=True, name__in=kc_roles)
+        # Fallback to DB
         if self.user_roles:
             return Role.objects \
                 .filter(validity_to__isnull=True) \
@@ -188,6 +228,50 @@ class UserGQLType(DjangoObjectType):
             raise PermissionDenied(_("unauthorized"))
         user_mutation = self.mutations.select_related('mutation').filter(mutation__status=0).first()
         return user_mutation.mutation.client_mutation_id if user_mutation else None
+
+    def resolve_last_name(self, info):
+        # Prefer Keycloak base lastName via i_user, fallback to DB
+        i_user = getattr(self, 'i_user', None)
+        if i_user and hasattr(i_user, '_get_keycloak_profile'):
+            try:
+                kc = i_user._get_keycloak_profile()
+                if kc and kc.get('lastName'):
+                    return kc.get('lastName')
+            except Exception:
+                pass
+        return self.last_name
+
+    def resolve_other_names(self, info):
+        # Keycloak doesn't provide other_names as a base field; use DB
+        return self.other_names
+
+    def resolve_email(self, info):
+        # Prefer Keycloak email via i_user, fallback to DB
+        i_user = getattr(self, 'i_user', None)
+        if i_user and hasattr(i_user, '_get_keycloak_profile'):
+            try:
+                kc = i_user._get_keycloak_profile()
+                if kc and kc.get('email'):
+                    return kc.get('email')
+            except Exception:
+                pass
+        return self.email
+
+    def resolve_phone(self, info):
+        # Phone not part of Keycloak base by default — use DB
+        return self.phone
+
+    def resolve_username(self, info):
+        # Prefer Keycloak username via i_user, fallback to DB
+        i_user = getattr(self, 'i_user', None)
+        if i_user and hasattr(i_user, '_get_keycloak_profile'):
+            try:
+                kc = i_user._get_keycloak_profile()
+                if kc and kc.get('username'):
+                    return kc.get('username')
+            except Exception:
+                pass
+        return self.username
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

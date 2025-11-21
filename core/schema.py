@@ -1879,6 +1879,112 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         return super().mutate(cls, info, **kwargs)
 
 
+class AuthenticateKeycloakMutation(graphene.Mutation):
+    """
+    Authenticate user with Keycloak JWT token
+    """
+    token = graphene.String()
+    refresh_token = graphene.String()
+    refresh_expires_in = graphene.Int()
+    user = graphene.Field(UserGQLType)
+
+    class Arguments:
+        token = graphene.String(required=True, description="Keycloak JWT token")
+        userInfo = graphene.String(required=True, description="User info from Keycloak token")
+
+    @classmethod
+    def mutate(cls, root, info, token, userInfo, **kwargs):
+        try:
+            logger.info("=== KEYCLOAK AUTHENTICATION DEBUG ===")
+            logger.info("Keycloak authentication attempt - token present: %s", bool(token))
+            logger.info("Token length: %s", len(token) if token else 0)
+            logger.info("Token preview: %s", token[:50] + "..." if token and len(token) > 50 else token)
+            logger.info("User info: %s", userInfo)
+            logger.info("KEYCLOAK_ENABLED setting: %s", getattr(settings, 'KEYCLOAK_ENABLED', False))
+            
+            # Only allow Keycloak authentication if enabled
+            if not getattr(settings, 'KEYCLOAK_ENABLED', False):
+                logger.error("Keycloak authentication is not enabled")
+                raise GraphQLError("Keycloak authentication is not enabled")
+
+            # Import here to avoid circular imports
+            from core.keycloak_auth import KeycloakAuthenticationBackend
+            
+            backend = KeycloakAuthenticationBackend()
+            logger.info("Backend created successfully")
+            
+            user = backend.authenticate(info.context, keycloak_token=token)
+            
+            logger.info("Authentication result - user found: %s", bool(user))
+            if user:
+                logger.info("Authenticated user: %s", user.username)
+            else:
+                logger.error("Authentication backend returned None - checking token validity")
+            
+            if not user:
+                logger.error("Invalid Keycloak token or user not found")
+                raise GraphQLError("Invalid Keycloak token or user not found")
+
+            # Generate JWT token for the user
+            try:
+                from graphql_jwt.shortcuts import get_token
+                
+                # Generate JWT token
+                jwt_token = get_token(user)
+                logger.info(f"JWT token generated successfully for user: {user.username}")
+                
+                # For now, skip refresh token generation to avoid complications
+                refresh_token = None
+                
+            except Exception as e:
+                # Fallback if token generation fails
+                logger.warning(f"JWT token generation failed: {e}, using simple authentication")
+                jwt_token = "keycloak_authenticated" 
+                refresh_token = None
+            
+            # Set JWT token as cookie using the same mechanism as normal login
+            # This is critical for subsequent requests to be authenticated
+            from django.http import HttpResponse
+            
+            # Create a mock response to set cookies on the actual response
+            # The key is to set the token in a way that graphql_jwt middleware can read it
+            if hasattr(info.context, '_cached_user'):
+                # Clear any cached user to force re-authentication with new token
+                delattr(info.context, '_cached_user')
+            
+            # Store the token in the request context so it can be used immediately
+            setattr(info.context, '_jwt_token_payload', jwt_token)
+            
+            logger.info("Keycloak authentication completed successfully")
+            
+            # Get refresh token expiration
+            try:
+                refresh_expires_in = settings.GRAPHQL_JWT.get('JWT_REFRESH_EXPIRATION_DELTA').total_seconds()
+            except (AttributeError, KeyError):
+                refresh_expires_in = 3600  # Default 1 hour
+            
+            # Create the result with all required fields
+            result = cls(
+                token=jwt_token,
+                refresh_token=refresh_token,
+                refresh_expires_in=refresh_expires_in,
+                user=user
+            )
+            
+            # DEBUG: Log what we're returning
+            logger.info(f"Returning authentication result:")
+            logger.info(f"  Token present: {bool(jwt_token)}")
+            logger.info(f"  Token length: {len(jwt_token) if jwt_token else 0}")
+            logger.info(f"  User: {user.username}")
+            logger.info(f"  Refresh token: {bool(refresh_token)}")
+            
+            return result
+            
+        except Exception as exc:
+            logger.exception("Keycloak authentication failed: %s", str(exc))
+            raise GraphQLError("Authentication failed")
+
+
 class GetCsrfTokenMutation(graphene.Mutation):
     csrf_token = graphene.String()
 
@@ -1908,6 +2014,7 @@ class Mutation(graphene.ObjectType):
     set_password = SetPasswordMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
+    authenticate_keycloak = AuthenticateKeycloakMutation.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()

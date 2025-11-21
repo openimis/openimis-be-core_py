@@ -205,6 +205,20 @@ class CoreConfig(AppConfig):
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
 
+        # Import Keycloak signals to enable automatic role synchronization on login
+        try:
+            import core.keycloak_signals
+            logger.info("Keycloak role sync signals registered")
+        except Exception as e:
+            logger.warning(f"Failed to register Keycloak signals: {e}")
+
+        # Apply opensearch_reports patch for Keycloak integration
+        try:
+            import core.opensearch_reports_patch
+            logger.info("OpenSearch reports Keycloak integration patch applied")
+        except Exception as e:
+            logger.warning(f"Failed to apply OpenSearch reports patch: {e}")
+
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler
         if settings.SCHEDULER_AUTOSTART:

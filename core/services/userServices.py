@@ -6,6 +6,8 @@ from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail, BadHeaderError
+import secrets
+import string
 from django.template import loader
 from django.utils.http import urlencode
 from django.core.cache import cache
@@ -18,6 +20,50 @@ from core.utils import filter_validity
 from django.db.models import Q
 
 logger = logging.getLogger(__file__)
+
+def migration_keycloak_send_password(user):
+    """
+    Génère un mot de passe temporaire, l'envoie par mail, et force le changement au premier login.
+    """
+    # Générer un mot de passe temporaire
+    alphabet = string.ascii_letters + string.digits + '!@#$%^&*()_+-=' 
+    temp_password = ''.join(secrets.choice(alphabet) for _ in range(14))
+
+    # Définir le mot de passe et forcer le changement au premier login
+    user.set_password(temp_password)
+    user.must_change_password = True  # À ajouter dans le modèle User si pas déjà présent
+    user.save()
+
+    # Envoyer le mail (identique au reset password)
+    from django.template import loader
+    from django.conf import settings
+    subject = '[OpenIMIS] Migration vers Keycloak - Mot de passe temporaire'
+    context = {
+        "user": user,
+        "temp_password": temp_password,
+    }
+    # Utilise un template si disponible, sinon fallback texte
+    try:
+        message = loader.render_to_string(
+            getattr(settings, 'KEYCLOAK_MIGRATION_TEMPLATE', 'core/migration_keycloak_email.txt'),
+            context
+        )
+    except Exception:
+        message = (
+            f'Bonjour {user.username},\n\n'
+            f'Votre compte a été migré vers Keycloak.\n'
+            f'Voici votre mot de passe temporaire : {temp_password}\n\n'
+            f'Vous devrez le changer lors de votre première connexion.'
+        )
+    logger.info(f"Send mail migration keycloak for {user} with temp password '{temp_password}'")
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=getattr(settings, 'EMAIL_HOST_USER', 'noreply@openimis.org'),
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+    return temp_password
 
 
 def create_or_update_interactive_user(user_id, data, audit_user_id, connected):

@@ -9,6 +9,7 @@ from graphql_jwt.shortcuts import get_user_by_token
 from core.apps import CoreConfig
 from django.conf import settings
 from django_ratelimit.core import is_ratelimited
+from core.models import Role
 
 from datetime import date
 import jwt
@@ -40,6 +41,10 @@ class JWTAuthentication(BaseAuthentication):
                             user.health_facility.contract_end_date > date.today()):
                         raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
 
+                # Check Keycloak role validation when Keycloak is enabled
+                if getattr(settings, 'KEYCLOAK_ENABLED', False):
+                    self.validate_keycloak_roles(user)
+
             return user, None
 
     def enforce_csrf(self, request):
@@ -62,3 +67,32 @@ class JWTAuthentication(BaseAuthentication):
                 increment=True
         ):
             raise Throttled(detail='Rate limit exceeded')
+
+    def validate_keycloak_roles(self, user):
+        """
+        Validate that the user has at least one Keycloak openimis_roles attribute
+        that matches an existing role in tblRole.
+        """
+        if not hasattr(user, '_get_keycloak_roles'):
+            raise exceptions.AuthenticationFailed("KEYCLOAK_ROLE_VALIDATION_FAILED: No Keycloak integration")
+            
+        kc_roles = user._get_keycloak_roles()
+        if not kc_roles:
+            logger.warning(f"User {user.username} has no openimis_roles attribute in Keycloak")
+            raise exceptions.AuthenticationFailed("KEYCLOAK_ROLE_VALIDATION_FAILED: No openimis_roles attribute found")
+        
+        # Check if any Keycloak role exists in tblRole
+        if not Role.objects.filter(name__in=kc_roles, validity_to__isnull=True).exists():
+            logger.warning(f"User {user.username} has Keycloak roles {kc_roles} but none exist in tblRole")
+            raise exceptions.AuthenticationFailed("KEYCLOAK_ROLE_VALIDATION_FAILED: No valid roles found in database")
+
+    def validate_opensearch_access(self, user):
+        """
+        Validate that the user has opensearch_access="true" attribute in Keycloak.
+        """
+        if not hasattr(user, '_get_keycloak_opensearch_access'):
+            raise exceptions.AuthenticationFailed("OPENSEARCH_ACCESS_DENIED: No Keycloak integration")
+            
+        if not user._get_keycloak_opensearch_access():
+            logger.warning(f"User {user.username} has no opensearch_access attribute or it's not set to 'true' in Keycloak")
+            raise exceptions.AuthenticationFailed("OPENSEARCH_ACCESS_DENIED: No opensearch_access attribute or not set to 'true'")

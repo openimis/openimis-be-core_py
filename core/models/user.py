@@ -1,4 +1,5 @@
 import logging
+import requests
 import sys
 import uuid
 from datetime import timedelta, datetime as py_datetime
@@ -278,8 +279,132 @@ class InteractiveUser(VersionedModel):
 
 
 
+    @cached_property
+    def _keycloak_user_data(self):
+        """
+        Efficiently retrieve all Keycloak user data in one call.
+        Returns dict with user attributes or None if not available.
+        """
+        try:
+            import requests
+            KEYCLOAK_BASE = getattr(settings, 'KEYCLOAK_SERVER_URL', 'http://localhost:8080')
+            REALM = getattr(settings, 'KEYCLOAK_REALM', 'openimis')
+            ADMIN_REALM = "master"
+            ADMIN_USER = getattr(settings, 'KEYCLOAK_ADMIN_USER', 'admin')
+            ADMIN_PASS = getattr(settings, 'KEYCLOAK_ADMIN_PASSWORD', 'admin')
+            CLIENT_ID = "admin-cli"
+            
+            # Get admin token
+            url = f"{KEYCLOAK_BASE}/realms/{ADMIN_REALM}/protocol/openid-connect/token"
+            data = {
+                "grant_type": "password",
+                "client_id": CLIENT_ID,
+                "username": ADMIN_USER,
+                "password": ADMIN_PASS
+            }
+            r = requests.post(url, data=data)
+            r.raise_for_status()
+            token = r.json()["access_token"]
+            
+            # Find user by username
+            url = f"{KEYCLOAK_BASE}/admin/realms/{REALM}/users"
+            headers = {"Authorization": f"Bearer {token}"}
+            params = {"username": self.login_name}
+            r = requests.get(url, headers=headers, params=params)
+            r.raise_for_status()
+            users = r.json()
+            
+            user_id = None
+            for u in users:
+                if u.get("username", "").lower() == self.login_name.lower():
+                    user_id = u["id"]
+                    break
+            
+            if not user_id:
+                return None
+                
+            # Get complete user data
+            url = f"{KEYCLOAK_BASE}/admin/realms/{REALM}/users/{user_id}"
+            r = requests.get(url, headers=headers)
+            r.raise_for_status()
+            return r.json()
+            
+        except Exception:
+            return None
+
+    def _get_keycloak_roles(self):
+        """
+        Get openimis_roles from cached Keycloak data.
+        Returns a list of role names, or None if not available.
+        """
+        user_data = self._keycloak_user_data
+        if not user_data:
+            return None
+            
+        attrs = user_data.get("attributes", {})
+        kc_roles = attrs.get("openimis_roles", None)
+        if not kc_roles:
+            return None
+            
+        # Parse roles (can be list or comma-separated string)
+        if isinstance(kc_roles, list):
+            roles_flat = []
+            for r in kc_roles:
+                if isinstance(r, str):
+                    roles_flat.extend([x.strip() for x in r.split(',') if x.strip()])
+            return roles_flat
+        elif isinstance(kc_roles, str):
+            return [r.strip() for r in kc_roles.split(',') if r.strip()]
+        else:
+            return []
+
+    def _get_keycloak_opensearch_access(self):
+        """
+        Get opensearch_access from cached Keycloak data.
+        Returns True if opensearch_access="true", False otherwise.
+        """
+        user_data = self._keycloak_user_data
+        if not user_data:
+            return False
+            
+        attrs = user_data.get("attributes", {})
+        opensearch_access = attrs.get("opensearch_access", None)
+        if not opensearch_access:
+            return False
+            
+        # Handle different formats (list vs string)
+        if isinstance(opensearch_access, list):
+            opensearch_access = opensearch_access[0] if opensearch_access else ""
+            
+        return str(opensearch_access).lower() in ["true", "1", "yes"]
+
+    def _get_keycloak_profile(self):
+        """
+        Retrieve basic Keycloak user profile fields from cached data.
+        Returns a dict with available keys or None on error/unavailable.
+        """
+        user_data = self._keycloak_user_data
+        if not user_data:
+            return None
+            
+        profile = {}
+        for field in ['firstName', 'lastName', 'email', 'username']:
+            if field in user_data and user_data.get(field):
+                profile[field] = user_data.get(field)
+                
+        return profile if profile else None
+
     @property
     def rights(self):
+        # Try Keycloak first
+        kc_roles = self._get_keycloak_roles()
+        if kc_roles is not None:
+            # Get right_ids for all roles in Keycloak
+            rights = [rr.right_id for rr in RoleRight.filter_queryset().filter(
+                role__name__in=kc_roles
+            ).distinct()]
+            return rights
+        # Fallback to DB
         rights = cache.get('rights_' + str(self.id))
         if rights:
             return rights
@@ -337,6 +462,16 @@ class InteractiveUser(VersionedModel):
 
     @property
     def is_imis_admin(self):
+        # Try Keycloak first
+        kc_roles = self._get_keycloak_roles()
+        if kc_roles is not None:
+            # 64 is system number for IMIS Administrator
+            return Role.objects.filter(
+                is_system=64,
+                name__in=kc_roles,
+                validity_to__isnull=True
+            ).exists()
+        # Fallback to DB
         is_admin = cache.get('is_admin_' + str(self.id))
         if is_admin is None:
             is_admin = Role.objects.filter(
