@@ -60,6 +60,7 @@ DEFAULT_CFG = {
     "locked_user_password_hash": "locked",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
+    "is_program_available": False
 }
 
 
@@ -109,6 +110,7 @@ class CoreConfig(AppConfig):
     gql_query_enable_viewing_masked_data_perms = []
 
     csrf_protect_login = None
+    is_program_available = None
 
     def _import_module(self, cfg, k):
         logger.info("import %s.%s" % (cfg["%s_module" % k], cfg["%s_package" % k]))
@@ -236,6 +238,7 @@ class CoreConfig(AppConfig):
             "gql_query_enable_viewing_masked_data_perms"
         ]
         CoreConfig.csrf_protect_login = cfg["csrf_protect_login"]
+        CoreConfig.is_program_available = cfg["is_program_available"]
 
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
         CoreConfig.fields_controls_eo = cfg["fields_controls_eo"]
