@@ -39,13 +39,13 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         i_user = InteractiveUser.objects.filter(
-            validity_to__isnull=True, user__id=user_id
+            active=True, user__id=user_id
         ).first()
-        if i_user.validity_to is not None and i_user.validity_to:
+        if i_user and not i_user.active:
             raise ValidationError(_("core.user.edit_historical_data_error"))
     else:
         i_user = InteractiveUser.objects.filter(
-            validity_to__isnull=True, login_name=data_subset["login_name"]
+            active=True, login_name=data_subset["login_name"]
         ).first()
     if i_user:
         i_user.save_history()
@@ -300,7 +300,7 @@ def user_authentication(request, username, password):
 
 def check_user_unique_email(user_email):
     if InteractiveUser.objects.filter(
-        email=user_email, validity_to__isnull=True
+        email=user_email, active=True
     ).exists():
         return [{"message": "User email %s already exists" % user_email}]
     return []
