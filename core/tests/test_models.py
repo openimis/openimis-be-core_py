@@ -13,26 +13,6 @@ class UserTestCase(TestCase):
         )
         self.assertTrue(always_valid.is_active)
 
-        import datetime
-
-        not_yet_active = User(
-            username="not_yet_active",
-            t_user=TechnicalUser(
-                username="not_yet_active",
-                validity_from=datetime.datetime.now() + datetime.timedelta(days=1),
-            ),
-        )
-        self.assertFalse(not_yet_active.is_active)
-
-        not_active_anymore = User(
-            username="not_active_anymore",
-            t_user=TechnicalUser(
-                username="not_active_anymore",
-                validity_to=datetime.datetime.now() + datetime.timedelta(days=-1),
-            ),
-        )
-        self.assertFalse(not_active_anymore.is_active)
-
     def test_interactive_user_bulk_operations_and_cache(self):
         """Test InteractiveUser.objects.bulk_create and bulk_update with cache functionality"""
         # Clear cache to ensure clean state

@@ -959,7 +959,7 @@ class Query(graphene.ObjectType):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         if User.objects.filter(
-            username=kwargs["username"], validity_to__isnull=True
+            username=kwargs["username"]
         ).exists():
             return False
         else:
@@ -1097,7 +1097,7 @@ class Query(graphene.ObjectType):
         if not show_deleted and not kwargs.get("id", None):
             # active_users_ids = [user.id for user in user_query if user.active]
             user_filters.append(
-                Q(i_user__isnull=True) | Q(*User.filter_validity(prefix="i_user__"))
+                Q(i_user__isnull=True) | Q(*InteractiveUser.filter_validity(prefix="i_user__"))
             )
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"

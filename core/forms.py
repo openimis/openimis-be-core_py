@@ -17,7 +17,7 @@ class TechnicalUserForm(forms.ModelForm):
 
     class Meta:
         model = TechnicalUser
-        fields = ["username", "email", "is_superuser", "validity_from", "validity_to"]
+        fields = ["username", "email", "is_superuser"]
 
     def save(self, commit=True):
         user = super().save(commit=False)

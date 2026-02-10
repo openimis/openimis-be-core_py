@@ -23,7 +23,7 @@ from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
-from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
+from .openimis_model import OpenIMISHistoryMixin, OpenIMISModel
 from core.utils import to_list_permissions
 from rest_framework import exceptions
 
@@ -95,8 +95,7 @@ class TechnicalUser(AbstractBaseUser):
     language = "en"
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
-    validity_to = models.DateTimeField(blank=True, null=True)
+    is_superuser = models.BooleanField(default=False)
     is_imis_admin = False
 
     @property
@@ -191,7 +190,7 @@ class RoleRight(VersionedModel):
         db_table = "tblRoleRight"
 
 
-class InteractiveUser(OpenIMISMigrationModel):
+class InteractiveUser(OpenIMISModel):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "login_name"}
     USE_CACHE = not settings.IS_TESTING
     # id = models.AutoField(db_column="UserID", primary_key=True)
@@ -345,7 +344,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 user_roles__user=self,
                 validity_to__isnull=True,
                 user_roles__validity_to__isnull=True,
-                user_roles__user__validity_to__isnull=True,
+                user_roles__user__active=True,
             ).exists()
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
@@ -659,8 +658,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
-        return {}
-        return {}
+        return []
 
     def check_password(self, *args, **kwargs):
         if self._u:
@@ -672,10 +670,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         pass
 
     def delete_history(self, **kwargs):
-        # now = py_datetime.now()
-        # self.validity_from = now
-        # self.validity_to = now
-        # self.save()
         pass
 
     @property
@@ -737,15 +731,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def is_active(self):
         if self.i_user:
             return self.i_user.active
-        else:
-            if self._u.validity_from is None and self._u.validity_to is None:
-                return True
-            now = py_datetime.now()
-            if self._u.validity_from is not None and self._u.validity_from > now:
-                return False
-            if self._u.validity_to is not None and self._u.validity_to < now:
-                return False
-            return True
+        return True
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user

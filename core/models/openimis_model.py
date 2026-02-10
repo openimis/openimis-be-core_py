@@ -158,10 +158,12 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
         validity = kwargs.get(arg, None)
+        active_key = f"{prefix}active"
+        deactivated_key = f"{prefix}date_deactivated__gte"
         if not validity:
-            return Q(active=True)
+            return [Q(**{active_key: True})]
         else:
-            return Q(active=False) | Q(date_deactivated__gte=validity)
+            return [Q(**{active_key: False}) | Q(**{deactivated_key: validity})]
 
     class Meta:
         abstract = True
