@@ -221,3 +221,29 @@ class gqlTest(openIMISGraphQLTestCase):
             query, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
         )
         self.assertResponseNoErrors(response)
+
+    def test_validate_username_existing(self):
+        # Test validateUsername with an existing username - should return False
+        query = """
+            query ($username: String!) {
+                isValid: validateUsername(username: $username)
+            }
+        """
+        variables = {"username": self.admin_username}
+        response = self.query(query, variables=variables, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertFalse(content["data"]["isValid"])
+
+    def test_validate_username_non_existing(self):
+        # Test validateUsername with a non-existing username - should return True
+        query = """
+            query ($username: String!) {
+                isValid: validateUsername(username: $username)
+            }
+        """
+        variables = {"username": "nonexistingusername123"}
+        response = self.query(query, variables=variables, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertTrue(content["data"]["isValid"])
