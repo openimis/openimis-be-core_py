@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("contenttypes", "0002_remove_content_type_name"),
-        ("core", "0034_remove_user_legacy_id_remove_user_validity_from_and_more"),
+        ("core", "0035_migrate_admin_users_to_superuser"),
     ]
 
     operations = [

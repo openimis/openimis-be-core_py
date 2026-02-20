@@ -198,6 +198,7 @@ def create_test_interactive_user(
 def create_test_technical_user(
     username="TestAdminTechnicalTest",
     password="S\\/pe®Pąßw0rd" "",
+    staff=False,
     super_user=False,
     custom_tech_user_props={},
     custom_core_user_props={},
@@ -207,8 +208,8 @@ def create_test_technical_user(
         **{
             "username": username,
             "email": "test_tech_user@openimis.org",
-            "is_staff": super_user,
-            "is_superuser": super_user,
+            "staff": staff,
+            "superuser": super_user,
             **(custom_tech_user_props),
         }
     )
