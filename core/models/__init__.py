@@ -5,6 +5,8 @@ from core.models import user
 from core.models import history_model
 from core.models import base_mutation
 from core.models import user_mutation
+from core.models import openimis_model
+from core.models import user_business_access
 from core.utils import filter_validity
 
 
@@ -33,3 +35,6 @@ ObjectMutation = base_mutation.ObjectMutation
 CachedManager = versioned_model.CachedManager
 OpenIMISModel = openimis_model.OpenIMISModel
 OpenIMISMigrationModel = openimis_model.OpenIMISMigrationModel
+ValidityMixin = openimis_model.ValidityMixin
+OpenIMISBusinessModel = openimis_model.OpenIMISBusinessModel
+UserBusinessAccess = user_business_access.UserBusinessAccess
