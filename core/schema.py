@@ -343,7 +343,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         :param data: all parameters passed to the mutation
         :return: error_message if None is returned, the response is considered to be a success
         """
-        pass
+        raise NotImplemented(f"async_mutate not implemented {cls.__name__}")
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
@@ -425,6 +425,31 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
+                # Perform synchronous authentication validation before queuing
+                try:
+                    mutation_data = cls.coerce_mutation_data(
+                        json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+                    )
+                    mutation_data.pop("mutation_extensions", None)
+                    user = info.context.user if info.context and info.context.user else None
+                    cls._validate_mutation(user, **mutation_data)
+                except PermissionDenied as e:
+                    logger.debug(
+                        "[OpenIMISMutation %s] Authentication failed synchronously: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+                    mutation_log.mark_as_failed(_("mutation.authentication_required"))
+                    return cls(internal_id=mutation_log.id)
+                except Exception as e:
+                    # For other validation errors, still queue the mutation
+                    # as they might be business logic validations that should run async
+                    logger.debug(
+                        "[OpenIMISMutation %s] Other validation error, proceeding with async: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls.__name__
                 )

@@ -14,6 +14,7 @@ from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
 from core.utils import clear_current_user
 from django.db import transaction
+from graphql_relay import from_global_id
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
             return False
         return True
 
-    def send_mutation_raw(self, mutation_raw, token, variables_param=None, follow=True):
+    def send_mutation_raw(self, mutation_raw, token, variables_param=None, follow=True, allow_exceptions=False):
         params = {"headers": {"HTTP_AUTHORIZATION": f"Bearer {token}"}}
         if variables_param:
             params["variables"] = variables_param
@@ -240,10 +241,17 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         if follow:
             mutation_type = list(content["data"].keys())[0]
             return self.get_mutation_result(
-                content["data"][mutation_type]["internalId"], token, internal=True
+                content["data"][mutation_type]["internalId"],
+                token,
+                internal=True,
+                allow_exceptions=allow_exceptions,
             )
         else:
             return json.loads(response.content)
+
+    def id_from_global(global_id):
+        _type, id = from_global_id(data['id'])
+        return id
 
     def send_mutation(
         self,
