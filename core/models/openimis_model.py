@@ -199,6 +199,23 @@ class ValidityMixin(Model):
     date_valid_to = DateTimeField(db_column="DateValidTo", blank=True, null=True)
     replacement_uuid = UUIDField(db_column="ReplacementUUID", blank=True, null=True)
 
+    # to help migration from versionned model
+    @property
+    def validity_to(self):
+        return self.date_valid_to
+
+    @validity_to.setter
+    def validity_to(self, value):
+        self.date_valid_to = value
+
+    @property
+    def validity_from(self):
+        return self.date_valid_from
+
+    @validity_from.setter
+    def validity_from(self, value):
+        self.date_valid_from = value
+
     def replace_object(self, data, **kwargs):
         from .user import User
         # check if object was created and saved in database (having date_created field)
