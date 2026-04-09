@@ -208,8 +208,8 @@ def create_test_technical_user(
         **{
             "username": username,
             "email": "test_tech_user@openimis.org",
-            "staff": staff,
-            "superuser": super_user,
+            "is_staff": staff,
+            "is_superuser": super_user,
             **(custom_tech_user_props),
         }
     )
