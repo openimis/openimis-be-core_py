@@ -240,7 +240,7 @@ class ValidityMixin(Model):
         new_entity.date_valid_from = now
         new_entity.date_valid_to = None
         new_entity.replacement_uuid = None
-        # replace the fiedls if there are any to update in new entity
+        # replace the fields if there are any to update in new entity
         if "uuid" in data:
             data.pop("uuid")
         if len(data) > 0:
