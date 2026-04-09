@@ -28,4 +28,5 @@ class UserBusinessAccess(OpenIMISBusinessModel):
         verbose_name_plural = "User Business Accesses"
         indexes = [
             models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['user', 'content_type', 'object_id']),
         ]
