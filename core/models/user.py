@@ -34,6 +34,15 @@ class UserManager(BaseUserManager, CachedManager):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "username"}
     CACHED_FK = {"i_user"}
 
+
+    def _auto_provisioning_user_group(self, user):
+        group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
+        if group:
+            user_group = UserGroup(user=user, group=group)
+            user_group.save()
+        else:
+            logger.error(f"Group {core.auto_provisioning_user_group} was not found")
+
     def _create_core_user(self, **fields):
         user = User(**fields)
         user.save()
@@ -44,16 +53,24 @@ class UserManager(BaseUserManager, CachedManager):
         tech.set_password(password)
         tech.save()
         return tech
+    
+    def _create_interactive_user(self, username, email, password, **extra_fields):
+        iuser = InteractiveUser(login_name=username, email=email, **extra_fields)
+        iuser.set_password(password)
+        iuser.save()
+        return iuser    
 
     def create_user(self, username, password, email=None, **extra_fields):
         extra_fields.setdefault("is_staff", False)
         extra_fields["is_superuser"] = False
-        self._create_tech_user(username, email, password, **extra_fields)
+        iuser = self._create_interactive_user(username, email, password, **extra_fields)
+        self.auto_provision_user(username=username, i_user=iuser)
 
     def create_superuser(self, username, password=None, email=None, **extra_fields):
         extra_fields["is_staff"] = True
         extra_fields["is_superuser"] = True
-        self._create_tech_user(username, email, password, **extra_fields)
+        iuser = self._create_interactive_user(username, email, password, **extra_fields)
+        self.auto_provision_user(username=username, i_user=iuser)
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user
@@ -68,12 +85,7 @@ class UserManager(BaseUserManager, CachedManager):
         kwargs["i_user"] = i_user
         user = self._create_core_user(**kwargs)
         if core.auto_provisioning_user_group:
-            group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
-            if group:
-                user_group = UserGroup(user=user, group=group)
-                user_group.save()
-            else:
-                logger.error(f"Group {core.auto_provisioning_user_group} was not found")
+            self._auto_provisioning_user_group(user)
         return user, True
 
     def get_or_create(self, **kwargs):
