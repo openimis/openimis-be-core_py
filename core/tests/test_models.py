@@ -3,6 +3,7 @@ from django.core.cache import cache
 from core.models import User, TechnicalUser, InteractiveUser
 from core.models.user import Language
 from core.utils import get_cache_key
+from core.test_helpers import create_test_interactive_user, create_test_role
 
 
 class UserTestCase(TestCase):
@@ -160,3 +161,55 @@ class UserTestCase(TestCase):
             ),
         )
         self.assertFalse(not_active_anymore.is_active)
+
+    def test_has_perms_superuser(self):
+        """Test has_perms with superuser bypass"""
+        user = create_test_interactive_user(username="superuser_test", custom_props={"is_superuser": True})
+        self.assertTrue(user.has_perms([123]))  # Superuser always passes
+        self.assertTrue(user.has_perms([]))  # Empty list passes
+        # Cleanup
+        user.i_user.delete()
+        user.delete()
+
+    def test_has_perms_empty_list(self):
+        """Test has_perms with empty permission list"""
+        user = create_test_interactive_user(username="regular_user_test")
+        self.assertTrue(user.has_perms([]))  # Empty list always True
+        # Cleanup
+        user.i_user.delete()
+        user.delete()
+
+    def test_has_perms_or_logic(self):
+        """Test has_perms with OR logic (default) and integer perms"""
+        # Create role with specific permissions
+        role = create_test_role(perm_names=["gql_query_insuree_perms"], name="TestRolePerms")
+        user = create_test_interactive_user(username="testuser_perms", roles=[role.id])
+
+        if user.rights:
+            right_id = user.rights[0]  # Get an integer right ID
+            # Test integer perm
+            self.assertTrue(user.has_perms([right_id]))  # Has the right
+            # Test string perm
+            self.assertTrue(user.has_perms([str(right_id)]))  # String version works
+            # Test OR: has at least one
+            self.assertTrue(user.has_perms([right_id, 999]))  # Has one matching
+            # Test no match
+            self.assertFalse(user.has_perms([999]))  # No matching rights
+        else:
+            self.fail("User has no rights assigned")
+
+  
+    def test_has_perms_and_logic(self):
+        """Test has_perms with AND logic and integer perms"""
+        # Create role with multiple permissions
+        role = create_test_role(perm_names=["gql_query_insuree_perms", "gql_mutation_create_insurees_perms"], name="TestRoleAnd")
+        user = create_test_interactive_user(username="testuser_and", roles=[role.id])
+
+        if len(user.rights) >= 2:
+            right1, right2 = user.rights[:2]
+            # Test AND: needs all
+            self.assertTrue(user.has_perms([right1, right2], list_evaluation_or=False))  # Has both
+            self.assertFalse(user.has_perms([right1, 999], list_evaluation_or=False))  # Missing one
+        else:
+            self.fail("User does not have enough rights for AND test")
+

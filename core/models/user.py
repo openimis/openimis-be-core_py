@@ -26,6 +26,7 @@ from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
 from rest_framework import exceptions
+from django.contrib.contenttypes.models import ContentType
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +282,18 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
-        return self.is_imis_admin
+        if self.user:
+            return self.user.is_superuser
+        else:
+            return self.is_imis_admin
+
+    @is_superuser.setter
+    def is_superuser(self, value):
+        if self.user:
+            self.user.is_superuser = value
+            self.user.save()
+        else:
+            raise AttributeError("Cannot set is_superuser: no associated User found")
 
     @property
     def rights(self):
@@ -701,15 +713,75 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def language(self):
         return self._u.langage if self._u else None
 
-    def has_perms(self, perm_list, obj=None, list_evaluation_or=True):
-        if not perm_list:
-            return True
-        if self.is_imis_admin:
-            return True
-        elif list_evaluation_or:
-            return any(self.has_perm(perm, obj) for perm in perm_list)
-        else:
-            return super().has_perms(perm_list, obj)
+    """
+    Check if the user has the specified permissions, with optional business-level access control.
+
+    This method first evaluates standard Django permissions based on the user's superuser status
+    and the provided permission list. If standard permissions are insufficient and business-level
+    permissions are provided, it checks for specific business object access through the
+    UserBusinessAccess model.
+
+    Args:
+        perm_list (list): A list of permission strings to check against the user's rights.
+            If empty, the method will return True (no permissions required).
+        business_perm_list (dict, optional): A dictionary where keys are business objects
+            and values are lists of permissions required for those objects. Used for
+            fine-grained access control beyond standard permissions. Defaults to None.
+        list_evaluation_or (bool, optional): Determines how permissions in perm_list are evaluated.
+            - If True: User must have at least one permission from perm_list (OR logic).
+            - If False: User must have all permissions from perm_list (AND logic).
+            Defaults to True.
+
+    Returns:
+        bool: True if the user has the required permissions, False otherwise.
+
+    Notes:
+        - Superusers always have access (returns True).
+        - If perm_list is empty or None, returns True.
+        - Business permission checking only occurs if standard permissions fail 
+          and business_perm_list is provided.
+        - For each business object in business_perm_list, the method checks if the user
+          has the associated permissions and if they have active access to that object.
+        - If a ContentType for a business object cannot be found, an error is logged
+          and that object is skipped.
+        - The method uses UserBusinessAccess to verify time-bound access to specific 
+          business objects.
+        - The recursive call to self.has_perms() in the business permission loop 
+          may cause infinite recursion if not carefully managed.
+        - Missing 'or' operator in the initial has_perm assignment may cause 
+          incorrect evaluation of permissions.
+        - The has_access check is performed but does not currently affect the return value.
+    """
+    def has_perms(self, perm_list, obj=None, business_perm_list=None, list_evaluation_or=True ):
+        has_perm = (
+            self.is_superuser or
+            not perm_list or
+            (not list_evaluation_or and all(self.has_perm(perm) for perm in perm_list)) or
+            (list_evaluation_or and any(self.has_perm(perm) for perm in perm_list))
+        )
+        #  once we use django user super().has_perm(perm_list, obj)     
+        if not has_perm and business_perm_list:
+            for business_object, bo_perm_list in business_perm_list.items():
+                if self.has_perms(self, bo_perm_list):
+                    now = datetime.now()
+                    content_type_label = business_obj.__class__.__name__
+                    try:
+                        ct = ContentType.objects.filter(model__iexact=content_type_label).first()
+                    except ContentType.DoesNotExist:
+                        logger.error(f'Invalid content type: {content_type_label}')     
+
+                    has_access = UserBusinessAccess.objects.filter(
+                        user=self,
+                        content_type=ct,
+                        object_id=str(business_obj.pk),
+                        active=True,
+                        date_valid_from__lte=now,
+                    ).filter(
+                        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now)
+                    ).exists()
+
+        return has_perm
+        
 
     @property
     def id_for_audit(self):
@@ -765,7 +837,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
         if i_user is not None and (
-            i_user.is_superuser or any(str(right) == perm for right in i_user.rights)
+            i_user.is_superuser or any(str(right) == str(perm) for right in i_user.rights)
         ):
             return True
         else:

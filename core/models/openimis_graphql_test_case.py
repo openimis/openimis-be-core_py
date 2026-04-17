@@ -249,6 +249,7 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         else:
             return json.loads(response.content)
 
+    @staticmethod
     def id_from_global(global_id):
         _type, id = from_global_id(data['id'])
         return id

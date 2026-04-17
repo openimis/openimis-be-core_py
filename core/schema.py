@@ -343,7 +343,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         :param data: all parameters passed to the mutation
         :return: error_message if None is returned, the response is considered to be a success
         """
-        raise NotImplemented(f"async_mutate not implemented {cls.__name__}")
+        raise NotImplementedError(f"async_mutate not implemented {cls.__name__}")
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
@@ -1884,7 +1884,7 @@ def update_or_create_user(data, user):
 
         if (
             uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
-            and user.is_imis_admin
+            and user.is_superuser
             and imis_administrator_system not in data.get("roles", [])
         ):
             raise ValidationError("Administrator cannot deprovision himself.")

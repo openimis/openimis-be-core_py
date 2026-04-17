@@ -130,11 +130,12 @@ def create_test_interactive_user(
         roles = [create_admin_role().id]
     user = None
     i_user = InteractiveUser.objects.filter(login_name=username, *InteractiveUser.filter_validity()).first()
-
+    user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
+    iuser_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)}
     if i_user:
         # Update existing i_user with custom props
-        for key, value in custom_props.items():
-            if hasattr(i_user, key):
+        if iuser_props:
+            for key, value in iuser_props.items():
                 setattr(i_user, key, value)
         try:
             i_user.save()
@@ -147,9 +148,7 @@ def create_test_interactive_user(
             user = User.objects.filter(username=username, *User.filter_validity()).first()
             if user:
                 user.i_user = i_user
-
         if user:
-            user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
             if user_props:
                 for key, value in user_props.items():
                     setattr(user, key, value)
@@ -168,7 +167,7 @@ def create_test_interactive_user(
                     "other_names": "Test Other Names",
                     "login_name": username,
                     "role_id": roles[0],
-                    **custom_props,
+                    **iuser_props,
                 }
             )
 
@@ -176,6 +175,7 @@ def create_test_interactive_user(
         user = User(
             username=username,
             i_user=i_user,
+            **user_props
         )
     try:
         user.save()
