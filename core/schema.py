@@ -1892,7 +1892,7 @@ def update_or_create_user(data, user):
 
         if (
             uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
-            and user.is_imis_admin
+            and user.is_superuser
             and imis_administrator_system not in data.get("roles", [])
         ):
             raise ValidationError("Administrator cannot deprovision himself.")
