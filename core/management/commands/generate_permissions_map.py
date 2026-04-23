@@ -17,7 +17,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--output',
             type=str,
-            default='../../solution-builder/solution/permissions_map.json',
+            default='./permissions_map.json',
             help='Output file path for the permissions map JSON'
         )
         parser.add_argument(
@@ -113,5 +113,9 @@ class Command(BaseCommand):
             # fallback
             operation = perm_name
             module = app
+        if operation.startswith('mutation_'):
+            operation = operation[9:]
+        if operation.startswith('query_'):
+            operation = operation[6:]
 
         return f"{module}.{operation}"
