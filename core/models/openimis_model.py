@@ -6,7 +6,7 @@ from django.db.models import (
     Q, UUIDField, DateTimeField, BooleanField, Model, IntegerField, BigAutoField, JSONField,
 )
 from simple_history.models import HistoricalRecords
-from core.utils import CachedManager, CachedModelMixin, filter_validity as core_filter_validity, uuidv7
+from core.utils import CachedManager, CachedModelMixin, filter_validity as core_filter_validity, uuidv7, get_original_user
 from simple_history.utils import get_history_manager_for_model
 import datetime as base_datetime
 
@@ -75,6 +75,9 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
         return self
 
     def save(self, *args, user=None, **kwargs):
+        original_user = get_original_user()
+        if original_user:
+            user = original_user
         # get the user data so as to assign later his uuid id in fields
         if user:
             self._history_user = user

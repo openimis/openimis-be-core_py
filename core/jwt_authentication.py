@@ -5,13 +5,15 @@ from graphql_jwt.utils import get_credentials
 from graphql_jwt.exceptions import JSONWebTokenError
 from graphql_jwt.shortcuts import get_user_by_token
 from core.apps import CoreConfig
-from core.utils import set_current_user
+from core.utils import set_current_user, set_original_user
+from core.models import User
 from django.conf import settings
 from django_ratelimit.core import is_ratelimited
 
 from datetime import date
 import jwt
 import logging
+import uuid
 
 logger = logging.getLogger(__file__)
 
@@ -41,8 +43,26 @@ class JWTAuthentication(BaseAuthentication):
                         and user.health_facility.contract_end_date > date.today()
                     ):
                         raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
-            set_current_user(user)
-            return user, None
+
+            # Handle impersonation
+            impersonate_uuid = request.META.get('HTTP_X_IMPERSONATE_USER')
+            if impersonate_uuid:
+                if not user.is_superuser:
+                    raise exceptions.AuthenticationFailed("Impersonation requires superuser privileges")
+                try:
+                    target_uuid = uuid.UUID(impersonate_uuid)
+                    #target_user = User.objects.get(uuid=target_uuid, is_active=True)
+                    target_user = User.objects.get(id=target_uuid, i_user__isnull=False)
+                except (ValueError, User.DoesNotExist):
+                    raise exceptions.AuthenticationFailed("Invalid impersonation target")
+                set_original_user(user)
+                set_current_user(target_user)
+                logger.info(f"Superuser {user.username} impersonating {target_user.username}")
+                return target_user, None
+            else:
+                set_original_user(None)
+                set_current_user(user)
+                return user, None
 
     def enforce_csrf(self, request):
         return  # To not perform the csrf during checking auth header

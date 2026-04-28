@@ -33,6 +33,19 @@ _request_local = threading.local()
 logger = logging.getLogger(__file__)
 
 
+def get_original_user():
+    return getattr(_request_local, "original_user", None)
+
+
+def set_original_user(user):
+    _request_local.original_user = user
+
+
+def clear_original_user():
+    if hasattr(_request_local, "original_user"):
+        del _request_local.original_user
+
+
 cache = caches["default"]
 
 __all__ = [

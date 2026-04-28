@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import F
 from dirtyfields import DirtyFieldsMixin
-from core.utils import CachedManager, CachedModelMixin, uuidv7
+from core.utils import CachedManager, CachedModelMixin, uuidv7, get_original_user
 from simple_history.utils import bulk_update_with_history, bulk_create_with_history
 from django.db.models import (
     DateTimeField, Model, IntegerField,
@@ -252,6 +252,10 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
         pass
 
     def get_user(self, user=None, username=None):
+        # in case of inporsinificaiton
+        original_user = get_original_user()
+        if original_user:
+            return original_user
         if not user:
             user_id = 1
             if username:
