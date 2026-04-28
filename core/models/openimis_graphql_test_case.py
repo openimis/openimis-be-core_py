@@ -14,6 +14,7 @@ from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
 from core.utils import clear_current_user
 from django.db import transaction
+from graphene.utils.str_converters import to_snake_case, to_camel_case
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +72,10 @@ class BaseTestContext:
         self.META["PATH_INFO"] = path
         self.META["SERVER_NAME"] = "testserver"
         self.META["SERVER_PORT"] = "80"
-
+        
         # Add CSRF token if needed
         if self.method in ["POST", "PUT", "PATCH"]:
+
             self.META["CSRF_COOKIE"] = get_token(self.request)
             self.request.CSRF_TOKEN = self.META["CSRF_COOKIE"]
 
@@ -133,6 +135,13 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         """
         with transaction.atomic():
             super().run(result)
+            
+    def _instance_to_gql_input(self, instance, gql_input_class, exclude=None):
+        if exclude is None:
+            exclude = []
+        return {to_camel_case(k): str(p) for k,p in instance.__dict__.items() if hasattr(gql_input_class, k) and p and k not in exclude}
+    
+
 
     @classmethod
     def setUpClass(cls):
