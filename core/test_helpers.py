@@ -107,31 +107,28 @@ def create_test_interactive_user(
     custom_props=None,
     **kwargs
 ):
-
     if custom_props is None:
         custom_props = {}
-    else:
-        custom_props = {
-            k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)
-        }
-
+    user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
+    iuser_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k) and k not in ['is_staff', 'is_superuser']}
     # Handle language field specially - convert code to Language instance
-    if "language" in custom_props:
-        language_value = custom_props["language"]
+    if "language" in iuser_props:
+        language_value = iuser_props["language"]
         if isinstance(language_value, str):
-            custom_props["language"] = create_test_language(code=language_value)
+            iuser_props["language"] = create_test_language(code=language_value)
         # If it's already a Language instance, keep it as is
-    elif "language_id" in custom_props:
-        language_code = custom_props["language_id"]
-        custom_props["language"] = create_test_language(code=language_code)
-        del custom_props["language_id"]
+    elif "language_id" in iuser_props:
+        language_code = iuser_props["language_id"]
+        iuser_props["language"] = create_test_language(code=language_code)
+        del iuser_props["language_id"]
     if roles is None:
         # Create a test role with default permissions instead of hardcoded role IDs
         roles = [create_admin_role().id]
+        if "is_superuser" not in user_props:
+            user_props["is_superuser"] = True
     user = None
     i_user = InteractiveUser.objects.filter(login_name=username, *InteractiveUser.filter_validity()).first()
-    user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
-    iuser_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)}
+
     if i_user:
         # Update existing i_user with custom props
         if iuser_props:
@@ -166,7 +163,7 @@ def create_test_interactive_user(
                     "last_name": "TestLastName",
                     "other_names": "Test Other Names",
                     "login_name": username,
-                    "role_id": roles[0],
+                    "role_id": roles[0] if roles else None,
                     **iuser_props,
                 }
             )

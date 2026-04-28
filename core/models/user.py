@@ -56,22 +56,32 @@ class UserManager(BaseUserManager, CachedManager):
         return tech
     
     def _create_interactive_user(self, username, email, password, **extra_fields):
+        if extra_fields is None:
+            extra_fields = {}
+        if "language__code" not in extra_fields:
+            extra_fields["language"] = Language.objects.all().order_by("sort_order").first()
+        else:
+            extra_fields = {"language": Language.objects.filter(code=extra_fields["language__code"]).first()}
+            del extra_fields["language__code"]
         iuser = InteractiveUser(login_name=username, email=email, **extra_fields)
         iuser.set_password(password)
         iuser.save()
         return iuser    
 
-    def create_user(self, username, password, email=None, **extra_fields):
-        extra_fields.setdefault("is_staff", False)
-        extra_fields["is_superuser"] = False
-        iuser = self._create_interactive_user(username, email, password, **extra_fields)
-        self.auto_provision_user(username=username, i_user=iuser)
+    def create_user(self, username, password, email=None, **kwargs):
+        #extra_fields.setdefault("is_staff", False)
+        #extra_fields["is_superuser"] = False
+        iuser = self._create_interactive_user(username, email, password, **kwargs)
+        user, success = self.auto_provision_user(username=username, i_user=iuser)
+        return user
 
-    def create_superuser(self, username, password=None, email=None, **extra_fields):
-        extra_fields["is_staff"] = True
-        extra_fields["is_superuser"] = True
-        iuser = self._create_interactive_user(username, email, password, **extra_fields)
-        self.auto_provision_user(username=username, i_user=iuser)
+    def create_superuser(self, username, password=None, email=None, **kwargs):
+        #extra_fields["is_staff"] = True
+        
+        iuser = self._create_interactive_user(username, email, password, **kwargs)
+        user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser= True)
+        return user
+         
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user

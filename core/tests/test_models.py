@@ -130,10 +130,7 @@ class UserTestCase(TestCase):
                 f"User {user.login_name} should have {expected_history} historical records"
             )
 
-        # Clean up
-        test_user.delete()
-        for user in created_users:
-            user.delete()
+   
 
     def test_i_active_status(self):
         always_valid = User(
@@ -168,16 +165,14 @@ class UserTestCase(TestCase):
         self.assertTrue(user.has_perms([123]))  # Superuser always passes
         self.assertTrue(user.has_perms([]))  # Empty list passes
         # Cleanup
-        user.i_user.delete()
-        user.delete()
+
 
     def test_has_perms_empty_list(self):
         """Test has_perms with empty permission list"""
         user = create_test_interactive_user(username="regular_user_test")
         self.assertTrue(user.has_perms([]))  # Empty list always True
         # Cleanup
-        user.i_user.delete()
-        user.delete()
+
 
     def test_has_perms_or_logic(self):
         """Test has_perms with OR logic (default) and integer perms"""
