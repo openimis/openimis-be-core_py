@@ -14,6 +14,7 @@ class RoleMutation(UUIDModel, ObjectMutation):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "core_RoleMutation"
 
 
