@@ -180,6 +180,7 @@ class Role(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblRole"
 
 
@@ -211,6 +212,7 @@ class RoleRight(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblRoleRight"
 
 
@@ -430,6 +432,7 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblUsers"
 
 
@@ -547,6 +550,7 @@ class Officer(VersionedModel, ExtendableModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblOfficer"
 
 
@@ -650,6 +654,7 @@ class ClaimAdmin(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblClaimAdmin"
 
 
@@ -668,6 +673,7 @@ class UserRole(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblUserRole"
 
 
@@ -969,6 +975,7 @@ class UserGroup(models.Model):
     class Meta:
         managed = False
         db_table = "core_User_groups"
+        app_label = 'core'
         unique_together = (("user", "group"),)
 
 
