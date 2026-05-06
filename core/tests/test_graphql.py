@@ -78,6 +78,33 @@ class gqlTest(openIMISGraphQLTestCase):
         self.assertResponseHasErrors(response)
         _ = json.loads(response.content)
 
+    def test_login_wrong_credentials_prevents_user_enumeration(self):
+        """Both wrong password and non-existent user should return identical error responses."""
+        query = """
+            mutation authenticate($username: String!, $password: String!) {
+                tokenAuth(username: $username, password: $password)
+                {
+                refreshExpiresIn
+                }
+            }
+        """
+        wrong_password_response = self.query(
+            query, variables={"username": str(self.admin_username), "password": "wrongpass"}
+        )
+        nonexistent_user_response = self.query(
+            query, variables={"username": "nonexistent_user_xyz", "password": "anypass"}
+        )
+
+        wrong_password_data = json.loads(wrong_password_response.content)
+        nonexistent_user_data = json.loads(nonexistent_user_response.content)
+
+        self.assertEqual(wrong_password_response.status_code, nonexistent_user_response.status_code)
+        self.assertEqual(
+            wrong_password_data["errors"][0]["message"],
+            nonexistent_user_data["errors"][0]["message"]
+        )
+        self.assertEqual(wrong_password_data["errors"][0]["message"], "INCORRECT_CREDENTIALS")
+
     def test_change_langue(self):
         query = """
             mutation {

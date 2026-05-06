@@ -274,28 +274,38 @@ def set_user_password(request, username, token, password):
         raise ValidationError("Invalid Token")
 
 
+def _clear_jwt_cookies(request):
+    if hasattr(request, "COOKIES") and isinstance(request.COOKIES, dict):
+        request.COOKIES.pop("JWT", None)
+        request.COOKIES.pop("JWT-refresh-token", None)
+
+
+def _try_auto_provision(username, password):
+    user, provisioned = UserManager().auto_provision_user(username=username)
+    if provisioned:
+        logger.debug(f"User {username} was automatically provisioned")
+    if user and user.i_user.check_password(password):
+        return user
+    return None
+
+
 def user_authentication(request, username, password):
-    user = None
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
-    try:
-        if hasattr(request, "COOKIES") and isinstance(request.COOKIES, dict):
-            request.COOKIES.pop("JWT", None)
-            request.COOKIES.pop("JWT-refresh-token", None)
-        user = authenticate(request, username=username, password=password)
-    except Exception as exc:
-        logger.debug(f"Authentication failed for username: {username}:{exc}")
 
-    if not user and not User.objects.filter(username__iexact=username).exists():
-        user, provisioned = UserManager().auto_provision_user(username=username)
-        if provisioned:
-            logger.debug(f"user {username} was automatically provisioned")
-        if user and user.i_user.check_password(password):
+    _clear_jwt_cookies(request)
+
+    user = authenticate(request, username=username, password=password)
+    if user:
+        return user
+
+    if not User.objects.filter(username__iexact=username).exists():
+        user = _try_auto_provision(username, password)
+        if user:
             return user
-        else:
-            logger.debug(f"Authentication failed for username: {username}")
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
-    return user
+
+    logger.debug(f"Authentication failed for username: {username}")
+    raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
 
 
 def check_user_unique_email(user_email):
