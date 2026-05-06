@@ -137,10 +137,10 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         with transaction.atomic():
             super().run(result)
             
-    def _instance_to_gql_input(self, instance, gql_input_class, exclude=None):
-        if exclude is None:
-            exclude = []
-        return {to_camel_case(k): str(p) for k,p in instance.__dict__.items() if hasattr(gql_input_class, k) and p and k not in exclude}
+    def _instance_to_gql_input(self, instance, gql_input_class, map_mutation_field=None):
+        if map_mutation_field is None:
+            map_mutation_field = {}
+        return {to_camel_case(map_mutation_field.get(k,k)): str(p) for k,p in instance.__dict__.items() if hasattr(gql_input_class, (map_mutation_field.get(k,k))) and p}
     
 
 

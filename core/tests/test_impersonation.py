@@ -1,4 +1,5 @@
 import json
+import uuid
 from django.test import TestCase
 from graphene_django.utils.testing import GraphQLTestCase
 from graphql_jwt.shortcuts import get_token
@@ -21,10 +22,10 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         # Create read-only role for users and roles
         read_role = create_test_role(perm_names=["gql_query_users_perms", "gql_query_roles_perms"], name="ReadOnlyUserRole")
         # Create regular user with read-only role
-        self.regular_user = create_test_interactive_user(username="regular", email="regular@test.com", password="password", roles=[read_role.id])
+        self.regular_user = create_test_interactive_user(username="regular", password="password", roles=[read_role.id], custom_props={'email':"regular@test.com"})
         self.regular_interactive = self.regular_user.i_user
         # Create user without rights
-        self.no_rights_user = create_test_interactive_user(username="no_rights", email="no_rights@test.com", password="password", roles=[])
+        self.no_rights_user = create_test_interactive_user(username="no_rights", password="password", roles=[], custom_props={'email':"no_rights@test.com"})
         self.no_rights_interactive = self.no_rights_user.i_user
         # Invalid UUID
         self.invalid_uuid = "00000000-0000-0000-0000-000000000000"
@@ -53,18 +54,23 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, ['password']),
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, ['password']),
+                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_", "id":"_exclude_", "uuid": "i_user_id"}),
+                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {"id": "uuid", 'password':"_exclude_"}),
                 "lastName": "update",
-                "clientMutationId": "test"
+                "clientMutationId": str(uuid.uuid4()),
+                "userTypes": "INTERACTIVE"
             }
         }
         # First, without impersonation, superadmin can do it
         response = self.query(
-            mutation,
+            query,
             variables=variables,
             headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
         )
+        result = self.get_mutation_result(
+            variables['input']["clientMutationId"], token
+        )
+        self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 2)
         self.assertResponseNoErrors(response)
         # Now, impersonate no_rights_user, who doesn't have the right, so should fail
         response = self.query(
@@ -75,8 +81,12 @@ class ImpersonationTest(openIMISGraphQLTestCase):
                 "HTTP_X_IMPERSONATE_USER": str(self.no_rights_user.uuid)
             }
         )
-        # Should have errors, permission denied
-        self.assertTrue(response.json().get("errors"))
+
+        result = self.get_mutation_result(
+            variables['input']["clientMutationId"], token
+        )
+                # Should have errors, permission denied
+        self.assertTrue(result.json().get("errors"))
 
     def test_invalid_impersonation_uuid(self):
         token = get_token(self.superadmin)
@@ -91,10 +101,12 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, ['password']),
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, ['password']),
+                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
+                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
                 "lastName": "update",
-                "clientMutationId": "test2"
+                "clientMutationId": str(uuid.uuid4()),
+                "userTypes": "INTERACTIVE",
+                
                 
             }
         }
@@ -107,7 +119,11 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             }
         )
         # Should have auth error
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
+        result = self.get_mutation_result(
+            variables['input']["clientMutationId"], token
+        )
+        self.assertTrue(result.json().get("errors"))
 
     def test_non_superuser_impersonation(self):
         token = get_token(self.regular_user)
@@ -121,10 +137,11 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, ['password']),
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, ['password']),
+                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
+                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
                 "lastName": "update",
-                "clientMutationId": "test3"
+                "clientMutationId": str(uuid.uuid4()),
+                "userTypes": "INTERACTIVE"
             }
         }
 
@@ -137,4 +154,8 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             }
         )
         # Should have auth error
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
+        result = self.get_mutation_result(
+            variables['input']["clientMutationId"], token
+        )
+        self.assertTrue(result.json().get("errors"))
