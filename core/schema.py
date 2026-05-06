@@ -1709,7 +1709,7 @@ class UserBase:
     # Enrolment Officer / Feedback / Claim Admin specific
     birth_date = graphene.Date(required=False)
     address = graphene.String(required=False)  # multi-line
-    works_to = graphene.DateTime(required=False)
+    works_to = graphene.Date(required=False)
     substitution_officer_id = graphene.Int(required=False)
     # TODO VEO_code, last_name, other names, dob, phone
     phone_communication = graphene.Boolean(required=False)
