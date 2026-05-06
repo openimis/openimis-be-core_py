@@ -957,9 +957,7 @@ class Query(graphene.ObjectType):
     def resolve_validate_username(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
-        if User.objects.filter(
-            username=kwargs["username"], validity_to__isnull=True
-        ).exists():
+        if User.objects.filter(username=kwargs["username"]).exists():
             return False
         else:
             return True
