@@ -1963,7 +1963,8 @@ def update_or_create_user(data, user):
         i_user=i_user,
         officer=officer,
         claim_admin=claim_admin,
-        user=user
+        user=user,
+        silent=True
     )
 
     if client_mutation_id:

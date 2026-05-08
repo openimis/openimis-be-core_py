@@ -74,7 +74,7 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
             self.save(*args, **kwargs)
         return self
 
-    def save(self, *args, user=None, **kwargs):
+    def save(self, *args, user=None, silent=False, **kwargs):
         # get the user data so as to assign later his uuid id in fields
         if user:
             self._history_user = user
@@ -99,6 +99,10 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
             result = super().save(*args, **kwargs)
             self.update_cache()
             return result
+        elif not silent:
+            raise ValidationError(
+                "Record has not be updated - there are no changes in fields"
+            )
         return None
 
     def delete_history(self):

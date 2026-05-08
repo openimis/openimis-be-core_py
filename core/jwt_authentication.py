@@ -1,9 +1,12 @@
 from rest_framework.authentication import BaseAuthentication
+from graphql.error import GraphQLError
+from django.core.exceptions import PermissionDenied
 from rest_framework.exceptions import Throttled
 from rest_framework import exceptions
 from graphql_jwt.utils import get_credentials
 from graphql_jwt.exceptions import JSONWebTokenError
 from graphql_jwt.shortcuts import get_user_by_token
+from graphql_jwt.backends import JSONWebTokenBackend as BaseJSONWebTokenBackend
 from core.apps import CoreConfig
 from core.utils import set_current_user
 from django.conf import settings
@@ -64,3 +67,7 @@ class JWTAuthentication(BaseAuthentication):
             increment=True,
         ):
             raise Throttled(detail="Rate limit exceeded")
+
+
+
+         

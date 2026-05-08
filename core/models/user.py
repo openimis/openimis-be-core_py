@@ -25,7 +25,7 @@ from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
-from rest_framework import exceptions
+from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.contenttypes.models import ContentType
 
 logger = logging.getLogger(__name__)
@@ -87,12 +87,12 @@ class UserManager(BaseUserManager, CachedManager):
         # only auto-provision django user if registered as interactive user
         username = kwargs.get("username", kwargs.get("login_name", None))
         if not username:
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+            raise AuthenticationFailed("INCORRECT_CREDENTIALS")
         i_user = InteractiveUser.objects.filter(
             login_name__iexact=username, *InteractiveUser.filter_validity()
         ).first()
         if not i_user:
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+            raise AuthenticationFailed("INCORRECT_CREDENTIALS")
         kwargs["i_user"] = i_user
         user = self._create_core_user(**kwargs)
         if core.auto_provisioning_user_group:
@@ -682,7 +682,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     USE_CACHE = not settings.IS_TESTING
     objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
-    # is_superuser = models.BooleanField(default=False)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True
     )
@@ -822,10 +821,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     @property
     def is_staff(self):
         return self._u.is_staff
-
-    @property
-    def is_superuser(self):
-        return self._u.is_superuser
 
     @property
     def is_imis_admin(self):

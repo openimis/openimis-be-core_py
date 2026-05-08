@@ -4,7 +4,7 @@ from gettext import gettext as _
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import  ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
@@ -15,7 +15,7 @@ from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
 )
 from django.contrib.auth import authenticate
-from rest_framework import exceptions
+from rest_framework.exceptions import AuthenticationFailed, ParseError
 from django.db.models import Q
 
 logger = logging.getLogger(__file__)
@@ -220,7 +220,7 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
 
 
 def create_or_update_core_user(
-    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None
+    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None, silent=False
 ):
     if user_uuid:
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
@@ -246,8 +246,7 @@ def create_or_update_core_user(
         user.officer = officer
     if claim_admin:
         user.claim_admin = claim_admin
-    if user.is_dirty(check_relationship=True):
-        user.save()
+    user.save(silent=silent)
     return user, created
 
 
@@ -256,7 +255,7 @@ def change_user_password(
 ):
     if username_to_update and username_to_update != logged_user.username:
         if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
-            raise PermissionDenied("unauthorized")
+            raise AuthenticationFailed("unauthorized")
         user_to_update = User.objects.get(username=username_to_update)
     else:
         user_to_update = logged_user
@@ -299,7 +298,7 @@ def _try_auto_provision(username, password):
 
 def user_authentication(request, username, password):
     if not username or not password:
-        raise exceptions.ParseError(_("Missing username or password"))
+        raise ParseError(_("Missing username or password"))
 
     _clear_jwt_cookies(request)
 
@@ -313,7 +312,7 @@ def user_authentication(request, username, password):
             return user
 
     logger.debug(f"Authentication failed for username: {username}")
-    raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+    raise AuthenticationFailed("INCORRECT_CREDENTIALS")
 
 
 def check_user_unique_email(user_email):

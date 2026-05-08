@@ -195,12 +195,17 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
             content = json.loads(response.content)
             if "data" in content:
                 if "mutationLogs" in content["data"]:
+                    
                     if "edges" in content["data"]["mutationLogs"]:
+                        if  content["data"]["mutationLogs"]['edges'] == []:
+                            raise ValueError("no mutation found")
+                        if  len(content["data"]["mutationLogs"]['edges'])>1:
+                            raise ValueError("several mutation found")
                         for e in content["data"]["mutationLogs"]["edges"]:
                             if "node" in e:
                                 e = e["node"]
                                 if e and "status" in e and e["status"] != 0:
-                                    self._assert_mutationEdge_no_error(e)
+                                    self._assert_mutationEdge_no_error(e, allow_exceptions)
                                     return content
                 else:
                     if allow_exceptions:
@@ -218,20 +223,23 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         if self._assert_mutationEdge_no_error(content):
             return None
 
-    def _assert_mutationEdge_no_error(self, e):
+    def _assert_mutationEdge_no_error(self, e, allow_exceptions=True):
 
         if "error" in e and e["error"]:
-            raise ValueError(
-                f"At least one edge of the mutation has error: {e['error']}"
-            )
+            if allow_exceptions:
+                raise ValueError(
+                    f"At least one edge of the mutation has error: {e['error']}"
+                )
             return False
         elif "errors" in e and e["errors"]:
-            raise ValueError(
-                f"At least one edge of the mutation has error: {e['errors']}"
-            )
+            if allow_exceptions:
+                raise ValueError(
+                    f"At least one edge of the mutation has error: {e['errors']}"
+                )
             return False
         elif "status" in e and e["status"] == 1:
-            raise ValueError("Mutation failed with status 1")
+            if allow_exceptions:
+                raise ValueError("Mutation failed with status 1")
             return False
         return True
 

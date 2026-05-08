@@ -40,6 +40,14 @@ class UUIDModel(models.Model):
 
     def __str__(self):
         return "[%s]" % (self.id,)
+    
+    @property
+    def uuid(self):
+        return self.id
+
+    @uuid.setter
+    def uuid(self, value):
+        self.id = value
 
 
 class ModuleConfiguration(UUIDModel):
