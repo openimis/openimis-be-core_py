@@ -74,7 +74,7 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
             self.save(*args, **kwargs)
         return self
 
-    def save(self, *args, user=None, **kwargs):
+    def save(self, *args, user=None, silent=False, **kwargs):
         original_user = get_original_user()
         if original_user:
             user = original_user
@@ -102,7 +102,7 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
             result = super().save(*args, **kwargs)
             self.update_cache()
             return result
-        else:
+        elif not silent:
             raise ValidationError(
                 "Record has not be updated - there are no changes in fields"
             )

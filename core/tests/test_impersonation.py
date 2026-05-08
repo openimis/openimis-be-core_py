@@ -31,19 +31,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         self.invalid_uuid = "00000000-0000-0000-0000-000000000000"
 
     def test_impersonation_success(self):
-        # Superadmin impersonates regular user to update their own profile or something
-        # But since regular user may not have rights, but the task is to test invalid impersonation
-        # Perhaps the mutation is to update another user
-        # For simplicity, use a mutation that requires permission, like updating a user
-        # Assume the mutation is createOrUpdateInteractiveUser
         token = get_token(self.superadmin)
-        # Impersonate regular user, but since regular user may not have rights, but the test is for invalid
-        # The task: "using a { 'X-Impersonate-User': uuid } that does not have such right"
-        # So, impersonate a user that doesn't have the right for the mutation
-        # So, the mutation should fail because the impersonated user doesn't have the right
-        # For success, perhaps impersonate a user that does have the right, but since it's superadmin, it's to test the mechanism
-        # But the test is for failure case
-        # So, test that when impersonating a user without rights, the mutation fails
         query = """
             mutation ($input: UpdateUserMutationInput!) {
             updateUser(input: $input) {
@@ -72,21 +60,23 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         )
         self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 2)
         self.assertResponseNoErrors(response)
+        variables['input']["lastName"]="update1"
+        variables['input']["clientMutationId"] = str(uuid.uuid4())
         # Now, impersonate no_rights_user, who doesn't have the right, so should fail
         response = self.query(
             query,
             variables=variables,
             headers={
                 "HTTP_AUTHORIZATION": f"Bearer {token}",
-                "HTTP_X_IMPERSONATE_USER": str(self.no_rights_user.uuid)
+                "HTTP_X_IMPERSONATE_USER": str(self.no_rights_user.id)
             }
         )
 
         result = self.get_mutation_result(
-            variables['input']["clientMutationId"], token
+            variables['input']["clientMutationId"], token, allow_exceptions=False
         )
-                # Should have errors, permission denied
-        self.assertTrue(result.json().get("errors"))
+        # Should have errors, permission denied
+        self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 1, result['data']['mutationLogs']['edges'][0]['node']['error'])
 
     def test_invalid_impersonation_uuid(self):
         token = get_token(self.superadmin)
@@ -103,11 +93,9 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             "input": {
                 **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
                 **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
-                "lastName": "update",
+                "lastName": "update2",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": "INTERACTIVE",
-                
-                
             }
         }
         response = self.query(
@@ -119,11 +107,12 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             }
         )
         # Should have auth error
-        self.assertEqual(response.status_code, 200)
         result = self.get_mutation_result(
-            variables['input']["clientMutationId"], token
+            variables['input']["clientMutationId"], token, allow_exceptions=False
         )
-        self.assertTrue(result.json().get("errors"))
+        # Should have errors, permission denied
+        self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 1, result['data']['mutationLogs']['edges'][0]['node']['error'])
+
 
     def test_non_superuser_impersonation(self):
         token = get_token(self.regular_user)
@@ -139,7 +128,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             "input": {
                 **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
                 **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
-                "lastName": "update",
+                "lastName": "update3",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": "INTERACTIVE"
             }
@@ -154,8 +143,52 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             }
         )
         # Should have auth error
-        self.assertEqual(response.status_code, 200)
         result = self.get_mutation_result(
-            variables['input']["clientMutationId"], token
+            variables['input']["clientMutationId"], token, allow_exceptions=False
         )
-        self.assertTrue(result.json().get("errors"))
+        # Should have errors, permission denied
+        self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 1, result['data']['mutationLogs']['edges'][0]['node']['error'])
+
+
+    def test_subsequent_calls_no_leakage(self):
+        """Tests that after an impersonated call, a subsequent call without the header uses the original user (verifies ClearUserContextMiddleware + shared utility)."""
+        token = get_token(self.superadmin)
+        query = """
+            mutation ($input: UpdateUserMutationInput!) {
+            updateUser(input: $input) {
+                clientMutationId
+                internalId
+            }
+        }
+        """
+        variables = {
+            "input": {
+                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_", "id":"_exclude_", "uuid": "i_user_id"}),
+                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {"id": "uuid", 'password':"_exclude_"}),
+                "lastName": "update4",
+                "clientMutationId": str(uuid.uuid4()),
+                "userTypes": "INTERACTIVE"
+            }
+        }
+        # First: impersonate no_rights_user -> should fail (status 1)
+        response1 = self.query(
+            query,
+            variables=variables,
+            headers={
+                "HTTP_AUTHORIZATION": f"Bearer {token}",
+                "HTTP_X_IMPERSONATE_USER": str(self.no_rights_user.uuid)
+            }
+        )
+        self.assertResponseHasErrors(response)
+
+        # Subsequent call WITHOUT impersonate header -> should succeed as superadmin (status 2, no leakage)
+        variables["input"]["clientMutationId"] = str(uuid.uuid4())
+        variables["input"]["lastName"] = "update5"
+        response2 = self.query(
+            query,
+            variables=variables,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
+        )
+        result2 = self.get_mutation_result(variables['input']["clientMutationId"], token)
+        self.assertEqual(result2['data']['mutationLogs']['edges'][0]['node']['status'], 2)
+        self.assertResponseNoErrors(response2)

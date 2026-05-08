@@ -6,14 +6,16 @@ from core.test_helpers import create_test_interactive_user
 
 
 class CurrentUserAPITestCase(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.url = reverse(
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.client = APIClient()
+        cls.url = reverse(
             "user-current-user"
         )  # This matches the DRF default naming for actions
 
         # Create a test user
-        self.user = create_test_interactive_user()
+        cls.user = create_test_interactive_user()
 
     def test_get_current_user(self):
         # Authenticate the user

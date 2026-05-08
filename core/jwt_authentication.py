@@ -1,19 +1,20 @@
 from rest_framework.authentication import BaseAuthentication
+from graphql.error import GraphQLError
+from django.core.exceptions import PermissionDenied
 from rest_framework.exceptions import Throttled
 from rest_framework import exceptions
 from graphql_jwt.utils import get_credentials
 from graphql_jwt.exceptions import JSONWebTokenError
 from graphql_jwt.shortcuts import get_user_by_token
+from graphql_jwt.backends import JSONWebTokenBackend as BaseJSONWebTokenBackend
 from core.apps import CoreConfig
-from core.utils import set_current_user, set_original_user
-from core.models import User
+from core.utils import handle_impersonation
 from django.conf import settings
 from django_ratelimit.core import is_ratelimited
 
 from datetime import date
 import jwt
 import logging
-import uuid
 
 logger = logging.getLogger(__file__)
 
@@ -35,6 +36,9 @@ class JWTAuthentication(BaseAuthentication):
                 raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS") from exc
             except Exception as exc:
                 raise exceptions.AuthenticationFailed(str(exc)) from exc
+            except PermissionDenied as exc:
+                raise exceptions.AuthenticationFailed(str(exc)) from exc
+            
             else:
                 if CoreConfig.is_valid_health_facility_contract_required:
                     if not (
@@ -44,25 +48,10 @@ class JWTAuthentication(BaseAuthentication):
                     ):
                         raise exceptions.AuthenticationFailed("HF_CONTRACT_INVALID")
 
-            # Handle impersonation
-            impersonate_uuid = request.META.get('HTTP_X_IMPERSONATE_USER')
-            if impersonate_uuid:
-                if not user.is_superuser:
-                    raise exceptions.AuthenticationFailed("Impersonation requires superuser privileges")
-                try:
-                    target_uuid = uuid.UUID(impersonate_uuid)
-                    #target_user = User.objects.get(uuid=target_uuid, is_active=True)
-                    target_user = User.objects.get(id=target_uuid, i_user__isnull=False)
-                except (ValueError, User.DoesNotExist):
-                    raise exceptions.AuthenticationFailed("Invalid impersonation target")
-                set_original_user(user)
-                set_current_user(target_user)
-                logger.info(f"Superuser {user.username} impersonating {target_user.username}")
-                return target_user, None
-            else:
-                set_original_user(None)
-                set_current_user(user)
-                return user, None
+            # Use shared utility for impersonation handling (ensures clearing and setting
+            # of thread locals on every call, fixing the subsequent calls bug)
+            effective_user = handle_impersonation(request, user)
+            return effective_user, None
 
     def enforce_csrf(self, request):
         return  # To not perform the csrf during checking auth header
@@ -84,3 +73,42 @@ class JWTAuthentication(BaseAuthentication):
             increment=True,
         ):
             raise Throttled(detail="Rate limit exceeded")
+
+
+class JSONWebTokenBackend(BaseJSONWebTokenBackend):
+    """
+    Custom backend extending graphql_jwt one to call the shared handle_impersonation utility.
+    This ensures impersonation logic runs for GraphQL paths (where JSONWebTokenBackend is used by the middleware).
+    Handles the cache and subsequent calls via the utility + ClearUserContextMiddleware.
+    """
+    def authenticate(self, request=None, **kwargs):
+        try:
+            user = super().authenticate(request=request, **kwargs)
+            if user is None or request is None:
+                # for login request
+                return None
+        # handle_impersonation will check header, validate, set locals (original/current), and return effective user
+        # This addresses recursion notes by using the request from context
+            return handle_impersonation(request, user)
+        except exceptions.AuthenticationFailed as e:
+            raise GraphQLError(
+                "INCORRECT_CREDENTIALS",
+                extensions={"code": "UNAUTHENTICATED", "message":str(e)}
+            )
+        except Throttled as e:
+            raise GraphQLError(
+                "TOO_MANY_REQUEST",
+                extensions={
+                    "code": "THROTTLED",
+                    "rate": settings.RATELIMIT_RATE,
+                }
+            )
+        except PermissionDenied as e:    
+            raise GraphQLError(
+                "NO_PERMISSION",
+                extensions={"code": "FORBIDDEN", "message":str(e)}
+            )
+            
+
+
+         
