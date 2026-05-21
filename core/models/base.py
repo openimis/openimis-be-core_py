@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import logging
@@ -7,8 +8,11 @@ import uuid
 from datetime import datetime as py_datetime
 import datetime as base_datetime
 from cached_property import cached_property
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.db.models import Q, JSONField
+
+from core.module_config_registry import validate_module_configuration, reload_module_configuration
 
 # from core.datetimes.ad_datetime import datetime as py_datetime
 
@@ -59,11 +63,12 @@ class ModuleConfiguration(UUIDModel):
 
     @classmethod
     def get_or_default(cls, module, default, layer="be"):
+        defaults = copy.deepcopy(default)
         if bool(os.environ.get("NO_DATABASE", False)):
             logger.info(
                 "env NO_DATABASE set to True: ModuleConfiguration not loaded from db!"
             )
-            return default
+            return defaults
 
         try:
             now = py_datetime.now()  # can't use core config here...
@@ -74,22 +79,37 @@ class ModuleConfiguration(UUIDModel):
             ).first()
             if qs:
                 db_configuration = qs._cfg
-                return {**default, **db_configuration}
+                return {**defaults, **db_configuration}
             else:
                 logger.info("No %s configuration, using default!" % module)
-                return default
+                return defaults
         except Exception:
             logger.error(
                 "Failed to load %s configuration, using default!\n%s: %s"
                 % (module, sys.exc_info()[0].__name__, sys.exc_info()[1])
             )
-            return default
+            return defaults
 
     @cached_property
     def _cfg(self):
         import collections
 
         return json.loads(self.config, object_pairs_hook=collections.OrderedDict)
+
+    def clean(self):
+        super().clean()
+
+        try:
+            self._cfg
+        except (TypeError, json.JSONDecodeError) as e:
+            raise ValidationError({"config": f"Invalid JSON: {e}"})
+
+        validate_module_configuration(self)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+        transaction.on_commit(lambda: reload_module_configuration(self))
 
     def __str__(self):
         return "%s [%s]" % (self.module, self.version)

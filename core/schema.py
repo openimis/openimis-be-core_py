@@ -99,10 +99,15 @@ from django.apps import apps
 MAX_SMALLINT = 32767
 MIN_SMALLINT = -32768
 WEBAPP_EXPECTED_REQUESTED_WITH = "webapp"
+DEFAULT_ROWS_PER_PAGE_JSON_EXT_KEY = "default_rows_per_page"
 
 core = sys.modules["core"]
 
 logger = logging.getLogger(__name__)
+
+
+def validate_default_rows_per_page(value):
+    return
 
 
 class SmallInt(graphene.Int):
@@ -1705,6 +1710,7 @@ class UserBase:
         required=False,
         description="List of role_ids, required for interactive users",
     )
+    default_rows_per_page = graphene.Int(required=False)
 
     # Enrolment Officer / Feedback / Claim Admin specific
     birth_date = graphene.Date(required=False)
@@ -1847,6 +1853,33 @@ class ChangeUserLanguageMutation(OpenIMISMutation):
             ]
 
 
+class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
+    """
+    Update default rows per page for the currently authenticated user.
+    """
+
+    _mutation_module = "core"
+    _mutation_class = "ChangeUserDefaultRowsPerPageMutation"
+
+    class Input(OpenIMISMutation.Input):
+        default_rows_per_page = graphene.Int(required=False)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise PermissionDenied(_("mutation.authentication_required"))
+            change_user_default_rows_per_page(user, data.get("default_rows_per_page"))
+            return None
+        except Exception as exc:
+            return [
+                {
+                    "message": "core.mutation.failed_to_update_default_rows_per_page",
+                    "detail": str(exc),
+                }
+            ]
+
+
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
@@ -1888,6 +1921,9 @@ def update_or_create_user(data, user):
         data.pop("client_mutation_id")
     if "client_mutation_label" in data:
         data.pop("client_mutation_label")
+
+    if "default_rows_per_page" in data:
+        validate_default_rows_per_page(data["default_rows_per_page"])
 
     if UT_INTERACTIVE in data["user_types"]:
         i_user, i_user_created = create_or_update_interactive_user(
@@ -1997,6 +2033,21 @@ def change_user_language(user, language_id):
             str(exc),
         )
         raise
+
+
+def change_user_default_rows_per_page(user, default_rows_per_page):
+    updated_user = InteractiveUser.objects.filter(
+        user__id=user.id, *InteractiveUser.filter_validity()
+    ).first()
+    if not updated_user:
+        raise ValidationError("No interactive user found")
+
+    validate_default_rows_per_page(default_rows_per_page)
+    json_ext = updated_user.json_ext if isinstance(updated_user.json_ext, dict) else {}
+    json_ext[DEFAULT_ROWS_PER_PAGE_JSON_EXT_KEY] = default_rows_per_page
+    updated_user.json_ext = json_ext
+
+    updated_user.save(user=user)
 
 
 class ChangePasswordMutation(graphene.relay.ClientIDMutation):
@@ -2151,6 +2202,7 @@ class Mutation(graphene.ObjectType):
     update_user = UpdateUserMutation.Field()
     delete_user = DeleteUserMutation.Field()
     change_user_language = ChangeUserLanguageMutation.Field()
+    change_user_default_rows_per_page = ChangeUserDefaultRowsPerPageMutation.Field()
 
     change_password = ChangePasswordMutation.Field()
     reset_password = ResetPasswordMutation.Field()

@@ -4,8 +4,11 @@ import datetime
 
 from django.test.client import RequestFactory
 from django.apps import apps
+from django.test import TestCase
+from rest_framework.exceptions import AuthenticationFailed, ParseError
+
 import core
-from core.models import Language
+from core.models import InteractiveUser, Language, User
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
@@ -13,14 +16,14 @@ from core.services import (
     create_or_update_claim_admin,
     reset_user_password,
     set_user_password,
+    user_authentication,
 )
-from django.test import TestCase
-from location.models import OfficerVillage
-from location.test_helpers import create_test_village, create_test_health_facility
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
 )
+from location.models import OfficerVillage
+from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
 PASSWORD = "FoBoar72!"
 
@@ -491,3 +494,56 @@ class UserServicesTest(TestCase):
         request = self.factory.get("/")
         with self.assertRaises(ValidationError):
             set_user_password(request, username, "TOKEN", "new_password")
+
+
+class UserAuthenticationTest(TestCase):
+    legacy_username = "legacy_user_test"
+    legacy_password = "Legacy123!"
+
+    def setUp(self):
+        super().setUp()
+        self.factory = RequestFactory()
+        language, _ = Language.objects.get_or_create(
+            code="en", defaults={"name": "English", "sort_order": 1}
+        )
+        self.legacy_i_user = InteractiveUser.objects.create(
+            login_name=self.legacy_username,
+            other_names="Legacy",
+            last_name="User",
+            language=language,
+        )
+        self.legacy_i_user.set_password(self.legacy_password)
+        self.legacy_i_user.save()
+
+    def test_missing_username_raises_parse_error(self):
+        request = self.factory.post("/")
+        with self.assertRaises(ParseError):
+            user_authentication(request, None, "password")
+
+        with self.assertRaises(ParseError):
+            user_authentication(request, "", "password")
+
+    def test_missing_password_raises_parse_error(self):
+        request = self.factory.post("/")
+        with self.assertRaises(ParseError):
+            user_authentication(request, "username", None)
+
+        with self.assertRaises(ParseError):
+            user_authentication(request, "username", "")
+
+    def test_auto_provision_creates_user_for_legacy_interactive_user(self):
+        self.assertFalse(User.objects.filter(username=self.legacy_username).exists())
+
+        request = self.factory.post("/")
+        user = user_authentication(request, self.legacy_username, self.legacy_password)
+
+        self.assertIsNotNone(user)
+        self.assertTrue(User.objects.filter(username=self.legacy_username).exists())
+        self.assertEqual(user.i_user.id, self.legacy_i_user.id)
+
+    def test_auto_provision_fails_with_wrong_password(self):
+        self.assertFalse(User.objects.filter(username=self.legacy_username).exists())
+
+        request = self.factory.post("/")
+        with self.assertRaises(AuthenticationFailed):
+            user_authentication(request, self.legacy_username, "wrong_password")

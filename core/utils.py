@@ -50,6 +50,7 @@ __all__ = [
     "ExtendedConnection",
     "get_scheduler_method_ref",
     "ExtendedRelayConnection",
+    "subtract_date_ranges",
 ]
 
 
@@ -1078,4 +1079,31 @@ def migrate_from_versioned_to_history(model_class, history_model_class):
 
     result = f"Migrated {migrated_count} records to history for {model_class.__name__}"
     logger.info(result)
+    return result
+
+
+def subtract_date_ranges(main_range, date_ranges):
+    from core import to_date
+
+    main_start = to_date(main_range[0])
+    main_end = to_date(main_range[1])
+    result = []
+    current = main_start
+
+    sorted_ranges = sorted(date_ranges, key=lambda x: to_date(x[0]))
+
+    for start, end in sorted_ranges:
+        start = to_date(start)
+        end = to_date(end)
+        if current < start:
+            result.append((current, min(start, main_end)))
+
+        current = max(current, end)
+
+        if current >= main_end:
+            break
+
+    if current < main_end:
+        result.append((current, main_end))
+
     return result

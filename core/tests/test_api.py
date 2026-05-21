@@ -34,6 +34,7 @@ class CurrentUserAPITest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Assert response contains user data, e.g., username or id
         self.assertEqual(response.data['username'], self.admin_user.username)
+        self.assertIn("default_rows_per_page", response.data["i_user"])
 
     def test_unauthenticated_get_current_user(self):
         url = '/api/core/users/current_user/'

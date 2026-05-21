@@ -242,10 +242,7 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
             result = super().save(*args, **kwargs)
             self.update_cache()
             return result
-        else:
-            raise ValidationError(
-                "Record has not be updated - there are no changes in fields"
-            )
+        return None
 
     def delete_history(self):
         pass

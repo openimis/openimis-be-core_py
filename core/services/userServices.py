@@ -33,9 +33,12 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
         "email": "email",
         "language": "language_id",
         "health_facility_id": "health_facility_id",
+
     }
     data_subset = {v: data.get(k) for k, v in i_fields.items()}
     data_subset["is_associated"] = connected
+    has_default_rows_per_page = "default_rows_per_page" in data
+    default_rows_per_page = data.get("default_rows_per_page", None)
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         i_user = InteractiveUser.objects.filter(
@@ -61,6 +64,10 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
             # No password provided for creation, will have to be set later.
             i_user.stored_password = CoreConfig.locked_user_password_hash
         created = True
+    if has_default_rows_per_page:
+        json_ext = i_user.json_ext if isinstance(i_user.json_ext, dict) else {}
+        json_ext["default_rows_per_page"] = default_rows_per_page
+        i_user.json_ext = json_ext
 
     i_user.save()
     create_or_update_user_roles(i_user, data["roles"], user_maker.id_for_audit)
@@ -239,7 +246,8 @@ def create_or_update_core_user(
         user.officer = officer
     if claim_admin:
         user.claim_admin = claim_admin
-    user.save()
+    if user.is_dirty(check_relationship=True):
+        user.save()
     return user, created
 
 
@@ -274,28 +282,38 @@ def set_user_password(request, username, token, password):
         raise ValidationError("Invalid Token")
 
 
+def _clear_jwt_cookies(request):
+    if hasattr(request, "COOKIES") and isinstance(request.COOKIES, dict):
+        request.COOKIES.pop("JWT", None)
+        request.COOKIES.pop("JWT-refresh-token", None)
+
+
+def _try_auto_provision(username, password):
+    user, provisioned = UserManager().auto_provision_user(username=username)
+    if provisioned:
+        logger.debug(f"User {username} was automatically provisioned")
+    if user and user.i_user.check_password(password):
+        return user
+    return None
+
+
 def user_authentication(request, username, password):
-    user = None
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
-    try:
-        if hasattr(request, "COOKIES") and isinstance(request.COOKIES, dict):
-            request.COOKIES.pop("JWT", None)
-            request.COOKIES.pop("JWT-refresh-token", None)
-        user = authenticate(request, username=username, password=password)
-    except Exception as exc:
-        logger.debug(f"Authentication failed for username: {username}:{exc}")
 
-    if not user and not User.objects.filter(username__iexact=username).exists():
-        user, provisioned = UserManager().auto_provision_user(username=username)
-        if provisioned:
-            logger.debug(f"user {username} was automatically provisioned")
-        if user and user.i_user.check_password(password):
+    _clear_jwt_cookies(request)
+
+    user = authenticate(request, username=username, password=password)
+    if user:
+        return user
+
+    if not User.objects.filter(username__iexact=username).exists():
+        user = _try_auto_provision(username, password)
+        if user:
             return user
-        else:
-            logger.debug(f"Authentication failed for username: {username}")
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
-    return user
+
+    logger.debug(f"Authentication failed for username: {username}")
+    raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
 
 
 def check_user_unique_email(user_email):
