@@ -27,6 +27,11 @@ from django.db import transaction
 import time
 import os
 
+try:
+    from simple_history.models import HistoricalRecords
+except Exception:
+    HistoricalRecords = None
+
 
 _request_local = threading.local()
 
@@ -65,6 +70,25 @@ def set_current_user(user):
 def clear_current_user():
     if hasattr(_request_local, "user"):
         del _request_local.user
+
+
+def clear_history_context():
+    """Clear simple-history request context to avoid stale user references
+    across tests/requests that can lead to history_user FK violations
+    referencing non-existent (rolled back) User rows.
+    """
+    if HistoricalRecords is not None:
+        try:
+            if hasattr(HistoricalRecords, "context") and hasattr(HistoricalRecords.context, "request"):
+                del HistoricalRecords.context.request
+        except Exception:
+            pass
+        # Also clear the backwards compat thread local if present
+        try:
+            if hasattr(HistoricalRecords, "thread") and hasattr(HistoricalRecords.thread, "request"):
+                del HistoricalRecords.thread.request
+        except Exception:
+            pass
 
 
 def handle_impersonation(request, user):

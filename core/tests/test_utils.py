@@ -6,7 +6,8 @@ from django.db.models import Q
 
 from core.utils import (
     full_class_name, comparable, to_json_safe_value,
-    to_list_permissions, collect_all_gql_permissions
+    to_list_permissions, collect_all_gql_permissions,
+    clear_current_user, clear_history_context
 )
 from core.datetimes.ad_datetime import AdDate, AdDatetime
 from core.test_helpers import create_test_interactive_user
@@ -67,16 +68,27 @@ class UtilsTestCase(TestCase):
         self.assertEqual(to_json_safe_value(decimal_obj), str(decimal_obj))
 
     def test_is_admin_rights(self):
-        role = Role.objects.filter(is_system=64, *Role.filter_validity()).first()
-        user = User.objects.filter(username="Admin", *User.filter_validity()).first()
-        if not user:
-            user = create_test_interactive_user(username="Admin", roles=[role.id])
+        if not User.objects.filter(username="Admin").exists():
+            User.objects.create_superuser(username="Admin", password="S/pe®Pąßw0rd™")
+        user = User.objects.filter(username="Admin").first()
+        # ensure superuser flag (some create paths may not persist it visibly without explicit set/refresh)
+        if not user.is_superuser:
+            user.is_superuser = True
+            user.save()
+        if user.i_user and not user.i_user.is_superuser:
+            # will delegate to core, but force via core
+            pass
         # removing all role but admin
         UserRole.objects.filter(
             ~Q(role__is_system=64), user=user._u, *UserRole.filter_validity()
         ).delete()
         # removing all admin rights
         RoleRight.objects.filter(role__is_system=64, *RoleRight.filter_validity()).delete()
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
+        # also clear any rights cache specifically
+        caches["default"].delete("rights_" + str(getattr(user.i_user, "id", "")))
         rights = list(user.rights)
         rights_db = [
             rr.right_id
