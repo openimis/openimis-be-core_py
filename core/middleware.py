@@ -9,7 +9,7 @@ from django.contrib.auth.models import AnonymousUser
 from graphql_jwt.middleware import JSONWebTokenMiddleware, _authenticate
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.utils import get_token_argument
-from core.utils import clear_current_user, clear_original_user
+from core.utils import clear_current_user, clear_original_user, clear_history_context
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class ClearUserContextMiddleware:
     def __call__(self, request):
         clear_current_user()
         clear_original_user()
+        clear_history_context()
         # Support for persistent impersonation state via session (to support
         # "subsequent calls" without header every time per user feedback)
         if (

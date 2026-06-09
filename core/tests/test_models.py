@@ -1,12 +1,23 @@
 from django.test import TestCase
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from core.models import User, TechnicalUser, InteractiveUser
 from core.models.user import Language
-from core.utils import get_cache_key
+from core.utils import get_cache_key, clear_current_user, clear_history_context
 from core.test_helpers import create_test_interactive_user, create_test_role
 
 
 class UserTestCase(TestCase):
+    def setUp(self):
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
+        super().setUp()
+
+    def tearDown(self):
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
+        super().tearDown()
 
     def test_t_user_active_status(self):
         always_valid = User(

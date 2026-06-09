@@ -22,6 +22,8 @@ from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
 )
+from core.utils import clear_current_user, clear_history_context
+from django.core.cache import caches
 from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
@@ -32,8 +34,11 @@ class UserServicesTest(TestCase):
     claim_admin_class = None
     @classmethod
     def setUpTestData(cls):
-        super(UserServicesTest, cls).setUp()
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
+        # (removed erroneous super call to TestCase.setUp)
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
         core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
         cls.claim_admin_class = apps.get_model("core", "ClaimAdmin")
@@ -254,6 +259,24 @@ class UserServicesTest(TestCase):
     def test_officer_max(self):
         username = "tstsvco2"
         village_ids = [self.test_village1.id, self.test_village2.id, self.test_village3.id]
+        # ensure a valid substitution officer exists (avoid FK violation on legacy officer table)
+        sub_officer, _ = create_or_update_officer(
+            user_id=None,
+            data=dict(
+                username="suboff1",  # short to satisfy legacy officer code/varchar(8) limits
+                last_name="Sub",
+                other_names="Officer",
+                dob="1990-01-01",
+                phone="+000",
+                email="sub@ex.com",
+                location_id=1,
+                village_ids=[self.test_village1.id],
+                substitution_officer_id=None,
+            ),
+            audit_user_id=999,
+            connected=False,
+        )
+        sub_officer.refresh_from_db()
         officer, created = create_or_update_officer(
             user_id=None,
             data=dict(
@@ -265,7 +288,7 @@ class UserServicesTest(TestCase):
                 email="imis@foo.be",
                 location_id=1,
                 village_ids=village_ids,
-                substitution_officer_id=1,
+                substitution_officer_id=sub_officer.id,
                 works_to="2025-01-01",
                 phone_communication=True,
                 address="Multi\nline\naddress",
@@ -283,7 +306,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(officer.has_login)
         self.assertTrue(officer.phone_communication)
         self.assertEqual(officer.location_id, 1)
-        self.assertEqual(officer.substitution_officer_id, 1)
+        self.assertEqual(officer.substitution_officer_id, sub_officer.id)
         self.assertEqual(officer.address, "Multi\nline\naddress")
         self.assertEqual(str(officer.works_to.date()), "2025-01-01")
         self.assertEqual(
@@ -329,7 +352,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(officer.has_login)
         self.assertTrue(officer.phone_communication)
         self.assertEqual(officer.location_id, 1)
-        self.assertIsNone(officer2.substitution_officer_id)
+        self.assertIsNone(officer.substitution_officer_id)
         self.assertEqual(officer.address, "Multi\nline\naddress")
         self.assertEqual(str(officer.works_to.date()), "2025-01-01")
         self.assertEqual(

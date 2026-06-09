@@ -1,15 +1,18 @@
-from django.test import TestCase
+from rest_framework.test import APITestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
 from rest_framework import status
 from core.test_helpers import create_test_interactive_user
 
 
-class CurrentUserAPITestCase(TestCase):
+class CurrentUserAPITestCase(APITestCase):
 
     @classmethod
     def setUpTestData(cls):
-        cls.client = APIClient()
+        from core.utils import clear_current_user, clear_history_context
+        from django.core.cache import caches
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
         cls.url = reverse(
             "user-current-user"
         )  # This matches the DRF default naming for actions
