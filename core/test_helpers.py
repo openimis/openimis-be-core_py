@@ -153,7 +153,7 @@ def create_test_interactive_user(
             if user_props:
                 for key, value in user_props.items():
                     setattr(user, key, value)
-                user.save()
+                user.save(silent=True)
     else:
         user = User.objects.filter(
             username=username, *User.filter_validity()
