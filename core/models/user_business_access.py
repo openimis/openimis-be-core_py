@@ -22,11 +22,17 @@ class UserBusinessAccess(OpenIMISBusinessModel):
         blank=True
     )
     content_object = GenericForeignKey('content_type', 'object_id')
-
+    link_type = models.CharField(
+        max_length=36,
+        null=False,
+        blank=True
+    )
     class Meta:
         verbose_name = "User Business Access"
         verbose_name_plural = "User Business Accesses"
         indexes = [
             models.Index(fields=['content_type', 'object_id']),
             models.Index(fields=['user', 'content_type', 'object_id']),
+            models.Index(fields=['user', 'link_type']),
+            models.Index(fields=['link_type', 'object_id']),
         ]
