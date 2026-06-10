@@ -14,7 +14,6 @@ from django.contrib.auth.models import (
 )
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
-from django.db.models import Q
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 import core
@@ -27,8 +26,7 @@ from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
-from django.contrib.contenttypes.models import ContentType
-from .user_business_access import UserBusinessAccess
+from core.access import evaluate_access_requirements, has_role_perms
 
 logger = logging.getLogger(__name__)
 
@@ -738,9 +736,11 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     Args:
         perm_list (list): A list of permission strings to check against the user's rights.
             If empty, the method will return True (no permissions required).
-        business_perm_list (dict, optional): A dictionary where keys are business objects
-            and values are lists of permissions required for those objects. Used for
-            fine-grained access control beyond standard permissions. Defaults to None.
+        access_requirements (list, optional): Business access fallback using the same
+            format as ``check_authentication``:
+            ``[['app_label.modelname', object_id]]`` or
+            ``[['app_label.modelname', object_id, [perm_ids...]]]``.
+            When standard permissions fail, any matching requirement grants access.
         list_evaluation_or (bool, optional): Determines how permissions in perm_list are evaluated.
             - If True: User must have at least one permission from perm_list (OR logic).
             - If False: User must have all permissions from perm_list (AND logic).
@@ -752,49 +752,20 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     Notes:
         - Superusers always have access (returns True).
         - If perm_list is empty or None, returns True.
-        - Business permission checking only occurs if standard permissions fail
-          and business_perm_list is provided.
-        - For each business object in business_perm_list, the method checks if the user
-          has the associated permissions and if they have active access to that object.
-        - If a ContentType for a business object cannot be found, an error is logged
-          and that object is skipped.
+        - Business access checking only occurs if standard permissions fail
+          and access_requirements is provided.
         - The method uses UserBusinessAccess to verify time-bound access to specific
           business objects.
-        - The recursive call to self.has_perms() in the business permission loop
-          may cause infinite recursion if not carefully managed.
-        - Missing 'or' operator in the initial has_perm assignment may cause
-          incorrect evaluation of permissions.
-        - The has_access check is performed but does not currently affect the return value.
     """
-    def has_perms(self, perm_list, obj=None, business_perm_list=None, list_evaluation_or=True):
-        has_perm = (
-            self.is_superuser
-            or not perm_list
-            or (not list_evaluation_or and all(self.has_perm(perm) for perm in perm_list))
-            or (list_evaluation_or and any(self.has_perm(perm) for perm in perm_list))
-        )
+    def has_perms(self, perm_list, obj=None, access_requirements=None, list_evaluation_or=True):
+        has_perm = has_role_perms(self, perm_list, list_evaluation_or=list_evaluation_or)
         # once we use django user super().has_perm(perm_list, obj)
-        if not has_perm and business_perm_list:
-            for business_object, bo_perm_list in business_perm_list.items():
-                if self.has_perms(bo_perm_list):
-                    now = py_datetime.now()
-                    content_type_label = business_object.__class__.__name__
-                    try:
-                        ct = ContentType.objects.filter(model__iexact=content_type_label).first()
-                    except ContentType.DoesNotExist:
-                        logger.error(f'Invalid content type: {content_type_label}')
-
-                    if UserBusinessAccess.objects.filter(
-                        user=self,
-                        content_type=ct,
-                        object_id=str(business_object.pk),
-                        active=True,
-                        date_valid_from__lte=now,
-                    ).filter(
-                        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now)
-                    ).exists():
-                        has_perm = True
-                        break
+        if not has_perm and access_requirements:
+            has_perm = evaluate_access_requirements(
+                self,
+                access_requirements,
+                match_all=False,
+            )
 
         return has_perm
 

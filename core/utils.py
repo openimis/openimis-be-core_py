@@ -70,6 +70,41 @@ def set_current_user(user):
 def clear_current_user():
     if hasattr(_request_local, "user"):
         del _request_local.user
+    clear_access_cache()
+
+
+def _get_thread_access_cache(name):
+    cache = getattr(_request_local, name, None)
+    if cache is None:
+        cache = {}
+        setattr(_request_local, name, cache)
+    return cache
+
+
+def is_authentication_checked():
+    return getattr(_request_local, "authentication_checked", False)
+
+
+def set_authentication_checked():
+    _request_local.authentication_checked = True
+
+
+def get_business_access_cache():
+    return _get_thread_access_cache("business_access_cache")
+
+
+def get_content_type_cache():
+    return _get_thread_access_cache("content_type_cache")
+
+
+def clear_access_cache():
+    for attr in ("authentication_checked", "business_access_cache", "content_type_cache"):
+        if hasattr(_request_local, attr):
+            delattr(_request_local, attr)
+
+
+def clear_authentication_cache():
+    clear_access_cache()
 
 
 def clear_history_context():

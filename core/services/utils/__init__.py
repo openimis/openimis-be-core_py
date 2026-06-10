@@ -1,8 +1,9 @@
 # flake8: noqa
-
-from core.services.utils.serviceUtils import (
+from core.decorators import (
     check_authentication,
     check_permissions,
+)
+from core.services.utils.serviceUtils import (
     model_representation,
     output_exception,
     output_result_success,

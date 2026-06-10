@@ -6,6 +6,7 @@ from core.models import Language
 from core.test_helpers import create_test_interactive_user, create_admin_role
 from location.models import Location
 import json
+import uuid
 
 
 class gqlTest(openIMISGraphQLTestCase):
@@ -106,17 +107,18 @@ class gqlTest(openIMISGraphQLTestCase):
         self.assertEqual(wrong_password_data["errors"][0]["message"], "INCORRECT_CREDENTIALS")
 
     def test_change_langue(self):
-        query = """
-            mutation {
+        query = f"""
+            mutation {{
             changeUserLanguage(
-                input: {clientMutationId: "b2a639a9-1a85-4643-bf84-69d05160c8ee",
+                input: {{clientMutationId: "{str(uuid.uuid4())}",
                 clientMutationLabel: "Change User Language",
-                languageId: "fr"}
-            ) {
+                languageId: "fr"}}
+            ) {{
                 clientMutationId
                 internalId
-            }
-            }
+            }}
+            }}
+
         """
         self.send_mutation_raw(query, self.admin_token)
 

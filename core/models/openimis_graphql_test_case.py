@@ -146,6 +146,11 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         }
 
     @classmethod
+    def get_jwt_token(cls, user, password=None, **kwargs):
+        context = BaseTestContext(user)
+        return context.get_jwt()
+
+    @classmethod
     def setUpClass(cls):
         clear_current_user()
         clear_history_context()

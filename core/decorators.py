@@ -1,56 +1,101 @@
 import functools
-from datetime import datetime
-from django.db.models import Q
-from django.http import JsonResponse
-from django.contrib.contenttypes.models import ContentType
-from .models import UserBusinessAccess
+
+from core.access import guard_user_access, is_http_request
 
 
-def check_authentication(access_requirements=None):
+def check_authentication(_func=None, *, user=None, access_requirements=None):
     """
-    Decorator to check user authentication and business access permissions.
+    Decorator to check user authentication and optional business access permissions.
 
-    Args:
-        access_requirements: Optional list of [content_type_label, object_id] pairs
-                           e.g. [['myapp.mymodel', some_uuid], ['otherapp.othermodel', other_id]]
+    User resolution order:
+      1. explicit ``user`` argument (instance, attribute name, or callable)
+      2. ``self.user`` on service instances (falls back to thread-local user)
+      3. ``get_current_user()`` thread-local fallback
+
+    ``access_requirements`` format:
+      - ``[content_type_label, object_id]``
+      - ``[content_type_label, object_id, [perm_ids...]]``
+      where ``content_type_label`` is ``app_label.modelname``.
+      All listed requirements must be satisfied.
 
     Usage:
-        @check_authentication()
-        def my_view(request): ...
+        @check_authentication
+        def create(self, obj_data): ...
 
         @check_authentication(access_requirements=[['myapp.mymodel', some_uuid]])
         def my_view(request): ...
+
+    Authentication is cached per thread for the duration of a request and cleared
+    at the next GraphQL/HTTP call by ClearUserContextMiddleware.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(request, *args, **kwargs):
-            # 1. Basic authentication check
-            if not getattr(request, 'user', None) or not request.user.is_authenticated:
-                return JsonResponse({'error': 'Authentication required'}, status=401)
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            for_view = bool(args) and is_http_request(args[0])
+            error = guard_user_access(
+                user_param=user,
+                args=args,
+                kwargs=kwargs,
+                for_view=for_view,
+                access_requirements=access_requirements,
+            )
+            if error:
+                return error
+            return fn(*args, **kwargs)
 
-            # 2. Business access check
-            if access_requirements:
-                now = datetime.now()
-                for content_type_label, object_id in access_requirements:
-                    app_label, model_name = content_type_label.rsplit('.', 1)
-                    try:
-                        ct = ContentType.objects.get(app_label=app_label, model=model_name.lower())
-                    except ContentType.DoesNotExist:
-                        return JsonResponse({'error': f'Invalid content type: {content_type_label}'}, status=400)
-
-                    has_access = UserBusinessAccess.objects.filter(
-                        user=request.user,
-                        content_type=ct,
-                        object_id=str(object_id),
-                        active=True,
-                        date_valid_from__lte=now,
-                    ).filter(
-                        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now)
-                    ).exists()
-
-                    if not has_access:
-                        return JsonResponse({'error': 'Forbidden'}, status=403)
-
-            return func(request, *args, **kwargs)
         return wrapper
+
+    if _func is not None:
+        return decorator(_func)
+    return decorator
+
+
+def check_permissions(
+    permissions,
+    _func=None,
+    *,
+    user=None,
+    access_requirements=None,
+    list_evaluation_or=True,
+):
+    """
+    Decorator to check role permissions via ``user.has_perms``.
+
+    Uses the same user resolution, thread-local auth cache, and
+    ``access_requirements`` format as ``check_authentication``.
+
+    When standard permissions fail, ``access_requirements`` is evaluated as a
+    fallback (any matching requirement grants access), matching ``user.has_perms``.
+
+    Usage:
+        @check_permissions(ContractConfig.gql_mutation_create_contract_perms)
+        def create(self, contract): ...
+
+        @check_permissions(
+            ContractConfig.gql_mutation_create_contract_perms,
+            access_requirements=[['policyholder.policyholder', policyholder_id]],
+        )
+        def create(self, contract): ...
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            for_view = bool(args) and is_http_request(args[0])
+            error = guard_user_access(
+                user_param=user,
+                args=args,
+                kwargs=kwargs,
+                for_view=for_view,
+                permissions=permissions,
+                access_requirements=access_requirements,
+                list_evaluation_or=list_evaluation_or,
+            )
+            if error:
+                return error
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    if _func is not None:
+        return decorator(_func)
     return decorator

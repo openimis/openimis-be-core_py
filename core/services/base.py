@@ -4,8 +4,8 @@ import asyncio
 from django.db import transaction
 
 from core.models import HistoryModel, MutationLog
+from core.decorators import check_authentication
 from core.services.utils import (
-    check_authentication as check_authentication,
     output_exception,
     model_representation,
     output_result_success,
