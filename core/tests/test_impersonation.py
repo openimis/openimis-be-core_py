@@ -21,6 +21,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         self.superadmin_token = self.superadmin_token_context.get_jwt()
         # Create read-only role for users and roles
         read_role = create_test_role(perm_names=["gql_query_users_perms", "gql_query_roles_perms"], name="ReadOnlyUserRole")
+        no_right = create_test_role(perm_names=[])
         # Create regular user with read-only role
         self.regular_user = create_test_interactive_user(
             username="regular",
@@ -35,7 +36,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         self.no_rights_user = create_test_interactive_user(
             username="no_rights",
             password="password",
-            roles=[],
+            roles=[no_right.id],
             custom_props={'email': "no_rights@test.com"}
         )
         self.no_rights_interactive = self.no_rights_user.i_user
@@ -131,16 +132,11 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             variables=variables,
             headers={
                 "HTTP_AUTHORIZATION": f"Bearer {token}",
-                "HTTP_X_IMPERSONATE_USER": self.invalid_uuid
+                "HTTP_X_IMPERSONATE_USER": str(uuid.uuid4())
             }
         )
         # Should have auth error at GraphQL level (impersonation denied before reaching mutation resolver / log)
         self.assertResponseHasErrors(response)
-        content = json.loads(response.content)
-        self.assertTrue(
-            "errors" in content
-            or (content.get("data") and any(e and "NO_PERMISSION" in str(e) for e in (content.get("data") or {}).values()))
-        )
 
     def test_non_superuser_impersonation(self):
         token = self.regular_token
