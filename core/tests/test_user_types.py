@@ -18,7 +18,7 @@ class UserTypesGraphQLTest(openIMISGraphQLTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.admin_user = create_test_interactive_user(username="ut_graphql_admin")
-        cls.admin_token = cls.get_jwt_token(cls.admin_user, cls.admin_password)
+        cls.admin_token = cls.get_jwt_token(cls.admin_user)
         cls.admin_username = cls.admin_user.username
 
     def test_users_query_returns_user_types(self):

@@ -1,46 +1,13 @@
 import json
 from typing import Union
 
-from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.forms.models import model_to_dict
-from core.utils import get_current_user
-
-
-def check_authentication(function):
-    def wrapper(self, *args, **kwargs):
-        if not self.user:
-            self.user = get_current_user()
-        if type(self.user) is AnonymousUser or (not self.user and not self.user.id):
-            return {
-                "success": False,
-                "message": "Authentication required",
-                "detail": "PermissionDenied",
-            }
-        else:
-            result = function(self, *args, **kwargs)
-            return result
-
-    return wrapper
-
-
-def check_permissions(permissions=None):
-    def decorator(function):
-        def wrapper(self, *args, **kwargs):
-            if not self.user.has_perms(permissions):
-                return {
-                    "success": False,
-                    "message": "Permissions required",
-                    "detail": "PermissionDenied",
-                }
-            else:
-                result = function(self, *args, **kwargs)
-                return result
-
-        return wrapper
-
-    return decorator
+from core.decorators import (  # noqa: F401
+    check_authentication,
+    check_permissions,
+)
 
 
 def model_representation(model):
