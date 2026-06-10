@@ -14,7 +14,7 @@ from core.models.user import User, InteractiveUser, Officer, UserRole, UserManag
 from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
 )
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 from django.db.models import Q
 
@@ -303,16 +303,16 @@ def user_authentication(request, username, password):
     _clear_jwt_cookies(request)
 
     user = authenticate(request, username=username, password=password)
-    if user:
-        return user
-
-    if not User.objects.filter(username__iexact=username).exists():
+    if not user and not User.objects.filter(username__iexact=username).exists():
         user = _try_auto_provision(username, password)
-        if user:
-            return user
 
-    logger.debug(f"Authentication failed for username: {username}")
-    raise AuthenticationFailed("INCORRECT_CREDENTIALS")
+    if not user:
+        logger.debug(f"Authentication failed for username: {username}")
+        raise AuthenticationFailed("INCORRECT_CREDENTIALS")
+
+    if getattr(user, "is_staff", False) and hasattr(request, "session"):
+        login(request, user)
+    return user
 
 
 def check_user_unique_email(user_email):
