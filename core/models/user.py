@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import uuid
 from datetime import timedelta, datetime as py_datetime
@@ -75,7 +76,8 @@ class UserManager(BaseUserManager, CachedManager):
         return user
 
     def create_superuser(self, username, password=None, email=None, **kwargs):
-        # extra_fields["is_staff"] = True
+        if password is None:
+            password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
         iuser = self._create_interactive_user(username, email, password, **kwargs)
         user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser=True)
         return user
