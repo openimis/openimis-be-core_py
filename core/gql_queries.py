@@ -116,6 +116,7 @@ class InteractiveUserGQLType(DjangoObjectType):
         RoleGQLType,
         description="Same as userRoles but a straight list, without the M-N relation",
     )
+    default_rows_per_page = graphene.Int()
 
     class Meta:
         model = InteractiveUser
@@ -163,6 +164,12 @@ class InteractiveUserGQLType(DjangoObjectType):
             return self.userdistrict_set.filter(*UserDistrict.filter_validity())
         else:
             return None
+
+    def resolve_default_rows_per_page(self, info, **kwargs):
+        if not isinstance(self.json_ext, dict):
+            return None
+        value = self.json_ext.get("default_rows_per_page")
+        return value
 
     @classmethod
     def get_queryset(cls, queryset, info):

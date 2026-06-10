@@ -106,6 +106,7 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
             raise ValidationError(
                 "Record has not be updated - there are no changes in fields"
             )
+        return None
 
     def delete_history(self):
         pass

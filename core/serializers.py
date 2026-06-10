@@ -24,9 +24,15 @@ class CachedModelSerializer(serializers.ModelSerializer):
 class InteractiveUserSerializer(serializers.ModelSerializer):
     language = serializers.PrimaryKeyRelatedField(many=False, read_only=True)
     has_password = serializers.SerializerMethodField()
+    default_rows_per_page = serializers.SerializerMethodField()
 
     def get_has_password(self, obj):
         return obj.stored_password != CoreConfig.locked_user_password_hash
+
+    def get_default_rows_per_page(self, obj):
+        if not isinstance(obj.json_ext, dict):
+            return None
+        return obj.json_ext.get("default_rows_per_page")
 
     class Meta:
         model = InteractiveUser
@@ -38,6 +44,7 @@ class InteractiveUserSerializer(serializers.ModelSerializer):
             "health_facility_id",
             "rights",
             "has_password",
+            "default_rows_per_page",
         )
 
 

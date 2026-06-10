@@ -1,6 +1,11 @@
 from django.test import TestCase
 from django.core.cache import cache, caches
+from unittest.mock import MagicMock
+
+from django.core.exceptions import ValidationError
+
 from core.models import User, TechnicalUser, InteractiveUser
+from core.models.history_model import HistoryModel
 from core.models.user import Language
 from core.utils import get_cache_key, clear_current_user, clear_history_context
 from core.test_helpers import create_test_interactive_user, create_test_role
@@ -213,3 +218,50 @@ class UserTestCase(TestCase):
             self.assertFalse(user.has_perms([right1, 999], list_evaluation_or=False))  # Missing one
         else:
             self.fail("User does not have enough rights for AND test")
+
+
+class SaveNoOpTestCase(TestCase):
+    """Re-saving an existing instance with no dirty fields must be a silent no-op:
+    no ValidationError, no version bump, no new history row.
+
+    Guards both base-class save() implementations:
+      - core.models.openimis_model.OpenIMISHistoryMixin.save (covered end-to-end via InteractiveUser)
+      - core.models.history_model.HistoryModel.save (covered via direct MagicMock invocation,
+        since core has no concrete HistoryBusinessModel subclass)
+    """
+
+    def test_openimis_model_save_is_noop_when_not_dirty(self):
+        cache.clear()
+        language, _ = Language.objects.get_or_create(
+            code="en", defaults={"name": "English", "sort_order": 1}
+        )
+        user = InteractiveUser.objects.create(
+            login_name="noop_save_user",
+            last_name="NoOp",
+            other_names="Test",
+            language=language,
+        )
+        baseline_version = user.version
+        baseline_history_count = user.history.count()
+
+        result = user.save(silent=True)
+
+        self.assertIsNone(result)
+        user.refresh_from_db()
+        self.assertEqual(user.version, baseline_version)
+        self.assertEqual(user.history.count(), baseline_history_count)
+
+    def test_history_model_save_is_noop_when_not_dirty(self):
+        instance = MagicMock()
+        instance.id = "existing-id"
+        instance.version = 7
+        instance.is_dirty.return_value = False
+
+        try:
+            result = HistoryModel.save(instance)
+        except ValidationError:
+            self.fail("HistoryModel.save should not raise on a no-op save")
+
+        self.assertIsNone(result)
+        self.assertEqual(instance.version, 7)
+        instance.is_dirty.assert_called_with(check_relationship=True)

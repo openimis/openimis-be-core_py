@@ -1,6 +1,6 @@
 from datetime import timedelta, date, datetime
 
-__all__ = ["is_midnight", "datetimedelta"]
+__all__ = ["is_midnight", "datetimedelta", "to_date"]
 
 
 def _cmperror(x, y):
@@ -17,6 +17,19 @@ def is_midnight(dt):
     if hasattr(dt, "microsecond") and dt.microsecond != 0:
         return False
     return True
+
+
+def to_date(d):
+    """Normalize any date-like value to a plain date, stripping any time component.
+
+    AdDate.to_ad_date() returns self; AdDatetime.to_ad_date() returns AdDate.
+    Plain datetime.datetime has .date(); plain datetime.date does not.
+    """
+    if hasattr(d, "to_ad_date"):
+        return d.to_ad_date()
+    if hasattr(d, "date") and callable(d.date):
+        return d.date()
+    return d
 
 
 def _cmp(x, y):

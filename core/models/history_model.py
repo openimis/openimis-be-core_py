@@ -200,7 +200,7 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
             self.save(*args, user=user, username=user, **kwargs)
         return self
 
-    def save(self, *args, user=None, username=None, **kwargs):
+    def save(self, *args, user=None, username=None, silent=True, **kwargs):
         # get the user data so as to assign later his uuid id in fields user_updated etc
         user = self.get_user(user=user, username=username)
         now = py_datetime.now()
@@ -241,7 +241,7 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
             result = super().save(*args, **kwargs)
             self.update_cache()
             return result
-        else:
+        elif not silent:
             raise ValidationError(
                 "Record has not be updated - there are no changes in fields"
             )

@@ -33,9 +33,12 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
         "email": "email",
         "language": "language_id",
         "health_facility_id": "health_facility_id",
+
     }
     data_subset = {v: data.get(k) for k, v in i_fields.items()}
     data_subset["is_associated"] = connected
+    has_default_rows_per_page = "default_rows_per_page" in data
+    default_rows_per_page = data.get("default_rows_per_page", None)
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         i_user = InteractiveUser.objects.filter(
@@ -61,6 +64,10 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
             # No password provided for creation, will have to be set later.
             i_user.stored_password = CoreConfig.locked_user_password_hash
         created = True
+    if has_default_rows_per_page:
+        json_ext = i_user.json_ext if isinstance(i_user.json_ext, dict) else {}
+        json_ext["default_rows_per_page"] = default_rows_per_page
+        i_user.json_ext = json_ext
 
     i_user.save()
     create_or_update_user_roles(i_user, data.get("roles", []), user_maker.id_for_audit)
