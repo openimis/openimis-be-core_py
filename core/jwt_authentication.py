@@ -67,7 +67,3 @@ class JWTAuthentication(BaseAuthentication):
             increment=True,
         ):
             raise Throttled(detail="Rate limit exceeded")
-
-
-
-         

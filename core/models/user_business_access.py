@@ -27,6 +27,7 @@ class UserBusinessAccess(OpenIMISBusinessModel):
         null=False,
         blank=True
     )
+
     class Meta:
         verbose_name = "User Business Access"
         verbose_name_plural = "User Business Accesses"

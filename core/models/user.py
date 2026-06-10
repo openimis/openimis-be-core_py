@@ -14,6 +14,7 @@ from django.contrib.auth.models import (
 )
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
+from django.db.models import Q
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 import core
@@ -27,6 +28,7 @@ from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , Op
 from core.utils import to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.contenttypes.models import ContentType
+from .user_business_access import UserBusinessAccess
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,6 @@ logger = logging.getLogger(__name__)
 class UserManager(BaseUserManager, CachedManager):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "username"}
     CACHED_FK = {"i_user"}
-
 
     def _auto_provisioning_user_group(self, user):
         group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
@@ -54,7 +55,7 @@ class UserManager(BaseUserManager, CachedManager):
         tech.set_password(password)
         tech.save()
         return tech
-    
+
     def _create_interactive_user(self, username, email, password, **extra_fields):
         if extra_fields is None:
             extra_fields = {}
@@ -66,22 +67,20 @@ class UserManager(BaseUserManager, CachedManager):
         iuser = InteractiveUser(login_name=username, email=email, **extra_fields)
         iuser.set_password(password)
         iuser.save()
-        return iuser    
+        return iuser
 
     def create_user(self, username, password, email=None, **kwargs):
-        #extra_fields.setdefault("is_staff", False)
-        #extra_fields["is_superuser"] = False
+        # extra_fields.setdefault("is_staff", False)
+        # extra_fields["is_superuser"] = False
         iuser = self._create_interactive_user(username, email, password, **kwargs)
         user, success = self.auto_provision_user(username=username, i_user=iuser)
         return user
 
     def create_superuser(self, username, password=None, email=None, **kwargs):
-        #extra_fields["is_staff"] = True
-        
+        # extra_fields["is_staff"] = True
         iuser = self._create_interactive_user(username, email, password, **kwargs)
-        user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser= True)
+        user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser=True)
         return user
-         
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user
@@ -753,50 +752,51 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     Notes:
         - Superusers always have access (returns True).
         - If perm_list is empty or None, returns True.
-        - Business permission checking only occurs if standard permissions fail 
+        - Business permission checking only occurs if standard permissions fail
           and business_perm_list is provided.
         - For each business object in business_perm_list, the method checks if the user
           has the associated permissions and if they have active access to that object.
         - If a ContentType for a business object cannot be found, an error is logged
           and that object is skipped.
-        - The method uses UserBusinessAccess to verify time-bound access to specific 
+        - The method uses UserBusinessAccess to verify time-bound access to specific
           business objects.
-        - The recursive call to self.has_perms() in the business permission loop 
+        - The recursive call to self.has_perms() in the business permission loop
           may cause infinite recursion if not carefully managed.
-        - Missing 'or' operator in the initial has_perm assignment may cause 
+        - Missing 'or' operator in the initial has_perm assignment may cause
           incorrect evaluation of permissions.
         - The has_access check is performed but does not currently affect the return value.
     """
-    def has_perms(self, perm_list, obj=None, business_perm_list=None, list_evaluation_or=True ):
+    def has_perms(self, perm_list, obj=None, business_perm_list=None, list_evaluation_or=True):
         has_perm = (
-            self.is_superuser or
-            not perm_list or
-            (not list_evaluation_or and all(self.has_perm(perm) for perm in perm_list)) or
-            (list_evaluation_or and any(self.has_perm(perm) for perm in perm_list))
+            self.is_superuser
+            or not perm_list
+            or (not list_evaluation_or and all(self.has_perm(perm) for perm in perm_list))
+            or (list_evaluation_or and any(self.has_perm(perm) for perm in perm_list))
         )
-        #  once we use django user super().has_perm(perm_list, obj)     
+        # once we use django user super().has_perm(perm_list, obj)
         if not has_perm and business_perm_list:
             for business_object, bo_perm_list in business_perm_list.items():
-                if self.has_perms(self, bo_perm_list):
-                    now = datetime.now()
-                    content_type_label = business_obj.__class__.__name__
+                if self.has_perms(bo_perm_list):
+                    now = py_datetime.now()
+                    content_type_label = business_object.__class__.__name__
                     try:
                         ct = ContentType.objects.filter(model__iexact=content_type_label).first()
                     except ContentType.DoesNotExist:
-                        logger.error(f'Invalid content type: {content_type_label}')     
+                        logger.error(f'Invalid content type: {content_type_label}')
 
-                    has_access = UserBusinessAccess.objects.filter(
+                    if UserBusinessAccess.objects.filter(
                         user=self,
                         content_type=ct,
-                        object_id=str(business_obj.pk),
+                        object_id=str(business_object.pk),
                         active=True,
                         date_valid_from__lte=now,
                     ).filter(
                         Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now)
-                    ).exists()
+                    ).exists():
+                        has_perm = True
+                        break
 
         return has_perm
-        
 
     @property
     def id_for_audit(self):

@@ -11,7 +11,7 @@ from core.utils import (
 )
 from core.datetimes.ad_datetime import AdDate, AdDatetime
 from core.test_helpers import create_test_interactive_user
-from core.models import User, RoleRight, UserRole, Role
+from core.models import User, RoleRight, UserRole
 from django.core.cache import caches
 
 

@@ -62,7 +62,7 @@ class UserTestCase(TestCase):
         )
 
         # Create test user for audit fields
-        test_user = User.objects.create(
+        User.objects.create(
             username="test_admin",
         )
 
@@ -146,8 +146,6 @@ class UserTestCase(TestCase):
                 f"User {user.login_name} should have {expected_history} historical records"
             )
 
-   
-
     def test_i_active_status(self):
         always_valid = User(
             username="always_valid", i_user=InteractiveUser(login_name="always_valid")
@@ -230,13 +228,11 @@ class SaveNoOpTestCase(TestCase):
         self.assertTrue(user.has_perms([]))  # Empty list passes
         # Cleanup
 
-
     def test_has_perms_empty_list(self):
         """Test has_perms with empty permission list"""
         user = create_test_interactive_user(username="regular_user_test")
         self.assertTrue(user.has_perms([]))  # Empty list always True
         # Cleanup
-
 
     def test_has_perms_or_logic(self):
         """Test has_perms with OR logic (default) and integer perms"""

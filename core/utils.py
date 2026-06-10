@@ -115,7 +115,7 @@ def handle_impersonation(request, user):
             set_current_user(target_user)
             logger.info(f"Superuser {user.username} impersonating {target_user.username}")
             return target_user
-        except (ValueError, User.DoesNotExist) as exc:
+        except (ValueError, User.DoesNotExist):
             raise PermissionDenied("Invalid impersonation target")
     else:
         set_original_user(None)

@@ -4,7 +4,7 @@ from gettext import gettext as _
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
-from django.core.exceptions import  ValidationError
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode

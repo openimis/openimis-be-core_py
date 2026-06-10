@@ -32,6 +32,7 @@ PASSWORD = "FoBoar72!"
 
 class UserServicesTest(TestCase):
     claim_admin_class = None
+
     @classmethod
     def setUpTestData(cls):
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
