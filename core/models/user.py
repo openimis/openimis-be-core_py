@@ -824,9 +824,11 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     @property
     def is_imis_admin(self):
+        if self.is_superuser:
+            return True
         # 64 is system number for IMIS Administrator
         user = self._u
-        if isinstance(user, InteractiveUser):
+        if user and isinstance(user, InteractiveUser):
             return user.is_imis_admin
         else:
             return False
