@@ -14,7 +14,7 @@ admin.site.register(Group, GroupAdmin)
 
 @admin.register(UserBusinessAccess)
 class UserBusinessAccessAdmin(admin.ModelAdmin):
-    list_display = ['user', 'content_type', 'object_id', 'date_valid_from', 'date_valid_to', 'active']
-    list_filter = ['content_type', 'active']
+    list_display = ['user', 'link_type', 'content_type', 'object_id', 'date_valid_from', 'date_valid_to', 'active']
+    list_filter = ['link_type', 'content_type', 'active']
     search_fields = ['user__username', 'object_id']
     raw_id_fields = ['user', 'content_type']
