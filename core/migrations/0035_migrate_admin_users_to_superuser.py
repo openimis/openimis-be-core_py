@@ -1,7 +1,7 @@
 # Generated manually for migrating admin users to superuser
 
 from django.db import migrations, models
-from core.utils import filter_validity, uuidv7
+from core.utils import uuidv7
 
 
 class Migration(migrations.Migration):

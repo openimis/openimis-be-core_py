@@ -1,12 +1,10 @@
 import json
 import uuid
-from django.test import TestCase
-from graphene_django.utils.testing import GraphQLTestCase
-from graphql_jwt.shortcuts import get_token  # kept for compatibility in other places; tests now prefer BaseTestContext
-from core.models import User, Role, InteractiveUser
+from core.models import User
 from core.test_helpers import create_test_role, create_test_interactive_user
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase, BaseTestContext
 from core.schema import CreateUserMutation
+
 
 class ImpersonationTest(openIMISGraphQLTestCase):
     def setUp(self):
@@ -24,12 +22,22 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         # Create read-only role for users and roles
         read_role = create_test_role(perm_names=["gql_query_users_perms", "gql_query_roles_perms"], name="ReadOnlyUserRole")
         # Create regular user with read-only role
-        self.regular_user = create_test_interactive_user(username="regular", password="password", roles=[read_role.id], custom_props={'email':"regular@test.com"})
+        self.regular_user = create_test_interactive_user(
+            username="regular",
+            password="password",
+            roles=[read_role.id],
+            custom_props={'email': "regular@test.com"}
+        )
         self.regular_interactive = self.regular_user.i_user
         self.regular_token_context = BaseTestContext(user=self.regular_user)
         self.regular_token = self.regular_token_context.get_jwt()
         # Create user without rights
-        self.no_rights_user = create_test_interactive_user(username="no_rights", password="password", roles=[], custom_props={'email':"no_rights@test.com"})
+        self.no_rights_user = create_test_interactive_user(
+            username="no_rights",
+            password="password",
+            roles=[],
+            custom_props={'email': "no_rights@test.com"}
+        )
         self.no_rights_interactive = self.no_rights_user.i_user
         # Invalid UUID
         self.invalid_uuid = "00000000-0000-0000-0000-000000000000"
@@ -46,8 +54,16 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_", "id":"_exclude_", "uuid": "i_user_id"}),
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {"id": "uuid", 'password':"_exclude_"}),
+                **self._instance_to_gql_input(
+                    self.regular_interactive,
+                    CreateUserMutation.Input,
+                    {"language_id": "language", 'password': "_exclude_", "id": "_exclude_", "uuid": "i_user_id"}
+                ),
+                **self._instance_to_gql_input(
+                    self.regular_user,
+                    CreateUserMutation.Input,
+                    {"id": "uuid", 'password': "_exclude_"}
+                ),
                 "lastName": "update",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": ["INTERACTIVE"]
@@ -64,7 +80,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         )
         self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 2)
         self.assertResponseNoErrors(response)
-        variables['input']["lastName"]="update1"
+        variables['input']["lastName"] = "update1"
         variables['input']["clientMutationId"] = str(uuid.uuid4())
         # Now, impersonate no_rights_user, who doesn't have the right, so should fail
         response = self.query(
@@ -84,7 +100,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
 
     def test_invalid_impersonation_uuid(self):
         token = self.superadmin_token
-        
+
         query = """
             mutation ($input: UpdateUserMutationInput!) {
             updateUser(input: $input) {
@@ -95,8 +111,16 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
+                **self._instance_to_gql_input(
+                    self.regular_interactive,
+                    CreateUserMutation.Input,
+                    {"language_id": "language", 'password': "_exclude_"}
+                ),
+                **self._instance_to_gql_input(
+                    self.regular_user,
+                    CreateUserMutation.Input,
+                    {'password': "_exclude_"}
+                ),
                 "lastName": "update2",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": ["INTERACTIVE"],
@@ -118,7 +142,6 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             or (content.get("data") and any(e and "NO_PERMISSION" in str(e) for e in (content.get("data") or {}).values()))
         )
 
-
     def test_non_superuser_impersonation(self):
         token = self.regular_token
         query = """
@@ -131,8 +154,16 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_"}),
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {'password':"_exclude_"}),
+                **self._instance_to_gql_input(
+                    self.regular_interactive,
+                    CreateUserMutation.Input,
+                    {"language_id": "language", 'password': "_exclude_"}
+                ),
+                **self._instance_to_gql_input(
+                    self.regular_user,
+                    CreateUserMutation.Input,
+                    {'password': "_exclude_"}
+                ),
                 "lastName": "update3",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": ["INTERACTIVE"]
@@ -155,7 +186,6 @@ class ImpersonationTest(openIMISGraphQLTestCase):
             or (content.get("data") and any(e and "NO_PERMISSION" in str(e) for e in (content.get("data") or {}).values()))
         )
 
-
     def test_subsequent_calls_no_leakage(self):
         """Tests that after an impersonated call, a subsequent call without the header uses the original user (verifies ClearUserContextMiddleware + shared utility)."""
         token = self.superadmin_token
@@ -169,15 +199,23 @@ class ImpersonationTest(openIMISGraphQLTestCase):
         """
         variables = {
             "input": {
-                **self._instance_to_gql_input(self.regular_interactive, CreateUserMutation.Input, {"language_id": "language", 'password':"_exclude_", "id":"_exclude_", "uuid": "i_user_id"}),
-                **self._instance_to_gql_input(self.regular_user, CreateUserMutation.Input, {"id": "uuid", 'password':"_exclude_"}),
+                **self._instance_to_gql_input(
+                    self.regular_interactive,
+                    CreateUserMutation.Input,
+                    {"language_id": "language", 'password': "_exclude_", "id": "_exclude_", "uuid": "i_user_id"}
+                ),
+                **self._instance_to_gql_input(
+                    self.regular_user,
+                    CreateUserMutation.Input,
+                    {"id": "uuid", 'password': "_exclude_"}
+                ),
                 "lastName": "update4",
                 "clientMutationId": str(uuid.uuid4()),
                 "userTypes": ["INTERACTIVE"]
             }
         }
         # First: impersonate no_rights_user -> should fail (status 1)
-        response1 = self.query(
+        self.query(
             query,
             variables=variables,
             headers={

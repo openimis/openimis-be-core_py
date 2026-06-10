@@ -52,6 +52,7 @@ class TechnicalUserSerializer(CachedModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     i_user = InteractiveUserSerializer(many=False, read_only=True)
     t_user = TechnicalUserSerializer(many=False, read_only=True)
+
     class Meta:
         model = User
         fields = ("id", "username", "is_superuser", "i_user", "t_user")

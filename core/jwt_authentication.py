@@ -38,7 +38,7 @@ class JWTAuthentication(BaseAuthentication):
                 raise exceptions.AuthenticationFailed(str(exc)) from exc
             except PermissionDenied as exc:
                 raise exceptions.AuthenticationFailed(str(exc)) from exc
-            
+
             else:
                 if CoreConfig.is_valid_health_facility_contract_required:
                     if not (
@@ -93,9 +93,9 @@ class JSONWebTokenBackend(BaseJSONWebTokenBackend):
         except exceptions.AuthenticationFailed as e:
             raise GraphQLError(
                 "INCORRECT_CREDENTIALS",
-                extensions={"code": "UNAUTHENTICATED", "message":str(e)}
+                extensions={"code": "UNAUTHENTICATED", "message": str(e)}
             )
-        except Throttled as e:
+        except Throttled:
             raise GraphQLError(
                 "TOO_MANY_REQUEST",
                 extensions={
@@ -103,12 +103,8 @@ class JSONWebTokenBackend(BaseJSONWebTokenBackend):
                     "rate": settings.RATELIMIT_RATE,
                 }
             )
-        except PermissionDenied as e:    
+        except PermissionDenied as e:
             raise GraphQLError(
                 "NO_PERMISSION",
-                extensions={"code": "FORBIDDEN", "message":str(e)}
+                extensions={"code": "FORBIDDEN", "message": str(e)}
             )
-            
-
-
-         

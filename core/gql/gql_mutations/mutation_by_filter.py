@@ -140,14 +140,12 @@ def mutation_on_queryset_from_filter(
                 )
 
                 incoming_qs = data.get(queryset_key)
-                
-                
+
                 if incoming_qs is None:
                     if user is None:
                         user = get_current_user()
                     incoming_qs = django_object.get_queryset(django_object.objects, user)
 
-            
                 # Update the provided queryset with the mutation's filter criteria.
                 # This keeps everything lazy and supports pre-scoped querysets
                 # (e.g. from user business access restrictions).

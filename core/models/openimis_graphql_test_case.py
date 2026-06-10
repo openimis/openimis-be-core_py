@@ -15,7 +15,7 @@ from django.core.cache import cache
 from core.utils import clear_current_user, clear_history_context
 from django.db import transaction
 from graphql_relay import from_global_id
-from graphene.utils.str_converters import to_snake_case, to_camel_case
+from graphene.utils.str_converters import to_camel_case
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class BaseTestContext:
         self.META["PATH_INFO"] = path
         self.META["SERVER_NAME"] = "testserver"
         self.META["SERVER_PORT"] = "80"
-        
+
         # Add CSRF token if needed
         if self.method in ["POST", "PUT", "PATCH"]:
 
@@ -136,13 +136,15 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         """
         with transaction.atomic():
             super().run(result)
-            
+
     def _instance_to_gql_input(self, instance, gql_input_class, map_mutation_field=None):
         if map_mutation_field is None:
             map_mutation_field = {}
-        return {to_camel_case(map_mutation_field.get(k,k)): str(p) for k,p in instance.__dict__.items() if hasattr(gql_input_class, (map_mutation_field.get(k,k))) and p}
-    
-
+        return {
+            to_camel_case(map_mutation_field.get(k, k)): str(p)
+            for k, p in instance.__dict__.items()
+            if hasattr(gql_input_class, map_mutation_field.get(k, k)) and p
+        }
 
     @classmethod
     def setUpClass(cls):
@@ -198,11 +200,10 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
             content = json.loads(response.content)
             if "data" in content:
                 if "mutationLogs" in content["data"]:
-                    
                     if "edges" in content["data"]["mutationLogs"]:
-                        if  content["data"]["mutationLogs"]['edges'] == []:
+                        if content["data"]["mutationLogs"]['edges'] == []:
                             raise ValueError("no mutation found")
-                        if  len(content["data"]["mutationLogs"]['edges'])>1:
+                        if len(content["data"]["mutationLogs"]['edges']) > 1:
                             raise ValueError("several mutation found")
                         for e in content["data"]["mutationLogs"]["edges"]:
                             if "node" in e:
