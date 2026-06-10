@@ -56,6 +56,13 @@ from axes.models import AccessAttempt
 from typing import List, Dict, Any
 
 from core.apps import CoreConfig
+from core.user_types import (
+    UT_INTERACTIVE,
+    UT_TECHNICAL,
+    UT_OFFICER,
+    UT_CLAIM_ADMIN,
+    UserTypeEnum,
+)
 from core.custom_filters import CustomFilterWizardStorage
 from core.gql_queries import (
     RoleGQLType,
@@ -710,22 +717,6 @@ class MutationLogGQLType(DjangoObjectType):
         else:
             queryset = queryset.filter(user=info.context.user)
         return queryset
-
-
-UT_INTERACTIVE = "INTERACTIVE"
-UT_TECHNICAL = "TECHNICAL"
-UT_OFFICER = "OFFICER"
-UT_CLAIM_ADMIN = "CLAIM_ADMIN"
-
-UserTypeEnum = graphene.Enum(
-    "UserTypes",
-    [
-        (UT_INTERACTIVE, UT_INTERACTIVE),
-        (UT_OFFICER, UT_OFFICER),
-        (UT_TECHNICAL, UT_TECHNICAL),
-        (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN),
-    ],
-)
 
 
 class ClaimAdminGQLType(DjangoObjectType):
