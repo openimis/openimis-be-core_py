@@ -145,9 +145,8 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     data_subset["has_login"] = connected
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
-        officer = Officer.objects.filter(
-            validity_to__isnull=True, user__id=user_id
-        ).first()
+        core_user = User.objects.filter(id=user_id).first()
+        officer = core_user.officer if core_user else None
         if officer is not None and officer.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
     else:
@@ -189,9 +188,8 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
     claim_admin_class = apps.get_model("core", "ClaimAdmin")
     if user_id:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
-        claim_admin = claim_admin_class.objects.filter(
-            validity_to__isnull=True, user__id=user_id
-        ).first()
+        core_user = User.objects.filter(id=user_id).first()
+        claim_admin = core_user.claim_admin if core_user else None
         if claim_admin is not None and claim_admin.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
     else:

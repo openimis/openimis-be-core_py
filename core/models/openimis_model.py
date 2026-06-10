@@ -284,6 +284,30 @@ class ValidityMixin(Model):
 
 
 class OpenIMISBusinessModel(OpenIMISModel, ValidityMixin):
+
+    @staticmethod
+    def _validity_field(prefix, field):
+        if not prefix:
+            return field
+        if not prefix.endswith("__"):
+            prefix = f"{prefix}__"
+        return f"{prefix}{field}"
+
+    @classmethod
+    def filter_validity(cls, validity=None, prefix="", **kwargs):
+        now = validity or kwargs.get("validity") or py_datetime.now()
+        return {
+            cls._validity_field(prefix, "active"): True,
+            cls._validity_field(prefix, "date_valid_from__lte"): now,
+        }
+
+    @classmethod
+    def filter_validity_q(cls, validity=None, prefix="", **kwargs):
+        now = validity or kwargs.get("validity") or py_datetime.now()
+        return Q(**{cls._validity_field(prefix, "date_valid_to__isnull"): True}) | Q(
+            **{cls._validity_field(prefix, "date_valid_to__gte"): now}
+        )
+
     class Meta:
         abstract = True
 

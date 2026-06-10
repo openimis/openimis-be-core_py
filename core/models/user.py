@@ -789,10 +789,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
                         user=self,
                         content_type=ct,
                         object_id=str(business_obj.pk),
-                        active=True,
-                        date_valid_from__lte=now,
-                    ).filter(
-                        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now)
+                        **UserBusinessAccess.filter_validity(validity=now),
                     ).exists()
 
         return has_perm

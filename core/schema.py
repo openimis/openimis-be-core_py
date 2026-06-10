@@ -24,8 +24,6 @@ import graphene_django_optimizer as gql_optimizer
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
-    create_or_update_officer,
-    create_or_update_claim_admin,
     change_user_password,
     reset_user_password,
     set_user_password,
@@ -41,7 +39,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Count
+from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.middleware.csrf import get_token
@@ -90,6 +88,19 @@ from core.models import (
 )
 from core.services.roleServices import check_role_unique_name
 from core.services.userServices import check_user_unique_email
+from core.services.userBusinessAccessServices import (
+    apply_claim_admin_business_access,
+    apply_officer_business_accesses,
+    clear_claim_admin_business_access,
+    clear_officer_business_accesses,
+    get_claim_admins_for_user,
+    get_officers_for_user,
+    get_substitution_officers_from_business_access,
+    get_business_access_user_ids,
+    get_user_ids_by_link_type,
+    LINK_TYPE_CA,
+    LINK_TYPE_EO,
+)
 from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
 )
@@ -919,46 +930,16 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_claim_admins(self, info, search=None, **kwargs):
-        user_health_facility = None
         if not info.context.user.has_perms(CoreConfig.gql_query_claim_admins_perms):
             raise PermissionDenied(_("unauthorized"))
 
-        district_uuid = kwargs.get("district_uuid", None)
-        region_uuid = kwargs.get("region_uuid", None)
-        try:
-            HealthFacility = apps.get_model("location", "HealthFacility")
-            hf_filters = [*HealthFacility.filter_validity(**kwargs)]
-            if district_uuid is not None:
-                hf_filters += [Q(location__uuid=district_uuid)]
-            elif region_uuid is not None:
-                hf_filters += [Q(location__parent__uuid=region_uuid)]
-
-            if settings.ROW_SECURITY:
-                from locations.models import LocationManager
-
-                q = LocationManager().build_user_location_filter_query(
-                    info.context.user._u, prefix="location", loc_types=["D"]
-                )
-                if q:
-                    hf_filters += [q]
-
-            user_health_facility = HealthFacility.objects.filter(*hf_filters)
-        except Exception as e:
-            logger.debug(e)
-            pass
-
-        filters = [*ClaimAdmin.filter_validity(**kwargs)]
-        if user_health_facility:
-            filters += [Q(health_facility__in=user_health_facility)]
-
-        if search:
-            filters += [
-                Q(code__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(other_names__icontains=search)
-            ]
-
-        return ClaimAdmin.objects.filter(*filters)
+        return get_claim_admins_for_user(
+            info.context.user,
+            search=search,
+            district_uuid=kwargs.get("district_uuid"),
+            region_uuid=kwargs.get("region_uuid"),
+            **kwargs,
+        )
 
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
@@ -995,62 +976,23 @@ class Query(graphene.ObjectType):
         return False if errors else True
 
     def resolve_enrolment_officers(self, info, **kwargs):
-        from .models import Officer
-
         if not info.context.user.has_perms(
             CoreConfig.gql_query_enrolment_officers_perms
         ):
             raise PermissionError("Unauthorized")
 
-        search = kwargs.get("str")
-
-        if search is not None:
-            return gql_optimizer.query(
-                Officer.objects.filter(
-                    Q(code__icontains=search)
-                    | Q(last_name__icontains=search)
-                    | Q(other_names__icontains=search)
-                ),
-                info,
-            )
+        return get_officers_for_user(info.context.user, search=kwargs.get("str"), **kwargs)
 
     def resolve_substitution_enrolment_officers(self, info, **kwargs):
-        from .models import Officer
-
         if not info.context.user.has_perms(
             CoreConfig.gql_query_enrolment_officers_perms
         ):
             raise PermissionError("Unauthorized")
 
-        queryset = Officer.objects
-
-        villages_uuids = kwargs.get("villages_uuids", None)
-        if not villages_uuids:
-            return []
-
-        officer_uuid = kwargs.get("officer_uuid", None)
-        if officer_uuid:
-            queryset = queryset.exclude(uuid=officer_uuid)
-
-        query_str = kwargs.get("str", None)
-        if query_str:
-            queryset = queryset.filter(
-                Q(code__istartswith=query_str)
-                | Q(last_name__istartswith=query_str)
-                | Q(other_names__istartswith=query_str)
-                | Q(email__istartswith=query_str)
-            )
-
-        return (
-            queryset.prefetch_related("officer_villages")
-            .annotate(nb_village=Count("officer_villages"))
-            .filter(
-                nb_village__gte=len(villages_uuids),
-                officer_villages__location__uuid__in=villages_uuids,
-                validity_to__isnull=True,
-                officer_villages__validity_to__isnull=True,
-                officer_villages__location__validity_to__isnull=True,
-            )
+        return get_substitution_officers_from_business_access(
+            kwargs.get("villages_uuids"),
+            officer_uuid=kwargs.get("officer_uuid"),
+            search=kwargs.get("str"),
         )
 
     def resolve_interactive_users(self, info, **kwargs):
@@ -1920,41 +1862,33 @@ def update_or_create_user(data, user):
         )
     else:
         i_user = None
-    if UT_OFFICER in data["user_types"]:
-        health_facility_id = data.get("health_facility_id", None)
-        data_copied = data
-        if health_facility_id:
-            try:
-                HealthFacility = apps.get_model("location", "HealthFacility")
-                hf = HealthFacility.objects.filter(id=health_facility_id).first()
-                if hf:
-                    officer_location_id = hf.location
-                    data_copied["location_id"] = officer_location_id.id
-            except Exception as e:
-                logger.warning("Error %s ", str(e))
-        officer, officer_created = create_or_update_officer(
-            user_uuid,
-            data_copied,
-            user.id_for_audit,
-            UT_INTERACTIVE in data["user_types"],
-        )
-    else:
-        officer = None
-    if UT_CLAIM_ADMIN in data["user_types"]:
-        claim_admin, claim_admin_created = create_or_update_claim_admin(
-            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
-        )
-    else:
-        claim_admin = None
+
     core_user, core_user_created = create_or_update_core_user(
         user_uuid=user_uuid,
         username=username,
         i_user=i_user,
-        officer=officer,
-        claim_admin=claim_admin,
+        officer=None,
+        claim_admin=None,
         user=user,
-        silent=True
+        silent=True,
     )
+
+    if core_user.officer_id or core_user.claim_admin_id:
+        core_user.officer = None
+        core_user.claim_admin = None
+        core_user.save(silent=True)
+
+    health_facility_id = data.get("health_facility_id")
+    if UT_CLAIM_ADMIN in data["user_types"] and health_facility_id:
+        apply_claim_admin_business_access(core_user, health_facility_id, user)
+    else:
+        clear_claim_admin_business_access(core_user, audit_user=user)
+
+    village_ids = data.get("village_ids")
+    if UT_OFFICER in data["user_types"] and village_ids:
+        apply_officer_business_accesses(core_user, village_ids, user)
+    else:
+        clear_officer_business_accesses(core_user, audit_user=user)
 
     if client_mutation_id:
         wait_for_mutation(client_mutation_id)
