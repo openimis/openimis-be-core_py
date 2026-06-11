@@ -246,7 +246,6 @@ class CoreConfig(AppConfig):
         ]
         CoreConfig.secondary_calendar = cfg["secondary_calendar"]
 
-
     def ready(self):
         from .models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
