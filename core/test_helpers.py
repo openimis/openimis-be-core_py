@@ -113,8 +113,15 @@ def create_test_interactive_user(
     clear_current_user()
     clear_history_context()
     caches["default"].clear()
-    user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
-    iuser_props = {k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k) and k not in ['is_staff', 'is_superuser']}
+    user_field_names = {
+        f.name for f in User._meta.get_fields()
+        if getattr(f, "concrete", False) and not f.many_to_many
+    }
+    user_props = {k: v for k, v in custom_props.items() if k in user_field_names}
+    iuser_props = {
+        k: v for k, v in custom_props.items()
+        if hasattr(InteractiveUser, k) and k not in ['is_staff', 'is_superuser']
+    }
     # Handle language field specially - convert code to Language instance
     if "language" in iuser_props:
         language_value = iuser_props["language"]
@@ -434,9 +441,11 @@ def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, cu
 
 
 def create_admin_role(name="IMIS Administrator", is_system=0, is_blocked=False, custom_props=None):
-    is_system = 64
+    existing_role = Role.objects.filter(is_system=64, *Role.filter_validity()).first()
+    if existing_role:
+        return existing_role
     perm_names = []
-    return create_test_role(perm_names, name=name, is_system=is_system, is_blocked=is_blocked, custom_props=custom_props)
+    return create_test_role(perm_names, name=name, is_system=64, is_blocked=is_blocked, custom_props=custom_props)
 
 
 def create_manager_role():

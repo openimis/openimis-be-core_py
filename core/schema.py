@@ -710,13 +710,12 @@ class MutationLogGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        if info.context.user.is_anonymous:
+        user = info.context.user
+        if user.is_anonymous:
             return queryset.none()
-        elif info.context.user.is_superuser:
+        if user.is_superuser or getattr(user, "is_imis_admin", False):
             return queryset
-        else:
-            queryset = queryset.filter(user=info.context.user)
-        return queryset
+        return queryset.filter(user=user)
 
 
 class ClaimAdminGQLType(DjangoObjectType):
@@ -1874,7 +1873,7 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    imis_administrator_system = Role.objects.filter(is_system=64).get().id
+    imis_administrator_system = Role.objects.filter(is_system=64, *Role.filter_validity()).first().id
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)

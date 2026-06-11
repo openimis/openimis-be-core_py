@@ -311,7 +311,16 @@ def user_authentication(request, username, password):
         raise AuthenticationFailed("INCORRECT_CREDENTIALS")
 
     if getattr(user, "is_staff", False) and hasattr(request, "session"):
-        login(request, user)
+        from django.conf import settings
+        backend = next(
+            (
+                b
+                for b in settings.AUTHENTICATION_BACKENDS
+                if b.endswith("ModelBackend")
+            ),
+            settings.AUTHENTICATION_BACKENDS[-1],
+        )
+        login(request, user, backend=backend)
     return user
 
 
