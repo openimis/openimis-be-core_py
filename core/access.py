@@ -192,7 +192,11 @@ def has_business_access(user, *, content_type=None, object_id=None, business_obj
 
 
 def has_role_perms(user, perm_list, *, list_evaluation_or=True):
-    if getattr(user, "is_superuser", False) or not perm_list:
+    if (
+        getattr(user, "is_superuser", False)
+        or getattr(user, "is_imis_admin", False)
+        or not perm_list
+    ):
         return True
     if list_evaluation_or:
         return any(user.has_perm(perm) for perm in perm_list)

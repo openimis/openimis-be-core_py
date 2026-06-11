@@ -293,10 +293,9 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
-        if self.user:
-            return self.user.is_superuser
-        else:
-            return self.is_imis_admin
+        if self.user and self.user.is_superuser:
+            return True
+        return self.is_imis_admin
 
     @is_superuser.setter
     def is_superuser(self, value):
