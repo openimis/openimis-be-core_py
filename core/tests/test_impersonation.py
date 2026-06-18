@@ -92,12 +92,9 @@ class ImpersonationTest(openIMISGraphQLTestCase):
                 "HTTP_X_IMPERSONATE_USER": str(self.no_rights_user.id)
             }
         )
-
-        result = self.get_mutation_result(
-            variables['input']["clientMutationId"], token, allow_exceptions=False
-        )
-        # Should have errors, permission denied
-        self.assertEqual(result['data']['mutationLogs']['edges'][0]['node']['status'], 1, result['data']['mutationLogs']['edges'][0]['node']['error'])
+        self.assertResponseHasErrors(response)
+        ErrorMessage = json.loads(response.content)['errors'][0]['message']
+        self.assertEqual(ErrorMessage, 'Impersonation requires superuser privileges', ErrorMessage)
 
     def test_invalid_impersonation_uuid(self):
         token = self.superadmin_token
@@ -127,6 +124,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
                 "userTypes": ["INTERACTIVE"],
             }
         }
+        
         response = self.query(
             query,
             variables=variables,

@@ -16,10 +16,28 @@ logger = logging.getLogger(__file__)
 
 @receiver(token_issued)
 def on_token_issued(sender, request, user, **kwargs):
-    # Store the date on which the user got the auth token
-    if user.i_user:
-        user.i_user.last_login = timezone.now()
-        user.i_user.save()
+    # Send last login information to Sentry (instead of writing to i_user.last_login)
+    if user and getattr(user, "i_user", None):
+        i_user = user.i_user
+        try:
+            import sentry_sdk
+            sentry_sdk.set_user({
+                "id": getattr(i_user, "id", None),
+                "username": getattr(i_user, "login_name", None),
+                "email": getattr(i_user, "email", None),
+            })
+            sentry_sdk.add_breadcrumb(
+                category="auth",
+                message="Token issued (last login)",
+                data={
+                    "last_login": timezone.now().isoformat(),
+                    "login_name": getattr(i_user, "login_name", None),
+                },
+                level="info",
+            )
+        except Exception:
+            # sentry_sdk not installed or Sentry not configured - ignore
+            logger.debug("Sentry SDK unavailable for token_issued last login reporting")
 
 
 def jwt_encode_user_key(payload, context=None):

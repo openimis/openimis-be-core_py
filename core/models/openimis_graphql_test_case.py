@@ -12,7 +12,7 @@ from graphql_jwt.shortcuts import get_token as get_token_jwt
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
-from core.utils import clear_current_user, clear_history_context
+from core.utils import clear_current_user, clear_history_context, clear_original_user
 from django.db import transaction
 from graphql_relay import from_global_id
 from graphene.utils.str_converters import to_camel_case
@@ -154,12 +154,14 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
     @classmethod
     def setUpClass(cls):
         clear_current_user()
+        clear_original_user()
         clear_history_context()
         cache.clear()
         super(openIMISGraphQLTestCase, cls).setUpClass()
 
     def setUp(self):
         clear_current_user()
+        clear_original_user()
         clear_history_context()
         cache.clear()
         super(openIMISGraphQLTestCase, self).setUp()
@@ -347,7 +349,8 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         return ", ".join(params_as_args)
 
     def tearDown(self):
+        clear_history_context()
         cache.clear()
         clear_current_user()
-        clear_history_context()
+        clear_original_user()
         super().tearDown()

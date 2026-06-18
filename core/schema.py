@@ -1948,7 +1948,8 @@ def update_or_create_user(data, user):
         i_user = None
     if UT_OFFICER in data["user_types"]:
         health_facility_id = data.get("health_facility_id", None)
-        data_copied = data
+        eo_data = data.copy()
+        eo_data["code"] = data.get('username',data.get('login_name', None ))
         if health_facility_id:
             try:
                 HealthFacility = apps.get_model("location", "HealthFacility")
@@ -1960,15 +1961,17 @@ def update_or_create_user(data, user):
                 logger.warning("Error %s ", str(e))
         officer, officer_created = create_or_update_officer(
             user_uuid,
-            data_copied,
+            eo_data,
             user.id_for_audit,
             UT_INTERACTIVE in data["user_types"],
         )
     else:
         officer = None
     if UT_CLAIM_ADMIN in data["user_types"]:
+        ca_data = data.copy()
+        ca_data["code"] = data.get('username',data.get('login_name', None ))
         claim_admin, claim_admin_created = create_or_update_claim_admin(
-            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
+            user_uuid, ca_data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
         )
     else:
         claim_admin = None

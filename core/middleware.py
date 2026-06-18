@@ -9,7 +9,12 @@ from django.contrib.auth.models import AnonymousUser
 from graphql_jwt.middleware import JSONWebTokenMiddleware, _authenticate
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.utils import get_token_argument
-from core.utils import clear_current_user, clear_original_user, clear_history_context
+from core.utils import (
+    clear_current_user,
+    clear_original_user,
+    clear_history_context,
+    handle_impersonation,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -132,23 +137,51 @@ class AdminLogoutMiddleware:
 class CustomJSONWebTokenMiddleware(JSONWebTokenMiddleware):
     """
     Custom middleware extending graphql_jwt's JSONWebTokenMiddleware to handle
-    impersonation header in cache logic. Bypasses cache and forces re-authentication
-    when X-Impersonate-User header is present. This prevents cached impersonated
-    user from leaking to subsequent calls without the header. Also integrates with
-    the custom backend for handle_impersonation.
+    impersonation header. When the impersonation header is present we ensure
+    the effective (impersonated) user is used for permissions and thread-locals,
+    but we reuse an already-resolved base user (from context or request.user)
+    and the object cache (cs_User_*) for both the original and impersonated User.
+    Full re-auth is only done when no user has been established yet for the
+    request/operation (keeps "auth of user" while avoiding repeated "dev"
+    username/DB lookups on every resolver). Also integrates with the custom
+    backend for handle_impersonation.
     """
 
     def resolve(self, next, root, info, **kwargs):
         context = info.context
+        # Get a request-like object for .META (GraphQL context may wrap the real request)
+        request = context
+        if hasattr(context, "request"):
+            request = context.request
+
         # Get impersonation header (context in GraphQL can be request or have META)
         impersonate_header = None
         if hasattr(context, "META"):
             impersonate_header = context.META.get("HTTP_X_IMPERSONATE_USER")
-        elif hasattr(context, "request") and hasattr(context.request, "META"):
-            impersonate_header = context.request.META.get("HTTP_X_IMPERSONATE_USER")
+        elif hasattr(request, "META"):
+            impersonate_header = request.META.get("HTTP_X_IMPERSONATE_USER")
 
         token_argument = get_token_argument(context, **kwargs)
 
+        # === Quick win for excessive user reloads ===
+        base_user = getattr(context, "user", None)
+        if not base_user or getattr(base_user, "is_anonymous", False):
+            if hasattr(request, "user") and not getattr(request.user, "is_anonymous", False):
+                base_user = request.user
+
+        if base_user and not getattr(base_user, "is_anonymous", False):
+            if impersonate_header and not getattr(context, "_impersonation_applied", False):
+                # Re-apply impersonation (cheap when users are cached; ensures
+                # impersonated identity + perms are active for this resolve)
+                effective_user = handle_impersonation(request, base_user)
+                context.user = effective_user
+                setattr(context, "_impersonation_applied", True)
+            elif not impersonate_header:
+                context.user = base_user
+            return next(root, info, **kwargs)
+
+        # No base user yet → fall back to original (full) authentication logic.
+        # This is the "auth" step that resolves the bearer of the JWT ("dev").
         if (
             jwt_settings.JWT_ALLOW_ARGUMENT
             and token_argument is None
@@ -174,9 +207,17 @@ class CustomJSONWebTokenMiddleware(JSONWebTokenMiddleware):
             user = authenticate(request=context, **kwargs)
 
             if user is not None:
+                if impersonate_header:
+                    # This is where the impersonated user (with its perms) becomes
+                    # the effective context.user. handle_impersonation also sets
+                    # the thread locals used by get_current_user().
+                    user = handle_impersonation(request, user)
                 context.user = user
 
                 if jwt_settings.JWT_ALLOW_ARGUMENT and not impersonate_header:
                     self.cached_authentication.insert(info.path, user)
+
+            if impersonate_header:
+                setattr(context, "_impersonation_applied", True)
 
         return next(root, info, **kwargs)

@@ -69,8 +69,6 @@ class UserManager(BaseUserManager, CachedManager):
         return iuser
 
     def create_user(self, username, password, email=None, **kwargs):
-        # extra_fields.setdefault("is_staff", False)
-        # extra_fields["is_superuser"] = False
         iuser = self._create_interactive_user(username, email, password, **kwargs)
         user, success = self.auto_provision_user(username=username, i_user=iuser)
         return user
@@ -93,6 +91,9 @@ class UserManager(BaseUserManager, CachedManager):
         if not i_user:
             raise AuthenticationFailed("INCORRECT_CREDENTIALS")
         kwargs["i_user"] = i_user
+        # ensure non-superuser by default for normal provisioning paths;
+        # create_superuser explicitly passes is_superuser=True
+        kwargs.setdefault("is_superuser", False)
         user = self._create_core_user(**kwargs)
         if core.auto_provisioning_user_group:
             self._auto_provisioning_user_group(user)
@@ -110,15 +111,13 @@ class UserManager(BaseUserManager, CachedManager):
         return super().get_queryset().prefetch_related("i_user")
 
 
-class TechnicalUser(AbstractBaseUser):
+class TechnicalUser(AbstractBaseUser, LegacyValidityMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(blank=True, null=True)
     language = "en"
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
-    validity_to = models.DateTimeField(blank=True, null=True)
     is_imis_admin = False
 
     @property
@@ -133,7 +132,7 @@ class TechnicalUser(AbstractBaseUser):
         try:
             usr = User.objects.get(t_user=self)
         except ObjectDoesNotExist:
-            usr = User(username=self.username)
+            usr = User(username=self.username, is_superuser=False)
             usr.t_user = self
             save_required = True
         if usr.username != self.username:
@@ -278,7 +277,17 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def user(self):
-        return self.user_set.first()
+        # Prefer cached lookup via username (which is unique and cache-backed) to avoid
+        # raw reverse FK query on core_User by i_user_id that bypasses the object cache.
+        if not self.login_name:
+            return None
+        try:
+            return User.objects.get(username__iexact=self.login_name)
+        except User.DoesNotExist:
+            return None
+        except Exception:
+            # fallback to relation (will still benefit from User cache on id etc in some paths)
+            return self.user_set.first() if hasattr(self, "user_set") else None
 
     @stored_password.setter
     def stored_password(self, value):

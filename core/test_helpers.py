@@ -14,7 +14,7 @@ from core.services.userServices import (
     create_or_update_officer_villages,
 )
 from core.services import create_or_update_user_roles
-from core.utils import collect_all_gql_permissions, set_current_user, clear_history_context, clear_current_user
+from core.utils import collect_all_gql_permissions, set_current_user, clear_history_context, clear_current_user, clear_original_user
 from django.core.cache import caches
 from location.models import Location
 from location.test_helpers import create_test_health_facility
@@ -111,6 +111,7 @@ def create_test_interactive_user(
     if custom_props is None:
         custom_props = {}
     clear_current_user()
+    clear_original_user()
     clear_history_context()
     caches["default"].clear()
     user_field_names = {

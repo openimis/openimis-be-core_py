@@ -7,19 +7,21 @@ from django.core.exceptions import ValidationError
 from core.models import User, TechnicalUser, InteractiveUser
 from core.models.history_model import HistoryModel
 from core.models.user import Language
-from core.utils import get_cache_key, clear_current_user, clear_history_context
+from core.utils import get_cache_key, clear_current_user, clear_history_context, clear_original_user
 from core.test_helpers import create_test_interactive_user, create_test_role
 
 
 class UserTestCase(TestCase):
     def setUp(self):
         clear_current_user()
+        clear_original_user()
         clear_history_context()
         caches["default"].clear()
         super().setUp()
 
     def tearDown(self):
         clear_current_user()
+        clear_original_user()
         clear_history_context()
         caches["default"].clear()
         super().tearDown()

@@ -22,7 +22,7 @@ from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
 )
-from core.utils import clear_current_user, clear_history_context
+from core.utils import clear_current_user, clear_history_context, clear_original_user
 from django.core.cache import caches
 from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
@@ -38,6 +38,7 @@ class UserServicesTest(TestCase):
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
         # (removed erroneous super call to TestCase.setUp)
         clear_current_user()
+        clear_original_user()
         clear_history_context()
         caches["default"].clear()
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
@@ -240,7 +241,7 @@ class UserServicesTest(TestCase):
     def test_officer_min(self):
         username = "tstsvco1"
         officer, created = create_or_update_officer(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username,
                 last_name="Last Name O1",
@@ -262,7 +263,7 @@ class UserServicesTest(TestCase):
         village_ids = [self.test_village1.id, self.test_village2.id, self.test_village3.id]
         # ensure a valid substitution officer exists (avoid FK violation on legacy officer table)
         sub_officer, _ = create_or_update_officer(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username="suboff1",  # short to satisfy legacy officer code/varchar(8) limits
                 last_name="Sub",
@@ -279,7 +280,7 @@ class UserServicesTest(TestCase):
         )
         sub_officer.refresh_from_db()
         officer, created = create_or_update_officer(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username,
                 last_name="Last Name O2",
@@ -325,7 +326,7 @@ class UserServicesTest(TestCase):
         username = "tstsvco2"
         village_ids = [self.test_village1.id, self.test_village2.id, self.test_village3.id]
         officer, created = create_or_update_officer(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username,
                 last_name="Last Name O2",
@@ -368,7 +369,7 @@ class UserServicesTest(TestCase):
         self.assertEqual(officer.email, "imis@foo.be")
 
         officer2, created = create_or_update_officer(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username,
                 last_name="Last updated",
@@ -414,7 +415,7 @@ class UserServicesTest(TestCase):
     def test_claim_admin_min(self):
         username = "tstsvca1"
         claim_admin, created = create_or_update_claim_admin(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username, last_name="Last Name CA1", other_names="Other 1 2 3"
             ),
@@ -430,7 +431,7 @@ class UserServicesTest(TestCase):
     def test_claim_admin_max(self):
         username = "tstsvca2"
         claim_admin, created = create_or_update_claim_admin(
-            user_id=None,
+            user_uuid=None,
             data=dict(
                 username=username,
                 last_name="Last Name CA2",
@@ -526,6 +527,10 @@ class UserAuthenticationTest(TestCase):
 
     def setUp(self):
         super().setUp()
+        clear_current_user()
+        clear_original_user()
+        clear_history_context()
+        caches["default"].clear()
         self.factory = RequestFactory()
         language, _ = Language.objects.get_or_create(
             code="en", defaults={"name": "English", "sort_order": 1}

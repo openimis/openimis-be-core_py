@@ -24,7 +24,8 @@ logger = logging.getLogger(__file__)
 def create_or_update_interactive_user(user_id, data, user_maker, connected):
     admin = User.objects.filter(i_user_id=1).first()
     if not admin:
-        User.objects.create(username="Admin", i_user_id=1)
+        # ensure bootstrap link; do not auto-elevate to superuser (use create_superuser / admin role for that)
+        User.objects.create(username="Admin", i_user_id=1, is_superuser=False)
     i_fields = {
         "username": "login_name",
         "other_names": "other_names",
@@ -132,7 +133,7 @@ def create_or_update_officer_villages(officer, village_ids, audit_user_id):
 
 
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_eo, "data")
-def create_or_update_officer(user_id, data, audit_user_id, connected):
+def create_or_update_officer(user_uuid, data, audit_user_id, connected):
     officer_fields = {
         "username": "code",
         "other_names": "other_names",
@@ -150,16 +151,17 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     data_subset = {v: data.get(k) for k, v in officer_fields.items()}
     data_subset["audit_user_id"] = audit_user_id
     data_subset["has_login"] = connected
-    if user_id:
+    officer = None
+    if user_uuid:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         officer = Officer.objects.filter(
-            validity_to__isnull=True, user__id=user_id
+            *Officer.filter_validity(), user__uuid=user_uuid
         ).first()
         if officer is not None and officer.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
-    else:
+    if not officer:
         officer = Officer.objects.filter(
-            code=data_subset["code"], validity_to__isnull=True
+            *Officer.filter_validity(), code=data_subset["code"]
         ).first()
 
     if officer:
@@ -178,7 +180,7 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     return officer, created
 
 
-def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
+def create_or_update_claim_admin(user_uuid, data, audit_user_id, connected):
     ca_fields = {
         "username": "code",
         "other_names": "other_names",
@@ -194,16 +196,17 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
     # Since ClaimAdmin is not in the core module, we have to dynamically load it.
     # If the Claim module is not loaded and someone requests a ClaimAdmin, this will raise an Exception
     claim_admin_class = apps.get_model("core", "ClaimAdmin")
-    if user_id:
+    claim_admin = None
+    if user_uuid:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         claim_admin = claim_admin_class.objects.filter(
-            validity_to__isnull=True, user__id=user_id
+            *claim_admin_class.filter_validity(), user__uuid=user_uuid
         ).first()
         if claim_admin is not None and claim_admin.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
-    else:
+    if not claim_admin:
         claim_admin = claim_admin_class.objects.filter(
-            code=data_subset["code"], validity_to__isnull=True
+            *claim_admin_class.filter_validity(), code=data_subset["code"]
         ).first()
 
     if claim_admin:
@@ -234,7 +237,7 @@ def create_or_update_core_user(
         user = None
         created = False
     if not user:
-        user = User(username=username)
+        user = User(username=username, is_superuser=False)
         created = True
     if username:
         user.username = username
