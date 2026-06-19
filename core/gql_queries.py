@@ -14,10 +14,12 @@ from core.models import (
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility, UserDistrict
 from core.apps import CoreConfig
+from core.user_types import UserTypeEnum, get_user_types
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 
 from .utils import prefix_filterset
+
 
 class OfficerGQLType(DjangoObjectType):
     """
@@ -188,6 +190,7 @@ class UserGQLType(DjangoObjectType):
     last_name = graphene.String()
     email = graphene.String()
     phone = graphene.String()
+    user_types = graphene.List(UserTypeEnum)
     # is_superuser = graphene.Boolean()
 
     class Meta:
@@ -212,6 +215,11 @@ class UserGQLType(DjangoObjectType):
             self.mutations.select_related("mutation").filter(mutation__status=0).first()
         )
         return user_mutation.mutation.client_mutation_id if user_mutation else None
+
+    def resolve_user_types(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return get_user_types(self)
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

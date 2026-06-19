@@ -56,6 +56,13 @@ from axes.models import AccessAttempt
 from typing import List, Dict, Any
 
 from core.apps import CoreConfig
+from core.user_types import (
+    UT_INTERACTIVE,
+    UT_TECHNICAL,
+    UT_OFFICER,
+    UT_CLAIM_ADMIN,
+    UserTypeEnum,
+)
 from core.custom_filters import CustomFilterWizardStorage
 from core.gql_queries import (
     RoleGQLType,
@@ -348,7 +355,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         :param data: all parameters passed to the mutation
         :return: error_message if None is returned, the response is considered to be a success
         """
-        pass
+        raise NotImplementedError(f"async_mutate not implemented {cls.__name__}")
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
@@ -430,6 +437,31 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
+                # Perform synchronous authentication validation before queuing
+                try:
+                    mutation_data = cls.coerce_mutation_data(
+                        json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+                    )
+                    mutation_data.pop("mutation_extensions", None)
+                    user = info.context.user if info.context and info.context.user else None
+                    cls._validate_mutation(user, **mutation_data)
+                except PermissionDenied as e:
+                    logger.debug(
+                        "[OpenIMISMutation %s] Authentication failed synchronously: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+                    mutation_log.mark_as_failed(_("mutation.authentication_required"))
+                    return cls(internal_id=mutation_log.id)
+                except Exception as e:
+                    # For other validation errors, still queue the mutation
+                    # as they might be business logic validations that should run async
+                    logger.debug(
+                        "[OpenIMISMutation %s] Other validation error, proceeding with async: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls.__name__
                 )
@@ -703,29 +735,12 @@ class MutationLogGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        if info.context.user.is_anonymous:
+        user = info.context.user
+        if user.is_anonymous:
             return queryset.none()
-        elif info.context.user.is_superuser:
+        if user.is_superuser or getattr(user, "is_imis_admin", False):
             return queryset
-        else:
-            queryset = queryset.filter(user=info.context.user)
-        return queryset
-
-
-UT_INTERACTIVE = "INTERACTIVE"
-UT_TECHNICAL = "TECHNICAL"
-UT_OFFICER = "OFFICER"
-UT_CLAIM_ADMIN = "CLAIM_ADMIN"
-
-UserTypeEnum = graphene.Enum(
-    "UserTypes",
-    [
-        (UT_INTERACTIVE, UT_INTERACTIVE),
-        (UT_OFFICER, UT_OFFICER),
-        (UT_TECHNICAL, UT_TECHNICAL),
-        (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN),
-    ],
-)
+        return queryset.filter(user=user)
 
 
 class ClaimAdminGQLType(DjangoObjectType):
@@ -1883,7 +1898,7 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    imis_administrator_system = Role.objects.filter(is_system=64).get().id
+    imis_administrator_system = Role.objects.filter(is_system=64, *Role.filter_validity()).first().id
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
@@ -1933,7 +1948,8 @@ def update_or_create_user(data, user):
         i_user = None
     if UT_OFFICER in data["user_types"]:
         health_facility_id = data.get("health_facility_id", None)
-        data_copied = data
+        eo_data = data.copy()
+        eo_data["code"] = data.get('username',data.get('login_name', None ))
         if health_facility_id:
             try:
                 HealthFacility = apps.get_model("location", "HealthFacility")
@@ -1945,15 +1961,17 @@ def update_or_create_user(data, user):
                 logger.warning("Error %s ", str(e))
         officer, officer_created = create_or_update_officer(
             user_uuid,
-            data_copied,
+            eo_data,
             user.id_for_audit,
             UT_INTERACTIVE in data["user_types"],
         )
     else:
         officer = None
     if UT_CLAIM_ADMIN in data["user_types"]:
+        ca_data = data.copy()
+        ca_data["code"] = data.get('username',data.get('login_name', None ))
         claim_admin, claim_admin_created = create_or_update_claim_admin(
-            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
+            user_uuid, ca_data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
         )
     else:
         claim_admin = None
@@ -1963,7 +1981,8 @@ def update_or_create_user(data, user):
         i_user=i_user,
         officer=officer,
         claim_admin=claim_admin,
-        user=user
+        user=user,
+        silent=True
     )
 
     if client_mutation_id:
