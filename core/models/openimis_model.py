@@ -157,38 +157,44 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
 
         return new_instance
 
-    @staticmethod
-    def filter_validity(arg="validity", prefix="", **kwargs):
-        validity = kwargs.get(arg, None)
-        if not validity:
-            return Q(active=True)
-        else:
-            return Q(active=False) | Q(date_deactivated__gte=validity)
 
-    class Meta:
-        abstract = True
+class OpenIMISModelMixin(Model):
+    """Reusable fields and filter logic for new-style OpenIMIS models.
 
+    Provides active/json_ext/date_deactivated + the active-based filter_validity
+    and filter_queryset.
 
-class OpenIMISModel(OpenIMISHistoryMixin):
+    Can be combined with OpenIMISHistoryMixin on models that want the new fields
+    but need to keep a custom PK (e.g. ClaimItem, ClaimService, ClaimDedRem).
+    """
 
-    objects = HistoryCacheManager()
-    id = BigAutoField(
-        primary_key=True, auto_created=True, editable=False
-    )
-    uuid = UUIDField(
-        unique=True, db_column="UUID", default=uuidv7, editable=False
-    )
     active = BooleanField(default=True)
-
     json_ext = JSONField(db_column="Json_ext", blank=True, null=True)
     date_deactivated = DateTimeField(null=True, default=None)
-
-    def set_uuid(self):
-        self.uuid = uuidv7
-
-    def set_pk(self):
-        # done automatically
-        pass
+    @classmethod
+    def filter_validity(cls, arg="validity", prefix="", **kwargs):
+        validity = kwargs.get(arg, None)
+        has_deleted = hasattr(cls, "is_deleted")
+        has_active = hasattr(cls, "active") and not callable(cls.active)
+        
+        if not validity:
+            if has_deleted:
+                return [Q(is_deleted=False)]
+            elif has_active:
+                return [Q(active=True)]
+            else:
+                return [Q()]
+            
+        else:
+            if has_deleted:
+                # we assume that the last update was the deletion
+                return [Q(is_deleted=True) | Q(date_updated__gte=validity) ]
+            elif has_active:
+                 return [Q(active=False) | Q(date_deactivated__gte=validity)]
+            else:
+                return [Q()]
+            
+           
 
     @classmethod
     def filter_queryset(cls, queryset=None):
@@ -196,6 +202,27 @@ class OpenIMISModel(OpenIMISHistoryMixin):
             queryset = cls.objects.filter(active=True)
         queryset = queryset.filter(active=True)
         return queryset
+
+    class Meta:
+        abstract = True
+
+
+class OpenIMISModel(OpenIMISHistoryMixin, OpenIMISModelMixin):
+
+    objects = HistoryCacheManager()    
+    id = BigAutoField(
+        primary_key=True, auto_created=True, editable=False
+    )
+    uuid = UUIDField(
+        unique=True, db_column="UUID", default=uuidv7, editable=False
+    )
+
+    def set_uuid(self):
+        self.uuid = uuidv7
+
+    def set_pk(self):
+        # done automatically
+        pass
 
     class Meta:
         abstract = True
@@ -283,32 +310,105 @@ class ValidityMixin(Model):
     class Meta:
         abstract = True
 
+class LegacyValidityMixin(Model):
+    """Temporary mixin for models still in the migration bridge phase.
 
-class OpenIMISBusinessModel(OpenIMISModel, ValidityMixin):
-    class Meta:
-        abstract = True
+    Provides the old validity_from/validity_to fields and the old-style
+    filter_validity (delegating to core_filter_validity).
+    Use this + OpenIMISHistoryMixin + OpenIMISModelMixin for tables
+    that are not yet fully migrated off the type-2 validity pattern.
+    """
 
-
-class OpenIMISMigrationModel(OpenIMISModel):
-    ####
-    # How to use:
-    # for migration of Versionned Model to openIMIS Model
-    # will keep the id as is but will rename the table column to id
-    # 1. change the base model of the class you want to use by OpenIMISMigrationModel and comment id and uuid
-    # 2. run `python manage.py makemigrations app_name` to update the table changes : rename and new column,
-    #    it will also create the history tablesrun `python manage.py makemigrations app_name --name to_history --empty`
-    # 3.
-    # 4. in that migration file, run MyModel.migrate_to_history() to move all the
-    #    record that have validitiy_to not null to history model
-    # 5. change the base model of the class you want to use by OpenIMISModel
-    # 6. run `python manage.py makemigrations app_name` to update the table changes : remove the validity_to and from
-    ####
-    validity_from = DateTimeField(db_column="ValidityFrom", default=py_datetime.now, null=True)
-    validity_to = DateTimeField(db_column="ValidityTo", blank=True, null=True, default=None)
+    validity_from = DateTimeField(db_column="ValidityFrom", default=py_datetime.now)
+    validity_to = DateTimeField(db_column="ValidityTo", blank=True, null=True)
 
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
         return core_filter_validity(arg, prefix, **kwargs)
 
+    class Meta:
+        abstract = True
+ 
+class OpenIMISBusinessModel(OpenIMISModel, ValidityMixin):
+    class Meta:
+        abstract = True
+
+class OpenIMISBusinessMigrationModel(OpenIMISModel, LegacyValidityMixin, ValidityMixin):
+    class Meta:
+        abstract = True
+
+
+class OpenIMISMigrationModel(OpenIMISModel, LegacyValidityMixin):
+    """
+    Temporary base class used when migrating a legacy VersionedModel (or UUIDVersionedModel)
+    to the new OpenIMIS* models + django-simple-history.
+
+    How to use (for Claim example):
+    1. In the target module (e.g. claim/models.py):
+       - Change `class Claim(VersionedModel, ...)` to `class Claim(OpenIMISMigrationModel):`
+       - Comment out the explicit `id = ...` and `uuid = ...` declarations.
+       - Remove ExtendableModel (new base already provides json_ext + other fields).
+    2. Run `python manage.py makemigrations claim`
+       - This produces schema changes (add active/json_ext/date_deactivated/version,
+         alter id/uuid/validity_*, remove legacy_id, + creates HistoricalClaim).
+    3. Create an empty data migration:
+       `python manage.py makemigrations claim --name to_history --empty`
+    4. In the empty migration, use:
+       from core.utils import migrate_from_versioned_to_history
+       RunPython that does pre-clean of dependents for soft-deleted rows,
+       then migrate_from_versioned_to_history(Claim, HistoricalClaim)
+    5. Switch the model base from OpenIMISMigrationModel to OpenIMISModel (or OpenIMISBusinessModel).
+    6. Run makemigrations again to drop the temporary validity_from/validity_to columns
+       (and legacy fields if any remain).
+
+    Important code changes during/after migration:
+    - Replace direct `validity_to__...` / `validity_from__...` filters with the model helper.
+      Signature:
+          Model.filter_validity(arg="validity", prefix="", **kwargs)
+      - Pass `validity=<date>` to evaluate validity as of a specific date
+        (omitted → "current" records).
+      - Use `prefix="..."` when the model with the validity fields is **not** the
+        root model of the queryset (common when joining through a relation).
+
+      Examples:
+        # Current records
+        Claim.objects.filter(*Claim.filter_validity())
+
+        # As of a given date
+        Claim.objects.filter(*Claim.filter_validity(validity=some_date))
+
+        # Validity check on a related model (e.g. the main queryset is not Claim)
+        OtherModel.objects.filter(
+            *Claim.filter_validity(prefix="claim__")
+        )
+        # inside Q
+        Q(...) | Q(*Claim.filter_validity(prefix="claim__"))
+
+        # For child tables
+        Claim.objects.filter(*ClaimItem.filter_validity(prefix="items__"))
+
+      You can also do:
+        qs = Claim.filter_queryset(qs)
+        qs = qs.filter(*Claim.filter_validity())
+
+      Note: `OpenIMISMigrationModel.filter_validity()` (bridge) delegates to the
+      legacy implementation and returns a list of Q objects. After you switch to
+      plain `OpenIMISModel`, the same call returns a Q that works with `filter(...)`.
+    - Remove or update any custom save_history() / save() overrides on the model —
+      the parent OpenIMISHistoryMixin (plus simple-history) handles versioning and history creation.
+    - In data-migration scripts (the "to_history" step) raw `validity_to__isnull=False`
+      (or `.exclude(*Model.filter_validity())`) is still acceptable when you deliberately
+      need the archived rows.
+    - After switching the base class and commenting out the explicit `id`, you will likely see
+      Django warnings like:
+        (models.W042) Auto-created primary key used when not defining a primary key type...
+      Fix by adding to your AppConfig (e.g. ClaimConfig):
+        default_auto_field = 'django.db.models.BigAutoField'
+      (Avoid putting it in model Meta if your project still supports Django < 3.2.)
+      This tells Django your app uses BigAutoField (matching the id field provided by
+      OpenIMISMigrationModel / OpenIMISModel).
+
+    See core/migrations/0032_*, 0033_to_history.py and 0034_* for the reference execution on InteractiveUser.
+    """
     class Meta:
         abstract = True

@@ -24,7 +24,7 @@ from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
-from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
+from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin, LegacyValidityMixin
 from core.utils import to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from core.access import evaluate_access_requirements, has_role_perms
