@@ -111,7 +111,7 @@ class UserManager(BaseUserManager, CachedManager):
         return super().get_queryset().prefetch_related("i_user")
 
 
-class TechnicalUser(AbstractBaseUser, LegacyValidityMixin):
+class TechnicalUser(AbstractBaseUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(blank=True, null=True)
@@ -119,6 +119,8 @@ class TechnicalUser(AbstractBaseUser, LegacyValidityMixin):
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     is_imis_admin = False
+    validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
+    validity_to = models.DateTimeField(blank=True, null=True)
 
     @property
     def id_for_audit(self):
