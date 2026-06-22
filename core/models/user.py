@@ -223,6 +223,10 @@ class InteractiveUser(OpenIMISMigrationModel):
     # uuid = models.CharField(
     #     db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True
     # )
+    @staticmethod
+    def filter_validity(*args, **kwargs):
+        return [models.Q()]
+    
     language = models.ForeignKey(Language, models.DO_NOTHING, db_column="LanguageID")
     last_name = models.CharField(db_column="LastName", max_length=100)
     other_names = models.CharField(db_column="OtherNames", max_length=100)

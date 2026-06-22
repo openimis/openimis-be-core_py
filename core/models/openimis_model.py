@@ -171,29 +171,14 @@ class OpenIMISModelMixin(Model):
     active = BooleanField(default=True)
     json_ext = JSONField(db_column="Json_ext", blank=True, null=True)
     date_deactivated = DateTimeField(null=True, default=None)
-    @classmethod
-    def filter_validity(cls, arg="validity", prefix="", **kwargs):
+    @staticmethod
+    def filter_validity(arg="validity", prefix="", **kwargs):
         validity = kwargs.get(arg, None)
-        has_deleted = hasattr(cls, "is_deleted")
-        has_active = hasattr(cls, "active") and not callable(cls.active)
-        
-        if not validity:
-            if has_deleted:
-                return [Q(is_deleted=False)]
-            elif has_active:
-                return [Q(active=True)]
-            else:
-                return [Q()]
-            
+        if validity:
+            return [Q(active=False) | Q(date_deactivated__gte=validity)]
         else:
-            if has_deleted:
-                # we assume that the last update was the deletion
-                return [Q(is_deleted=True) | Q(date_updated__gte=validity) ]
-            elif has_active:
-                 return [Q(active=False) | Q(date_deactivated__gte=validity)]
-            else:
-                return [Q()]
-            
+            return [Q(active=False)]
+      
            
 
     @classmethod

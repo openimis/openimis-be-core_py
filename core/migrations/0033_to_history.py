@@ -43,8 +43,8 @@ def run_migrate_to_history(apps, schema_editor):
     # Find InteractiveUser records with non-null validity_to
     invalid_users = InteractiveUser.objects.filter(validity_to__isnull=False)
     invalid_user_ids = invalid_users.values_list('id', flat=True)
-    UserRole.objects.filter(user__id__in=invalid_user_ids).delete()
-    UserDistrict.objects.filter(user__id__in=invalid_user_ids).delete()
+    UserRole.objects.filter(user__in=invalid_users).delete()
+    UserDistrict.objects.filter(user__in=invalid_users).delete()
 
     empty_tbl_logins(apps, schema_editor)
     result = migrate_from_versioned_to_history(InteractiveUser, HistoryInteractiveUser)
