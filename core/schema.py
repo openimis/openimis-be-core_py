@@ -1114,13 +1114,13 @@ class Query(graphene.ObjectType):
         show_deleted = kwargs.get("showDeleted", False)
         if not show_deleted and not kwargs.get("id", None):
             # active_users_ids = [user.id for user in user_query if user.active]
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__isnull=True) | Q(*InteractiveUser.filter_validity(prefix="i_user__"))
-            )
+            ))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(username__icontains=text_search)
                 | Q(i_user__last_name__icontains=text_search)
                 | Q(officer__last_name__icontains=text_search)
@@ -1131,7 +1131,7 @@ class Query(graphene.ObjectType):
                 | Q(i_user__email=text_search)
                 | Q(officer__email=text_search)
                 | Q(claim_admin__email_id=text_search)
-            )
+            ))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
@@ -1141,23 +1141,23 @@ class Query(graphene.ObjectType):
             )
 
         if email:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__email=email)
                 | Q(officer__email=email)
                 | Q(claim_admin__email_id=email)
-            )
+            ))
         if phone:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__phone=phone)
                 | Q(officer__phone=phone)
                 | Q(claim_admin__phone=phone)
-            )
+            ))
         if last_name:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__last_name__icontains=last_name)
                 | Q(officer__last_name__icontains=last_name)
                 | Q(claim_admin__last_name__icontains=last_name)
-            )
+            ))
         if other_names:
             user_filters.append(
                 Q(i_user__other_names__icontains=other_names)
@@ -1168,11 +1168,11 @@ class Query(graphene.ObjectType):
             user_filters.append(Q(i_user__language=language))
             # Language is not applicable to Office/ClaimAdmin
         if health_facility_id:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__health_facility_id=health_facility_id)
                 | Q(officer__location_id=health_facility_id)
                 | Q(claim_admin__health_facility_id=health_facility_id)
-            )
+            ))
         if birth_date_from:
             user_filters.append(
                 Q(officer__dob__gte=birth_date_from)
@@ -1180,21 +1180,21 @@ class Query(graphene.ObjectType):
                 | Q(claim_admin__dob__gte=birth_date_from)
             )
         if birth_date_to:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(officer__dob__lte=birth_date_to)
                 | Q(officer__veo_dob__lte=birth_date_to)
                 | Q(claim_admin__dob__lte=birth_date_to)
-            )
+            ))
         if role_id:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__user_roles__role_id=role_id)
                 & Q(i_user__user_roles__validity_to__isnull=True)
-            )
+            ))
         if roles:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__user_roles__role_id__in=roles)
                 & Q(i_user__user_roles__validity_to__isnull=True)
-            )
+            ))
         if parent_location and parent_location_level is not None:
             location_filters = {
                 0: Q(i_user__userdistrict__location__parent__uuid=parent_location),
@@ -1253,9 +1253,9 @@ class Query(graphene.ObjectType):
 
         text_search = kwargs.get("str")
         if text_search:
-            filters.append(
+            filters.append(Q(
                 Q(name__icontains=text_search) | Q(alt_language__icontains=text_search)
-            )
+            ))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
 
