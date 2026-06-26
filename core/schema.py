@@ -1949,14 +1949,14 @@ def update_or_create_user(data, user):
     if UT_OFFICER in data["user_types"]:
         health_facility_id = data.get("health_facility_id", None)
         eo_data = data.copy()
-        eo_data["code"] = data.get('username',data.get('login_name', None ))
+        eo_data["code"] = data.get('username', data.get('login_name', None))
         if health_facility_id:
             try:
                 HealthFacility = apps.get_model("location", "HealthFacility")
                 hf = HealthFacility.objects.filter(id=health_facility_id).first()
                 if hf:
                     officer_location_id = hf.location
-                    data_copied["location_id"] = officer_location_id.id
+                    eo_data["location_id"] = officer_location_id.id
             except Exception as e:
                 logger.warning("Error %s ", str(e))
         officer, officer_created = create_or_update_officer(
@@ -1969,7 +1969,7 @@ def update_or_create_user(data, user):
         officer = None
     if UT_CLAIM_ADMIN in data["user_types"]:
         ca_data = data.copy()
-        ca_data["code"] = data.get('username',data.get('login_name', None ))
+        ca_data["code"] = data.get('username', data.get('login_name', None))
         claim_admin, claim_admin_created = create_or_update_claim_admin(
             user_uuid, ca_data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
         )

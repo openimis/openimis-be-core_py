@@ -124,7 +124,7 @@ class ImpersonationTest(openIMISGraphQLTestCase):
                 "userTypes": ["INTERACTIVE"],
             }
         }
-        
+
         response = self.query(
             query,
             variables=variables,

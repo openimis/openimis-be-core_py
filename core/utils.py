@@ -888,8 +888,6 @@ class ExtendedRelayConnection(graphene.relay.Connection):
 
 
 def get_first_or_default_language():
-    from django.contrib.sessions.models import Session
-    from django.utils.timezone import now
 
     sorted_languages = core.models.Language.objects.filter(sort_order__isnull=False)
     if sorted_languages.exists():
@@ -1117,24 +1115,6 @@ def clear_cache(instance):
 
 def get_cache_key(model, id):
     return f"cs_{model.__name__}_{str(id).lower()}"
-
-
-def is_this_session_superuser(session_key):
-
-    try:
-        session = Session.objects.get(session_key=session_key, expire_date__gte=now())
-        data = session.get_decoded()
-        user_id = data.get("_auth_user_id")
-        if user_id:
-            user = core.models.user.User.objects.get(id=user_id)
-            if user.is_superuser:
-                return True
-    except Session.DoesNotExist:
-        pass
-    except Exception:
-        pass
-
-    return False
 
 
 @lru_cache(maxsize=1)
