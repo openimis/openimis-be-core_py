@@ -9,7 +9,6 @@ import django.db.models.deletion
 import simple_history.models
 
 
-
 def migrate_admin_users_to_superuser(apps, schema_editor):
     """Set is_superuser=True on Users that have an InteractiveUser assigned
     to a currently-valid (validity_to is null) Role with is_system=64.
@@ -43,7 +42,6 @@ def migrate_admin_users_to_superuser(apps, schema_editor):
     User.objects.filter(
         i_user_id__in=admin_interactive_user_ids,
     ).update(is_superuser=True)
-
 
 
 class Migration(migrations.Migration):
