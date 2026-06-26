@@ -1134,11 +1134,11 @@ class Query(graphene.ObjectType):
                 | Q(claim_admin__last_name__icontains=last_name)
             ))
         if other_names:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__other_names__icontains=other_names)
                 | Q(officer__other_names__icontains=other_names)
                 | Q(claim_admin__other_names__icontains=other_names)
-            )
+            ))
         if language:
             user_filters.append(Q(i_user__language=language))
             # Language is not applicable to Office/ClaimAdmin
@@ -1149,11 +1149,11 @@ class Query(graphene.ObjectType):
                 | Q(claim_admin__health_facility_id=health_facility_id)
             ))
         if birth_date_from:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(officer__dob__gte=birth_date_from)
                 | Q(officer__veo_dob__gte=birth_date_from)
                 | Q(claim_admin__dob__gte=birth_date_from)
-            )
+            ))
         if birth_date_to:
             user_filters.append(Q(
                 Q(officer__dob__lte=birth_date_to)
