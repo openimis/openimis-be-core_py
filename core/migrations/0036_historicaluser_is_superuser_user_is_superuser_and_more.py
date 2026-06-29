@@ -16,7 +16,6 @@ def migrate_admin_users_to_superuser(apps, schema_editor):
     User = apps.get_model("core", "User")
 
     User.objects.filter(
-        validity_to__isnull=True,
         i_user__validity_to__isnull=True,
         i_user__user_roles__validity_to__isnull=True,
         i_user__user_roles__role__is_system=64,
