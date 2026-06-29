@@ -14,33 +14,13 @@ def migrate_admin_users_to_superuser(apps, schema_editor):
     to a currently-valid (validity_to is null) Role with is_system=64.
     """
     User = apps.get_model("core", "User")
-    UserRole = apps.get_model("core", "UserRole")
-    Role = apps.get_model("core", "Role")
-
-    admin_role_ids = list(
-        Role.objects.filter(
-            validity_to__isnull=True,
-            is_system=64,
-        ).values_list("id", flat=True)
-    )
-
-    if not admin_role_ids:
-        return
-
-    admin_interactive_user_ids = list(
-        UserRole.objects.filter(
-            validity_to__isnull=True,
-            role_id__in=admin_role_ids,
-        )
-        .values_list("user_id", flat=True)
-        .distinct()
-    )
-
-    if not admin_interactive_user_ids:
-        return
 
     User.objects.filter(
-        i_user_id__in=admin_interactive_user_ids,
+        validity_to__isnull=True,
+        i_user__validity_to__isnull=True,
+        i_user__user_roles__validity_to__isnull=True,
+        i_user__user_roles__role__is_system=64,
+        i_user__user_roles__role__validity_to__isnull=True
     ).update(is_superuser=True)
 
 
