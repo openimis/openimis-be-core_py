@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("contenttypes", "0002_remove_content_type_name"),
-        ("core", "0035_migrate_admin_users_to_superuser"),
+        ("core", "0036_widen_officer_code_columns"),
     ]
 
     operations = [
