@@ -198,7 +198,7 @@ class SaveNoOpTestCase(TestCase):
         baseline_version = user.version
         baseline_history_count = user.history.count()
 
-        result = user.save()
+        result = user.save(silent=True)
 
         self.assertIsNone(result)
         user.refresh_from_db()

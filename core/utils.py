@@ -126,38 +126,6 @@ def clear_history_context():
             pass
 
 
-def handle_impersonation(request, user):
-    """
-    Shared utility for handling the X-Impersonate-User header.
-    - Checks if superuser and valid target user.
-    - Sets thread-local original_user and current_user.
-    - Returns the effective user (impersonated or original).
-    - Uses lazy imports to prevent circular dependencies with models.
-    - This ensures consistent behavior across first and subsequent calls,
-      especially when combined with ClearUserContextMiddleware.
-    """
-    impersonate_uuid = request.META.get("HTTP_X_IMPERSONATE_USER")
-    if impersonate_uuid:
-        if not getattr(user, "is_superuser", False):
-            raise PermissionDenied("Impersonation requires superuser privileges")
-        from django.apps import apps
-        User = apps.get_model("core", "User")
-        try:
-            target_uuid = uuid.UUID(impersonate_uuid)
-            # Use id lookup as per original implementation (note: may need review if pk vs uuid)
-            target_user = User.objects.get(id=target_uuid, i_user__isnull=False)
-            set_original_user(user)
-            set_current_user(target_user)
-            logger.info(f"Superuser {user.username} impersonating {target_user.username}")
-            return target_user
-        except (ValueError, User.DoesNotExist):
-            raise PermissionDenied("Invalid impersonation target")
-    else:
-        set_original_user(None)
-        set_current_user(user)
-        return user
-
-
 class TimeUtils(object):
 
     @classmethod
@@ -806,10 +774,7 @@ class ExtendedRelayConnection(graphene.relay.Connection):
 
 
 def get_first_or_default_language():
-<<<<<<< HEAD
     from core.models import Language
-=======
->>>>>>> 0528442 (chore: flake8)
 
     sorted_languages = Language.objects.filter(sort_order__isnull=False)
     if sorted_languages.exists():
