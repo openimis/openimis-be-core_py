@@ -1936,7 +1936,7 @@ def update_or_create_user(data, user):
                 logger.warning("Error %s ", str(e))
         officer, officer_created = create_or_update_officer(
             user_uuid,
-            data_copied,
+            eo_data,
             user.id_for_audit,
             UT_INTERACTIVE in data["user_types"],
         )

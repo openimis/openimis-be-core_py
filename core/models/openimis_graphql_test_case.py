@@ -14,7 +14,7 @@ from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
 from core.utils import clear_current_user, clear_history_context
 from django.db import transaction
-from graphene.utils.str_converters import to_snake_case, to_camel_case
+from graphene.utils.str_converters import to_camel_case
 
 logger = logging.getLogger(__name__)
 

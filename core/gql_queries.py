@@ -20,6 +20,7 @@ from django.core.exceptions import PermissionDenied
 
 from .utils import prefix_filterset
 
+
 class OfficerGQLType(DjangoObjectType):
     """
     This type corresponds to the Enrolment Officer but is a bit more generic than just Enrolment.

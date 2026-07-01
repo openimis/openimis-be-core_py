@@ -205,7 +205,6 @@ class SaveNoOpTestCase(TestCase):
         self.assertEqual(user.version, baseline_version)
         self.assertEqual(user.history.count(), baseline_history_count)
 
-
     def test_history_model_save_is_noop_when_not_dirty(self):
         instance = MagicMock()
         instance.id = "existing-id"
