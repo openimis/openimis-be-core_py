@@ -25,7 +25,7 @@ import threading
 from django.db import transaction
 # from simple_history.utils import update_change_reason
 from django.db.models import Func, UUIDField
-from django.db import db_connection
+from django.db import connection as db_connection
 from uuid6 import uuid7 as uuidv7  # noqa: F401
 try:
     from simple_history.models import HistoricalRecords
