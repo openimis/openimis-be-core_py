@@ -6,7 +6,7 @@ from django.db.models import (
     Q, UUIDField, DateTimeField, BooleanField, Model, IntegerField, BigAutoField, JSONField,
 )
 from simple_history.models import HistoricalRecords
-from core.utils import CachedManager, CachedModelMixin, filter_validity as core_filter_validity, uuidv7
+from core.utils import CachedManager, CachedModelMixin, filter_validity as core_filter_validity, uuidv7  # , GenerateUUIDv7
 from simple_history.utils import get_history_manager_for_model
 import datetime as base_datetime
 
@@ -158,9 +158,9 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
     def filter_validity(arg="validity", prefix="", **kwargs):
         validity = kwargs.get(arg, None)
         if not validity:
-            return Q(active=True)
+            return [Q(active=True)]
         else:
-            return Q(active=False) | Q(date_deactivated__gte=validity)
+            return [Q(active=False) | Q(date_deactivated__gte=validity)]
 
     class Meta:
         abstract = True

@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import F
 from dirtyfields import DirtyFieldsMixin
-from core.utils import CachedManager, CachedModelMixin, uuidv7
+from core.utils import CachedManager, CachedModelMixin, uuidv7  # , GenerateUUIDv7
 from simple_history.utils import bulk_update_with_history, bulk_create_with_history
 from django.db.models import (
     DateTimeField, Model, IntegerField,
@@ -50,7 +50,11 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
     version = IntegerField(default=1)
 
     id = models.UUIDField(
-        primary_key=True, db_column="UUID", default=None, editable=False
+        primary_key=True,
+        db_column="UUID",
+        # db_default=GenerateUUIDv7(),need django 5
+        default=None,
+        editable=False
     )
     objects = HistoryModelManager()
     is_deleted = models.BooleanField(db_column="isDeleted", default=False)

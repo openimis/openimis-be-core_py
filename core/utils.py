@@ -24,14 +24,13 @@ from functools import lru_cache
 import threading
 from django.db import transaction
 # from simple_history.utils import update_change_reason
-import time
-import os
-
+from django.db.models import Func, UUIDField
+from django.db import db_connection
+from uuid6 import uuid7 as uuidv7  # noqa: F401
 try:
     from simple_history.models import HistoricalRecords
 except Exception:
     HistoricalRecords = None
-
 
 _request_local = threading.local()
 
@@ -603,29 +602,72 @@ def clean_fk(instance):
     return field_values
 
 
-def uuidv7() -> uuid.UUID:
+class GenerateUUIDv7(Func):
     """
-    Generate a UUIDv7.
+    Cross-database UUIDv7 generator.
+
+    Usage:
+        from yourapp.db_functions import GenerateUUIDv7
+
+        class YourModel(models.Model):
+            id = models.UUIDField(
+                primary_key=True,
+                db_default=GenerateUUIDv7(),
+                editable=False,
+            )
     """
-    # random bytes
-    value = bytearray(os.urandom(16))
+    output_field = UUIDField()
+    template = '%(function)s()'
 
-    # current timestamp in ms
-    timestamp = int(time.time() * 1000)
+    def as_sql(self, compiler, connection, **extra_context):
+        vendor = db_connection.vendor
 
-    # timestamp
-    value[0] = (timestamp >> 40) & 0xFF
-    value[1] = (timestamp >> 32) & 0xFF
-    value[2] = (timestamp >> 24) & 0xFF
-    value[3] = (timestamp >> 16) & 0xFF
-    value[4] = (timestamp >> 8) & 0xFF
-    value[5] = timestamp & 0xFF
+        if vendor == 'postgresql':
+            # PostgreSQL 18+ has native uuidv7()
+            # Older versions use our custom uuid_generate_v7()
+            pg_version = getattr(connection, 'pg_version', 0)
+            if pg_version >= 180000:
+                function = 'uuidv7'
+            else:
+                function = 'uuid_generate_v7'
 
-    # version and variant
-    value[6] = (value[6] & 0x0F) | 0x70
-    value[8] = (value[8] & 0x3F) | 0x80
+        elif vendor == 'microsoft':
+            # SQL Server - uses our custom function
+            # Change to 'dbo.uuid_v8mssql' if you want the optimized version
+            # for better clustered index performance
+            function = 'dbo.uuid_v7'
 
-    return uuid.UUID(bytes=bytes(value))
+        else:
+            # Fallback for other databases (or raise error)
+            function = 'uuid_generate_v7'
+
+        extra_context['function'] = function
+        return super().as_sql(compiler, connection, **extra_context)
+
+
+class RandomUUID(Func):
+    """Cross-database random UUID for Django 4.2"""
+    function = None  # Will be overridden per backend
+    output_field = UUIDField()
+    arity = 0
+
+    def as_postgresql(self, compiler, connection, **extra_context):
+        # PostgreSQL 13+ has gen_random_uuid() built-in
+        return self.as_sql(compiler, connection, function='gen_random_uuid', **extra_context)
+
+    def as_microsoft(self, compiler, connection, **extra_context):  # MSSQL
+        return self.as_sql(compiler, connection, function='NEWID', **extra_context)
+
+    # Optional: fallback for other DBs (e.g. SQLite for dev)
+    def as_sql(self, compiler, connection, **extra_context):
+        # if connection.vendor == 'postgresql':
+        #     return self.as_postgresql(compiler, connection, **extra_context)
+        # elif connection.vendor in ('microsoft', 'mssql'):
+        #     return self.as_microsoft(compiler, connection, **extra_context)
+        if extra_context.get('function', self.function) is None:
+            # You can raise or use a default
+            raise NotImplementedError(f"RandomUUID not supported on {connection.vendor}")
+        return super().as_sql(compiler, connection, **extra_context)
 
 
 class CachedModelMixin:
