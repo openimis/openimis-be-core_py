@@ -587,7 +587,7 @@ class gqlTest(openIMISGraphQLTestCase):
         # Filter by user type OFFICER
         query = f"""
             query {{
-                users(userTypes: [{UT_OFFICER}], first: 5) {{
+                users(userTypes: [{UT_OFFICER}], first: 100) {{
                     edges {{
                         node {{
                             username
