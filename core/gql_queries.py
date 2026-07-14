@@ -16,7 +16,8 @@ from location.models import HealthFacility, UserDistrict
 from core.apps import CoreConfig
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
-
+from graphene.types.generic import GenericScalar
+from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints
 from .utils import prefix_filterset
 
 class OfficerGQLType(DjangoObjectType):
