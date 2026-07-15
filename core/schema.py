@@ -69,6 +69,7 @@ from core.gql_queries import (
     PermissionOpenImisGQLType,
     ModulePermissionGQLType,
     CustomFilterOptionGQLType,
+    MaxLengthConstraintsGQLType,
 )
 from core.utils import (  # noqa: 401
     ExtendedConnection,
@@ -758,6 +759,8 @@ class Query(graphene.ObjectType):
         ModuleConfigurationGQLType, validity=graphene.String(), layer=graphene.String()
     )
 
+    max_length_constraints = graphene.Field(MaxLengthConstraintsGQLType)
+
     user_obligatory_fields = GenericScalar()
     eo_obligatory_fields = GenericScalar()
 
@@ -967,6 +970,9 @@ class Query(graphene.ObjectType):
             return False
         else:
             return True
+
+    def resolve_max_length_constraints(self, info):
+        return MaxLengthConstraintsGQLType()
 
     def resolve_validate_user_email(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
