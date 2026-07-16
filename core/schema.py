@@ -30,6 +30,7 @@ from core.services import (
     reset_user_password,
     set_user_password,
     user_authentication,
+    is_password_reset_rate_limited, # added
     wait_for_mutation,
 )
 from core.tasks import openimis_mutation_async
@@ -2057,17 +2058,36 @@ class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     success = graphene.Boolean()
     error = graphene.String()
 
+    # @classmethod
+    # def mutate_and_get_payload(cls, root, info, username, **input):
+    #   try:
+    #         reset_user_password(info.context, username)
+    #         return ResetPasswordMutation(success=True)
+    #     except Exception as exc:
+    #         logger.exception(exc)
+    #         return ResetPasswordMutation(
+    #             success=False,
+    #             error=gettext_lazy("Failed to reset password."),
+    #         )
+
+    ###
     @classmethod
     def mutate_and_get_payload(cls, root, info, username, **input):
-        try:
-            reset_user_password(info.context, username)
+        request = info.context
+
+        if is_password_reset_rate_limited(request, username):
+            logger.warning("Password reset request was rate limited")
             return ResetPasswordMutation(success=True)
-        except Exception as exc:
-            logger.exception(exc)
-            return ResetPasswordMutation(
-                success=False,
-                error=gettext_lazy("Failed to reset password."),
-            )
+
+        try:
+            reset_user_password(request, username)
+        except Exception:
+            logger.exception("Unable to process password reset email")
+
+        # Not disclosing whether the account exists, has an email address,
+        # or whether the SMTP provider accepted the message.
+        return ResetPasswordMutation(success=True)
+    ## - End
 
 
 class SetPasswordMutation(graphene.relay.ClientIDMutation):
