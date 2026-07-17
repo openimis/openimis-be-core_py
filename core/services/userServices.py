@@ -9,6 +9,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
+from django.utils.html import escape
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
@@ -306,7 +307,7 @@ def _try_auto_provision(username, password):
     return None
 
 
-def user_authentication(request, username, password):
+def user_authentication(request, username, password, allow_expired=False):
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
 
@@ -314,11 +315,19 @@ def user_authentication(request, username, password):
 
     user = authenticate(request, username=username, password=password)
     if user:
+        if user.i_user and user.i_user.is_password_expired:
+            if allow_expired:
+                return user
+            raise exceptions.AuthenticationFailed("PASSWORD_EXPIRED")
         return user
 
     if not User.objects.filter(username__iexact=username).exists():
         user = _try_auto_provision(username, password)
         if user:
+            if user.i_user and user.i_user.is_password_expired:
+                if allow_expired:
+                    return user
+                raise exceptions.AuthenticationFailed("PASSWORD_EXPIRED")
             return user
 
     logger.debug(f"Authentication failed for username: {username}")
@@ -407,6 +416,20 @@ def reset_user_password(request, username):
             "user": user,
         },
     )
+    escaped_username = escape(user.username)
+    escaped_reset_url = escape(reset_url)
+    html_message = f"""
+        <p>Hello {escaped_username},</p>
+        <p>You've recently requested a new password.</p>
+        <p>
+            <a href="{escaped_reset_url}">Click here to set a new password</a>
+        </p>
+        <p>Or copy and paste this link into your browser:</p>
+        <p><a href="{escaped_reset_url}">{escaped_reset_url}</a></p>
+        <p>This link will expire in one hour and can only be used once.</p>
+        <p>If you did not request a password reset, you can ignore this email. Your password has not been changed.</p>
+        <p>Regards,</p>
+    """
 
     send_result = send_mail(
         subject="[CoreMIS] Reset Password",
@@ -414,6 +437,7 @@ def reset_user_password(request, username):
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
         fail_silently=False,
+        html_message=html_message,
     )
 
     logger.warning(

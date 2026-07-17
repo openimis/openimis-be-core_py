@@ -2123,6 +2123,16 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
                 success=False,
                 error=gql_error.message,
             )
+        except ValidationError as validation_error:
+            logger.exception(validation_error)
+            if hasattr(validation_error, "messages"):
+                error_message = "; ".join(str(message) for message in validation_error.messages)
+            else:
+                error_message = str(validation_error)
+            return SetPasswordMutation(
+                success=False,
+                error=error_message,
+            )
         except Exception as exc:
             logger.exception(exc)
             return SetPasswordMutation(
@@ -2134,6 +2144,10 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers"""
 
+    password_expired = graphene.Boolean()
+    reset_email_sent = graphene.Boolean()
+    username = graphene.String()
+
     @classmethod
     def mutate(cls, root, info, **kwargs):
 
@@ -2142,7 +2156,25 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         request = info.context
 
         check_lockout(request)
-        info.context.user = user_authentication(request, username, password)
+        user = user_authentication(request, username, password, allow_expired=True)
+        if user.i_user and user.i_user.is_password_expired:
+            reset_email_sent = False
+            if is_password_reset_rate_limited(request, user.username):
+                logger.warning("Expired-password reset email request was rate limited")
+            else:
+                try:
+                    reset_email_sent = bool(reset_user_password(request, user.username))
+                except Exception:
+                    logger.exception("Unable to process expired-password reset email")
+
+            return cls(
+                password_expired=True,
+                reset_email_sent=reset_email_sent,
+                refresh_expires_in=0,
+                token="",
+                username=user.username,
+            )
+        info.context.user = user
         return super().mutate(cls, info, **kwargs)
 
 

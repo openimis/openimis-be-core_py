@@ -58,6 +58,7 @@ DEFAULT_CFG = {
     "is_valid_health_facility_contract_required": False,
     "secondary_calendar": None,
     "locked_user_password_hash": "locked",
+    "password_validity_days": 90,
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
 }
@@ -95,6 +96,7 @@ class CoreConfig(AppConfig):
     gql_mutation_delete_claim_administrator_perms = []
     is_valid_health_facility_contract_required = None
     locked_user_password_hash = None
+    password_validity_days = 90
 
     fields_controls_user = {}
     fields_controls_eo = {}
@@ -261,6 +263,7 @@ class CoreConfig(AppConfig):
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
+        CoreConfig.password_validity_days = int(cfg["password_validity_days"])
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler

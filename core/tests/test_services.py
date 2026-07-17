@@ -2,9 +2,11 @@ import importlib
 import logging
 import datetime
 
+from django.core.exceptions import ValidationError
 from django.test.client import RequestFactory
 from django.apps import apps
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 
 import core
@@ -114,6 +116,8 @@ class UserServicesTest(TestCase):
         self.assertNotEqual(i_user.password, PASSWORD)  # No clear text password
         self.assertTrue(i_user.check_password(PASSWORD))
         self.assertFalse(i_user.check_password("wrong_password"))
+        self.assertIsNotNone(i_user.password_validity)
+        self.assertGreater(i_user.password_validity, timezone.now())
 
     def test_iuser_update(self):
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]
@@ -495,6 +499,17 @@ class UserServicesTest(TestCase):
         with self.assertRaises(ValidationError):
             set_user_password(request, username, "TOKEN", "new_password")
 
+    def test_setting_password_updates_password_validity(self):
+        self.user.i_user.set_password("NewStrongPass123!")
+        self.user.i_user.save()
+
+        self.assertIsNotNone(self.user.i_user.password_validity)
+        self.assertGreater(self.user.i_user.password_validity, timezone.now())
+        self.assertLessEqual(
+            self.user.i_user.password_validity,
+            timezone.now() + datetime.timedelta(days=91),
+        )
+
 
 class UserAuthenticationTest(TestCase):
     legacy_username = "legacy_user_test"
@@ -540,6 +555,41 @@ class UserAuthenticationTest(TestCase):
         self.assertIsNotNone(user)
         self.assertTrue(User.objects.filter(username=self.legacy_username).exists())
         self.assertEqual(user.i_user.id, self.legacy_i_user.id)
+
+    def test_expired_password_rejects_authentication(self):
+        self.legacy_i_user.password_validity = timezone.now() - datetime.timedelta(days=1)
+        self.legacy_i_user.save()
+
+        request = self.factory.post("/")
+        with self.assertRaises(AuthenticationFailed) as cm:
+            user_authentication(request, self.legacy_username, self.legacy_password)
+
+        self.assertEqual(str(cm.exception.detail), "PASSWORD_EXPIRED")
+
+    def test_expired_password_can_be_returned_when_explicitly_allowed(self):
+        self.legacy_i_user.password_validity = timezone.now() - datetime.timedelta(days=1)
+        self.legacy_i_user.save()
+
+        request = self.factory.post("/")
+        user = user_authentication(
+            request,
+            self.legacy_username,
+            self.legacy_password,
+            allow_expired=True,
+        )
+
+        self.assertEqual(user.i_user.id, self.legacy_i_user.id)
+
+    def test_current_password_reuse_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self.legacy_i_user.set_password(self.legacy_password)
+
+    def test_historical_password_reuse_is_rejected(self):
+        self.legacy_i_user.set_password("NewLegacy123!")
+        self.legacy_i_user.save()
+
+        with self.assertRaises(ValidationError):
+            self.legacy_i_user.set_password(self.legacy_password)
 
     def test_auto_provision_fails_with_wrong_password(self):
         self.assertFalse(User.objects.filter(username=self.legacy_username).exists())

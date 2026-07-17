@@ -5,6 +5,9 @@ from core.models.openimis_graphql_test_case import (
 from core.models import Language
 from core.test_helpers import create_test_interactive_user, create_admin_role
 from location.models import Location
+from django.utils import timezone
+from unittest.mock import patch
+import datetime
 import json
 
 
@@ -77,6 +80,35 @@ class gqlTest(openIMISGraphQLTestCase):
         response = self.query(query, variables=variables)
         self.assertResponseHasErrors(response)
         _ = json.loads(response.content)
+
+    def test_login_expired_password_sends_reset_email(self):
+        username = "ExpiredPasswordUser"
+        password = "ExpiredPass123!"
+        user = create_test_interactive_user(username=username, password=password)
+        user.i_user.password_validity = timezone.now() - datetime.timedelta(days=1)
+        user.i_user.save()
+
+        query = """
+            mutation authenticate($username: String!, $password: String!) {
+                tokenAuth(username: $username, password: $password)
+                {
+                    refreshExpiresIn
+                    passwordExpired
+                    resetEmailSent
+                    username
+                }
+            }
+        """
+        with patch("core.schema.reset_user_password", return_value=True) as reset_user_password_mock:
+            response = self.query(query, variables={"username": username, "password": password})
+
+        self.assertResponseNoErrors(response)
+        data = json.loads(response.content)["data"]["tokenAuth"]
+
+        self.assertTrue(data["passwordExpired"])
+        self.assertTrue(data["resetEmailSent"])
+        self.assertEqual(data["username"], username)
+        reset_user_password_mock.assert_called_once()
 
     def test_login_wrong_credentials_prevents_user_enumeration(self):
         """Both wrong password and non-existent user should return identical error responses."""
