@@ -4,6 +4,7 @@ from core.models.openimis_graphql_test_case import (
 )
 from core.models import Language
 from core.test_helpers import create_test_interactive_user, create_admin_role
+from core.apps import CoreConfig
 from location.models import Location
 from django.utils import timezone
 from unittest.mock import patch
@@ -109,6 +110,82 @@ class gqlTest(openIMISGraphQLTestCase):
         self.assertTrue(data["resetEmailSent"])
         self.assertEqual(data["username"], username)
         reset_user_password_mock.assert_called_once()
+
+    def test_login_password_expiry_warning_within_threshold(self):
+        username = "PasswordExpiryWarningUser"
+        password = "ExpiringPass123!"
+        user = create_test_interactive_user(username=username, password=password)
+        expiry_date = timezone.localdate() + datetime.timedelta(days=5)
+        user.i_user.password_validity = timezone.make_aware(
+            datetime.datetime.combine(expiry_date, datetime.time(hour=12))
+        )
+        user.i_user.save()
+
+        query = """
+            mutation authenticate($username: String!, $password: String!) {
+                tokenAuth(username: $username, password: $password)
+                {
+                    passwordExpired
+                    passwordExpiryWarning
+                    passwordExpiresInDays
+                    passwordExpiresAt
+                    username
+                }
+            }
+        """
+        original_warning_days = CoreConfig.password_expiry_warning_days
+        CoreConfig.password_expiry_warning_days = 5
+        try:
+            response = self.query(query, variables={"username": username, "password": password})
+        finally:
+            CoreConfig.password_expiry_warning_days = original_warning_days
+
+        self.assertResponseNoErrors(response)
+        data = json.loads(response.content)["data"]["tokenAuth"]
+
+        self.assertFalse(data["passwordExpired"])
+        self.assertTrue(data["passwordExpiryWarning"])
+        self.assertEqual(data["passwordExpiresInDays"], 5)
+        self.assertIsNotNone(data["passwordExpiresAt"])
+        self.assertEqual(data["username"], username)
+
+    def test_login_password_expiry_warning_outside_threshold(self):
+        username = "PasswordExpiryNoWarningUser"
+        password = "NotExpiringPass123!"
+        user = create_test_interactive_user(username=username, password=password)
+        expiry_date = timezone.localdate() + datetime.timedelta(days=6)
+        user.i_user.password_validity = timezone.make_aware(
+            datetime.datetime.combine(expiry_date, datetime.time(hour=12))
+        )
+        user.i_user.save()
+
+        query = """
+            mutation authenticate($username: String!, $password: String!) {
+                tokenAuth(username: $username, password: $password)
+                {
+                    passwordExpired
+                    passwordExpiryWarning
+                    passwordExpiresInDays
+                    passwordExpiresAt
+                    username
+                }
+            }
+        """
+        original_warning_days = CoreConfig.password_expiry_warning_days
+        CoreConfig.password_expiry_warning_days = 5
+        try:
+            response = self.query(query, variables={"username": username, "password": password})
+        finally:
+            CoreConfig.password_expiry_warning_days = original_warning_days
+
+        self.assertResponseNoErrors(response)
+        data = json.loads(response.content)["data"]["tokenAuth"]
+
+        self.assertFalse(data["passwordExpired"])
+        self.assertFalse(data["passwordExpiryWarning"])
+        self.assertEqual(data["passwordExpiresInDays"], 6)
+        self.assertIsNotNone(data["passwordExpiresAt"])
+        self.assertEqual(data["username"], username)
 
     def test_login_wrong_credentials_prevents_user_enumeration(self):
         """Both wrong password and non-existent user should return identical error responses."""

@@ -2,6 +2,7 @@ import importlib
 import logging
 import datetime
 
+from django.core import mail
 from django.core.exceptions import ValidationError
 from django.test.client import RequestFactory
 from django.apps import apps
@@ -10,13 +11,16 @@ from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 
 import core
-from core.models import InteractiveUser, Language, User
+from core.models import InteractiveUser, Language, User, PasswordExpiryReminderLog
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
     create_or_update_officer,
     create_or_update_claim_admin,
     reset_user_password,
+    get_password_expiry_reminder_users,
+    send_password_expiry_reminder,
+    send_password_expiry_reminders,
     set_user_password,
     user_authentication,
 )
@@ -28,6 +32,10 @@ from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
 PASSWORD = "FoBoar72!"
+
+
+def local_date(value):
+    return timezone.localtime(value).date() if timezone.is_aware(value) else value.date()
 
 
 class UserServicesTest(TestCase):
@@ -435,8 +443,6 @@ class UserServicesTest(TestCase):
         self.assertEqual(claim_admin.email_id, "imis@foo.be")
 
     def test_user_reset_password(self):
-        from django.core import mail
-
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]
         username = "user_reset"
         i_user, created = create_or_update_interactive_user(
@@ -468,6 +474,106 @@ class UserServicesTest(TestCase):
 
         self.assertTrue(len(mail.outbox) == 1)
         self.assertTrue(mail.outbox[0].subject == "[OpenIMIS] Reset Password")
+
+    def test_password_expiry_reminder_user_selection(self):
+        reference_time = timezone.now()
+        expiring_user = create_test_interactive_user(
+            username="expiry_email_selected",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_selected@example.invalid"},
+        )
+        expiring_user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        expiring_user.i_user.save(update_fields=["password_validity"])
+
+        outside_window_user = create_test_interactive_user(
+            username="expiry_email_outside",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_outside@example.invalid"},
+        )
+        outside_window_user.i_user.password_validity = reference_time + datetime.timedelta(days=6)
+        outside_window_user.i_user.save(update_fields=["password_validity"])
+
+        no_email_user = create_test_interactive_user(
+            username="expiry_email_no_email",
+            password=PASSWORD,
+            custom_props={"email": ""},
+        )
+        no_email_user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        no_email_user.i_user.save(update_fields=["password_validity"])
+
+        selected_usernames = {
+            user.username
+            for user in get_password_expiry_reminder_users(reference_time, reminder_days=5)
+        }
+
+        self.assertIn(expiring_user.username, selected_usernames)
+        self.assertNotIn(outside_window_user.username, selected_usernames)
+        self.assertNotIn(no_email_user.username, selected_usernames)
+
+    def test_send_password_expiry_reminder_creates_log_and_sends_email(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_send",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_send@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        sent = send_password_expiry_reminder(user, reference_time)
+
+        self.assertTrue(sent)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "[CoreMIS] Password Expiry Reminder")
+        self.assertEqual(mail.outbox[0].to, ["expiry_email_send@example.invalid"])
+        self.assertTrue(
+            PasswordExpiryReminderLog.objects.filter(
+                user=user,
+                password_validity=user.i_user.password_validity,
+                reminder_date=local_date(reference_time),
+            ).exists()
+        )
+
+    def test_send_password_expiry_reminder_skips_duplicate_same_day(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_duplicate",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_duplicate@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        first_sent = send_password_expiry_reminder(user, reference_time)
+        second_sent = send_password_expiry_reminder(user, reference_time)
+
+        self.assertTrue(first_sent)
+        self.assertFalse(second_sent)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            PasswordExpiryReminderLog.objects.filter(
+                user=user,
+                password_validity=user.i_user.password_validity,
+                reminder_date=local_date(reference_time),
+            ).count(),
+            1,
+        )
+
+    def test_send_password_expiry_reminders_returns_counts(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_batch",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_batch@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        result = send_password_expiry_reminders(reference_time, reminder_days=5)
+
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(result["skipped"], 0)
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_user_set_password(self):
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]

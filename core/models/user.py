@@ -913,6 +913,23 @@ class UserGroup(models.Model):
         unique_together = (("user", "group"),)
 
 
+class PasswordExpiryReminderLog(models.Model):
+    user = models.ForeignKey(
+        User,
+        models.CASCADE,
+        related_name="password_expiry_reminder_logs",
+    )
+    password_validity = models.DateTimeField()
+    reminder_date = models.DateField()
+    sent_at = models.DateTimeField(default=timezone.now)
+    email = models.EmailField(max_length=200)
+
+    class Meta:
+        managed = True
+        db_table = "core_PasswordExpiryReminderLog"
+        unique_together = (("user", "password_validity", "reminder_date"),)
+
+
 def _get_default_expire_date():
     return py_datetime.now() + timedelta(days=1)
 

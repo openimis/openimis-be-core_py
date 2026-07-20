@@ -47,6 +47,7 @@ from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.middleware.csrf import get_token
 from django.utils import translation
+from django.utils import timezone
 from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
@@ -2145,8 +2146,43 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers"""
 
     password_expired = graphene.Boolean()
+    password_expiry_warning = graphene.Boolean()
+    password_expires_in_days = graphene.Int()
+    password_expires_at = graphene.DateTime()
     reset_email_sent = graphene.Boolean()
     username = graphene.String()
+
+    @staticmethod
+    def _get_password_expiry_info(user):
+        expires_at = getattr(getattr(user, "i_user", None), "password_validity", None)
+        if not expires_at:
+            return {
+                "password_expiry_warning": False,
+                "password_expires_in_days": None,
+                "password_expires_at": None,
+            }
+
+        current_time = timezone.now()
+        if timezone.is_naive(expires_at) and timezone.is_aware(current_time):
+            expires_at = timezone.make_aware(expires_at)
+        elif timezone.is_aware(expires_at) and timezone.is_naive(current_time):
+            expires_at = timezone.make_naive(expires_at)
+
+        if expires_at <= current_time:
+            return {
+                "password_expiry_warning": False,
+                "password_expires_in_days": 0,
+                "password_expires_at": expires_at,
+            }
+
+        expires_on = timezone.localtime(expires_at).date() if timezone.is_aware(expires_at) else expires_at.date()
+        today = timezone.localdate() if timezone.is_aware(current_time) else current_time.date()
+        days_left = (expires_on - today).days
+        return {
+            "password_expiry_warning": 0 <= days_left <= CoreConfig.password_expiry_warning_days,
+            "password_expires_in_days": days_left,
+            "password_expires_at": expires_at,
+        }
 
     @classmethod
     def mutate(cls, root, info, **kwargs):
@@ -2169,13 +2205,23 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
 
             return cls(
                 password_expired=True,
+                password_expiry_warning=False,
+                password_expires_in_days=0,
+                password_expires_at=user.i_user.password_validity,
                 reset_email_sent=reset_email_sent,
                 refresh_expires_in=0,
                 token="",
                 username=user.username,
             )
         info.context.user = user
-        return super().mutate(cls, info, **kwargs)
+        response = super().mutate(cls, info, **kwargs)
+        expiry_info = cls._get_password_expiry_info(user)
+        response.password_expired = False
+        response.password_expiry_warning = expiry_info["password_expiry_warning"]
+        response.password_expires_in_days = expiry_info["password_expires_in_days"]
+        response.password_expires_at = expiry_info["password_expires_at"]
+        response.username = user.username
+        return response
 
 
 class GetCsrfTokenMutation(graphene.Mutation):

@@ -12,6 +12,7 @@ _query_export_path = user._query_export_path
 _get_default_expire_date = user._get_default_expire_date
 User = user.User
 UserRole = user.UserRole
+PasswordExpiryReminderLog = user.PasswordExpiryReminderLog
 VersionedModel = versioned_model.VersionedModel
 BaseVersionedModel = versioned_model.BaseVersionedModel
 HistoryModel = history_model.HistoryModel
