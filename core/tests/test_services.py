@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 
 import core
+from core.apps import CoreConfig
 from core.models import InteractiveUser, Language, User, PasswordExpiryReminderLog
 from core.services import (
     create_or_update_interactive_user,
@@ -696,6 +697,18 @@ class UserAuthenticationTest(TestCase):
 
         with self.assertRaises(ValidationError):
             self.legacy_i_user.set_password(self.legacy_password)
+
+    def test_password_reuse_check_is_limited_to_recent_history(self):
+        previous_limit = CoreConfig.password_reuse_limit
+        CoreConfig.password_reuse_limit = 5
+        try:
+            for index in range(6):
+                self.legacy_i_user.set_password(f"NewLegacy123!{index}")
+                self.legacy_i_user.save()
+
+            self.legacy_i_user.set_password(self.legacy_password)
+        finally:
+            CoreConfig.password_reuse_limit = previous_limit
 
     def test_auto_provision_fails_with_wrong_password(self):
         self.assertFalse(User.objects.filter(username=self.legacy_username).exists())

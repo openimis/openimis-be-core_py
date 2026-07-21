@@ -368,13 +368,23 @@ class InteractiveUser(OpenIMISMigrationModel):
             return True
         if not self.pk:
             return False
+
+        password_reuse_limit = max(0, int(CoreConfig.password_reuse_limit))
+        if password_reuse_limit:
+            password_history = self.history.exclude(password__isnull=True).order_by(
+                "-history_date"
+            )
+            password_history = password_history[:password_reuse_limit]
+        else:
+            password_history = self.history.none()
+
         return any(
             self._matches_password_hash(
                 raw_password,
                 history.private_key,
                 history.password,
             )
-            for history in self.history.exclude(password__isnull=True)
+            for history in password_history
         )
 
     @property
@@ -385,8 +395,6 @@ class InteractiveUser(OpenIMISMigrationModel):
         validate_password(raw_password)
         if self._password_was_used(raw_password):
             raise ValidationError(_("core.password_already_used"))
-        if self.pk and self.password:
-            self.save_history()
         self.private_key = private_key
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())

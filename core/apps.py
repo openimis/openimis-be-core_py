@@ -60,6 +60,7 @@ DEFAULT_CFG = {
     "secondary_calendar": None,
     "locked_user_password_hash": "locked",
     "password_validity_days": 90,
+    "password_reuse_limit": 5,
     "password_expiry_warning_days": 5,
     "password_expiry_email_reminder_days": 5,
     "password_expiry_email_reminder_hour": 19,
@@ -103,6 +104,7 @@ class CoreConfig(AppConfig):
     is_valid_health_facility_contract_required = None
     locked_user_password_hash = None
     password_validity_days = 90
+    password_reuse_limit = 5
     password_expiry_warning_days = 5
     password_expiry_email_reminder_days = 5
     password_expiry_email_reminder_hour = 19
@@ -277,6 +279,7 @@ class CoreConfig(AppConfig):
         ]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
         CoreConfig.password_validity_days = int(cfg["password_validity_days"])
+        CoreConfig.password_reuse_limit = int(cfg["password_reuse_limit"])
         CoreConfig.password_expiry_warning_days = int(cfg["password_expiry_warning_days"])
         CoreConfig.password_expiry_email_reminder_days = int(
             cfg["password_expiry_email_reminder_days"]

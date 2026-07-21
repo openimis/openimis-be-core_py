@@ -2059,19 +2059,6 @@ class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     success = graphene.Boolean()
     error = graphene.String()
 
-    # @classmethod
-    # def mutate_and_get_payload(cls, root, info, username, **input):
-    #   try:
-    #         reset_user_password(info.context, username)
-    #         return ResetPasswordMutation(success=True)
-    #     except Exception as exc:
-    #         logger.exception(exc)
-    #         return ResetPasswordMutation(
-    #             success=False,
-    #             error=gettext_lazy("Failed to reset password."),
-    #         )
-
-    ###
     @classmethod
     def mutate_and_get_payload(cls, root, info, username, **input):
         request = info.context
@@ -2088,7 +2075,6 @@ class ResetPasswordMutation(graphene.relay.ClientIDMutation):
         # Not disclosing whether the account exists, has an email address,
         # or whether the SMTP provider accepted the message.
         return ResetPasswordMutation(success=True)
-    ## - End
 
 
 class SetPasswordMutation(graphene.relay.ClientIDMutation):

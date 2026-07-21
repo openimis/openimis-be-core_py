@@ -1,6 +1,5 @@
-import hashlib
-#
 import logging
+import hashlib
 from datetime import timedelta
 from gettext import gettext as _
 
@@ -8,10 +7,9 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.mail import send_mail, BadHeaderError
+from django.core.mail import send_mail
 from django.template import loader
 from django.utils import timezone
-from django.utils.html import escape
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
@@ -276,15 +274,6 @@ def change_user_password(
     user_to_update.set_password(new_password)
     user_to_update.save()
 
-
-### def set_user_password(request, username, token, password):
-#  user = User.objects.get(username=username)
-#   if default_token_generator.check_token(user, token):
-#        user.set_password(password)
-#        user.save()
-#    else:
-#        raise ValidationError("Invalid Token")
-
 def set_user_password(request, username, token, password):
     with transaction.atomic():
         user = User.objects.select_for_update().get(
@@ -348,7 +337,6 @@ def check_user_unique_email(user_email):
         return [{"message": "User email %s already exists" % user_email}]
     return []
 
-#### - Incremental counter function for rate limiting password reset requests
 def _increment_reset_counter(key, timeout):
     if cache.add(key, 1, timeout=timeout):
         return 1
@@ -385,9 +373,6 @@ def is_password_reset_rate_limited(request, username):
         ip_count > settings.PASSWORD_RESET_RATE_LIMIT_PER_IP
         or account_count > settings.PASSWORD_RESET_RATE_LIMIT_PER_ACCOUNT
     )
-
-## -
-
 def reset_user_password(request, username):
     normalized_username = (username or "").strip()
 
@@ -423,20 +408,13 @@ def reset_user_password(request, username):
             "user": user,
         },
     )
-    escaped_username = escape(user.username)
-    escaped_reset_url = escape(reset_url)
-    html_message = f"""
-        <p>Hello {escaped_username},</p>
-        <p>You've recently requested a new password.</p>
-        <p>
-            <a href="{escaped_reset_url}">Click here to set a new password</a>
-        </p>
-        <p>Or copy and paste this link into your browser:</p>
-        <p><a href="{escaped_reset_url}">{escaped_reset_url}</a></p>
-        <p>This link will expire in one hour and can only be used once.</p>
-        <p>If you did not request a password reset, you can ignore this email. Your password has not been changed.</p>
-        <p>Regards,</p>
-    """
+    html_message = loader.render_to_string(
+        "password_reset.html",
+        {
+            "reset_url": reset_url,
+            "user": user,
+        },
+    )
 
     send_result = send_mail(
         subject="[CoreMIS] Reset Password",
@@ -447,10 +425,9 @@ def reset_user_password(request, username):
         html_message=html_message,
     )
 
-    logger.warning(
-        "Password reset email accepted by email backend; user_id=%s recipient=%s",
+    logger.info(
+        "Password reset email accepted by email backend; user_id=%s",
         user.pk,
-        user.email,
     )
 
     return send_result > 0
@@ -512,13 +489,14 @@ def send_password_expiry_reminder(user, reference_time=None):
             "days_left": days_left.days,
         },
     )
-    escaped_username = escape(user.username)
-    html_message = f"""
-        <p>Hello {escaped_username},</p>
-        <p>Your CoreMIS password will expire in {days_left.days} day(s).</p>
-        <p>Please change your password before it expires to avoid losing access.</p>
-        <p>Regards,</p>
-    """
+    html_message = loader.render_to_string(
+        "password_expiry_reminder.html",
+        {
+            "user": user,
+            "password_validity": password_validity,
+            "days_left": days_left.days,
+        },
+    )
 
     try:
         send_result = send_mail(
@@ -538,9 +516,8 @@ def send_password_expiry_reminder(user, reference_time=None):
         return False
 
     logger.info(
-        "Password expiry reminder email accepted by email backend; user_id=%s recipient=%s",
+        "Password expiry reminder email accepted by email backend; user_id=%s",
         user.pk,
-        email,
     )
     return True
 
