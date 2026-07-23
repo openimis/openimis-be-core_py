@@ -63,8 +63,9 @@ DEFAULT_CFG = {
     "password_reuse_limit": 5,
     "password_expiry_warning_days": 5,
     "password_expiry_email_reminder_days": 5,
-    "password_expiry_email_reminder_hour": 19,
-    "password_expiry_email_reminder_minute": 10,
+    "password_expiry_email_reminder_hour": 8,
+    "password_expiry_email_reminder_minute": 0,
+    "password_expiry_email_reminder_timezone": "Africa/Blantyre",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
 }
@@ -107,8 +108,9 @@ class CoreConfig(AppConfig):
     password_reuse_limit = 5
     password_expiry_warning_days = 5
     password_expiry_email_reminder_days = 5
-    password_expiry_email_reminder_hour = 19
-    password_expiry_email_reminder_minute = 10
+    password_expiry_email_reminder_hour = 8
+    password_expiry_email_reminder_minute = 0
+    password_expiry_email_reminder_timezone = "Africa/Blantyre"
 
     fields_controls_user = {}
     fields_controls_eo = {}
@@ -290,6 +292,9 @@ class CoreConfig(AppConfig):
         CoreConfig.password_expiry_email_reminder_minute = int(
             cfg["password_expiry_email_reminder_minute"]
         )
+        CoreConfig.password_expiry_email_reminder_timezone = cfg[
+            "password_expiry_email_reminder_timezone"
+        ]
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler

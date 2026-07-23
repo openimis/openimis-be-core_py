@@ -1,4 +1,5 @@
 import logging
+from zoneinfo import ZoneInfo
 
 from apscheduler.triggers.cron import CronTrigger
 
@@ -14,6 +15,7 @@ def schedule_tasks(scheduler):
         trigger=CronTrigger(
             hour=CoreConfig.password_expiry_email_reminder_hour,
             minute=CoreConfig.password_expiry_email_reminder_minute,
+            timezone=ZoneInfo(CoreConfig.password_expiry_email_reminder_timezone),
         ),
         id="core_password_expiry_email_reminders",
         max_instances=1,
