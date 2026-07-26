@@ -513,7 +513,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             mutation_log.mark_as_failed(exc)
 
-        return cls(internal_id=mutation_log.id)
+        return {'internal_id': mutation_log.id, 'errors': error_messages if error_messages else []}
 
 
 class FieldControlGQLType(DjangoObjectType):
