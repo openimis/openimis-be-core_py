@@ -795,6 +795,8 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             raise ValueError("wrapper has not been initialised")
         elif name == "__name__":
             return self.username
+        elif name.startswith("_"):
+            raise AttributeError(f"User has no attribute {name}")
         elif name == "get_session_auth_hash":
             return False
         elif hasattr(self._u, name):
