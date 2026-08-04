@@ -1,0 +1,200 @@
+name: Build backend image across environments
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+      - dev
+      - qa
+      - uat
+      - prod
+      - main
+      - master
+  pull_request:
+    branches:
+      - develop
+      - dev
+      - qa
+      - uat
+      - prod
+      - main
+      - master
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-publish:
+    name: Build backend image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine branch behavior
+        id: branch-context
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            SOURCE_BRANCH="${{ github.head_ref }}"
+            TARGET_BRANCH="${{ github.base_ref }}"
+          else
+            SOURCE_BRANCH="${{ github.ref_name }}"
+            TARGET_BRANCH="${{ github.ref_name }}"
+          fi
+
+          case "$TARGET_BRANCH" in
+            develop|dev)
+              ENVIRONMENT="dev"
+              UPSTREAM_BRANCH="develop"
+              ;;
+            qa)
+              ENVIRONMENT="qa"
+              UPSTREAM_BRANCH="develop"
+              ;;
+            uat)
+              ENVIRONMENT="uat"
+              UPSTREAM_BRANCH="develop"
+              ;;
+            main|master|prod)
+              ENVIRONMENT="prod"
+              UPSTREAM_BRANCH="main"
+              ;;
+            *)
+              ENVIRONMENT=""
+              UPSTREAM_BRANCH="develop"
+              ;;
+          esac
+
+          if [[ -n "$ENVIRONMENT" && ( "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "workflow_dispatch" ) ]]; then
+            SHOULD_PUBLISH="true"
+          else
+            SHOULD_PUBLISH="false"
+          fi
+
+          SAFE_BRANCH="$(echo "$SOURCE_BRANCH" | tr '/_' '--' | tr -cd '[:alnum:].-')"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          {
+            echo "source_branch=$SOURCE_BRANCH"
+            echo "target_branch=$TARGET_BRANCH"
+            echo "environment=$ENVIRONMENT"
+            echo "upstream_branch=$UPSTREAM_BRANCH"
+            echo "safe_branch=$SAFE_BRANCH"
+            echo "short_sha=$SHORT_SHA"
+            echo "should_publish=$SHOULD_PUBLISH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout current module
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: current-module
+
+      - name: Checkout upstream backend
+        uses: actions/checkout@v4
+        with:
+          repository: openimis/openimis-be_py
+          ref: ${{ steps.branch-context.outputs.upstream_branch }}
+          fetch-depth: 0
+          path: app-source
+
+      - name: Prepare backend build context
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+          mkdir -p app-source/current-module
+          tar --exclude='.git' -cf - -C current-module . | tar -xf - -C app-source/current-module
+
+          cd app-source
+
+          MODULE_NAME="$(echo "${GITHUB_REPOSITORY#*/}" | sed -E 's#^openimis-be-(.*)_py$#\1#')"
+          TMP_JSON="$(mktemp)"
+
+          jq --arg name "$MODULE_NAME" '
+            if any(.modules[]; .name == $name) then
+              .modules |= map(
+                if .name == $name then
+                  . + {pip: "../current-module"}
+                else
+                  .
+                end
+              )
+            else
+              .modules += [{name: $name, pip: "../current-module"}]
+            end
+          ' openimis.json > "$TMP_JSON"
+
+          mv "$TMP_JSON" openimis.json
+
+          echo "Using module name: $MODULE_NAME"
+          cat openimis.json
+
+      - name: Resolve image tags
+        id: image-tags
+        run: |
+          ENVIRONMENT="${{ steps.branch-context.outputs.environment }}"
+          SHORT_SHA="${{ steps.branch-context.outputs.short_sha }}"
+          SAFE_BRANCH="${{ steps.branch-context.outputs.safe_branch }}"
+          ENVIRONMENT_TAG="${ENVIRONMENT:-$SAFE_BRANCH}"
+          IMMUTABLE_TAG="${ENVIRONMENT_TAG}-${SHORT_SHA}"
+
+          {
+            echo "environment_tag=$ENVIRONMENT_TAG"
+            echo "immutable_tag=$IMMUTABLE_TAG"
+            echo "tags<<EOF"
+            echo "${IMAGE_NAME}:${ENVIRONMENT_TAG}"
+            echo "${IMAGE_NAME}:${IMMUTABLE_TAG}"
+            echo "${IMAGE_NAME}:${SAFE_BRANCH}-${SHORT_SHA}"
+            if [[ "$ENVIRONMENT" == "prod" ]]; then
+              echo "${IMAGE_NAME}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.branch-context.outputs.should_publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: app-source
+          file: app-source/Dockerfile
+          push: ${{ steps.branch-context.outputs.should_publish == 'true' }}
+          tags: ${{ steps.image-tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Deployment summary
+        if: steps.branch-context.outputs.should_publish == 'true'
+        run: |
+          echo "Deployment Summary:"
+          echo "- Source branch: ${{ steps.branch-context.outputs.source_branch }}"
+          echo "- Environment tag: ${{ steps.image-tags.outputs.environment_tag }}"
+          echo "- Immutable tag: ${{ steps.image-tags.outputs.immutable_tag }}"
+          echo "- Upstream backend branch: ${{ steps.branch-context.outputs.upstream_branch }}"
+          echo "- Published image: ${{ env.IMAGE_NAME }}"
+
+      - name: CI summary when publish is skipped
+        if: steps.branch-context.outputs.should_publish != 'true'
+        run: |
+          echo "CI Summary:"
+          echo "- Event: ${{ github.event_name }}"
+          echo "- Source branch: ${{ steps.branch-context.outputs.source_branch }}"
+          echo "- Target branch: ${{ steps.branch-context.outputs.target_branch }}"
+          echo "- Upstream backend branch: ${{ steps.branch-context.outputs.upstream_branch }}"
+          echo "- Docker image push skipped"
