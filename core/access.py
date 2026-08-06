@@ -192,10 +192,11 @@ def has_business_access(user, *, content_type=None, object_id=None, business_obj
 
 
 def has_role_perms(user, perm_list, *, list_evaluation_or=True):
+    if not perm_list:
+        raise ValueError("perm_list cannot be empty")
     if (
         getattr(user, "is_superuser", False)
         or getattr(user, "is_imis_admin", False)
-        or not perm_list
     ):
         return True
     if list_evaluation_or:
@@ -210,8 +211,10 @@ def satisfies_access_requirement(user, requirement, *, now=None):
 
     if perms and not has_role_perms(user, perms):
         return False
-
-    app_label, model_name = content_type_label.rsplit(".", 1)
+    try:
+        app_label, model_name = content_type_label.rsplit(".", 1)
+    except Exception:
+        raise ValueError("content_type_label must have the format {{app_label}}.{{model_name}}")
     content_type = resolve_content_type(model_name, app_label=app_label)
     if not content_type:
         logger.error("Invalid content type: %s", content_type_label)

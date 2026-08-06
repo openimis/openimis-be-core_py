@@ -761,6 +761,8 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
           business objects.
     """
     def has_perms(self, perm_list, obj=None, access_requirements=None, list_evaluation_or=True):
+        if not perm_list and not access_requirements:
+            return True
         has_perm = has_role_perms(self, perm_list, list_evaluation_or=list_evaluation_or)
         # once we use django user super().has_perm(perm_list, obj)
         if not has_perm and access_requirements:
