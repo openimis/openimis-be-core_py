@@ -12,6 +12,7 @@ def _clear_all_rights_cache():
     delete_pattern = getattr(cache, "delete_pattern", None)
     if delete_pattern:
         delete_pattern("rights_*")
+        delete_pattern("is_admin_*")
     else:
         cache.clear()
 

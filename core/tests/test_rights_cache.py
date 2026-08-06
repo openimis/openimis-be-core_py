@@ -105,8 +105,17 @@ class RoleChangeCacheInvalidationTest(TestCase):
             self.role.name = "TestRoleChangeCacheRoleRenamed"
             self.role.save()
 
-        self.assertEqual(["rights_*"], stub.deleted_patterns)
+        self.assertIn("rights_*", stub.deleted_patterns)
         self.assertFalse(stub.cleared)
+
+    def test_role_change_deletes_is_admin_keys_by_pattern_when_supported(self):
+        stub = PatternCacheStub(supports_patterns=True)
+
+        with patch("core.receivers.cache", stub):
+            self.role.is_system = 64
+            self.role.save()
+
+        self.assertIn("is_admin_*", stub.deleted_patterns)
 
     def test_role_change_clears_cache_when_patterns_unsupported(self):
         stub = PatternCacheStub(supports_patterns=False)
