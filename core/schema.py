@@ -1495,6 +1495,7 @@ def update_or_create_role(data, user):
     return role
 
 
+@transaction.atomic
 def duplicate_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
@@ -1517,39 +1518,25 @@ def duplicate_role(data, user):
     duplicated_role.validity_from = now
     [setattr(duplicated_role, k, v) for k, v in data.items()]
     duplicated_role.save()
-    if rights_id:
-        # reset all role rights assigned to the chosen role
-        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
-        role_rights_currently_assigned = role_rights_currently_assigned.values_list(
-            "right_id", flat=True
+    # only rights the source currently holds may be copied: a revoked right
+    # must not come back to life on the duplicate, and one open row per right
+    # keeps the duplicate's history unambiguous
+    source_rights = set(
+        RoleRight.objects.filter(
+            role_id=role.id, validity_to__isnull=True
+        ).values_list("right_id", flat=True)
+    )
+    rights_to_copy = set(rights_id) if rights_id else source_rights
+    for right_id in rights_to_copy:
+        RoleRight.objects.create(
+            role_id=duplicated_role.id,
+            right_id=right_id,
+            audit_user_id=duplicated_role.audit_user_id,
+            # always "now": on the duplicate this genuinely is a new grant, so
+            # inheriting the source role's validity_from would date the grant
+            # before the duplicate existed
+            validity_from=now,
         )
-        for right_id in rights_id:
-            validity_from = now
-            if right_id in role_rights_currently_assigned:
-                # role right exist - we can assign validity_from from old entity
-                validity_from = role.validity_from
-            # create role right for duplicate role
-            RoleRight.objects.create(
-                **{
-                    "role_id": duplicated_role.id,
-                    "right_id": right_id,
-                    "audit_user_id": duplicated_role.audit_user_id,
-                    "validity_from": validity_from,
-                }
-            )
-    else:
-        role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
-        [
-            RoleRight.objects.create(
-                **{
-                    "role_id": duplicated_role.id,
-                    "right_id": role_right.right_id,
-                    "audit_user_id": duplicated_role.audit_user_id,
-                    "validity_from": now,
-                }
-            )
-            for role_right in role_rights_currently_assigned
-        ]
 
     if client_mutation_id:
         wait_for_mutation(client_mutation_id)
