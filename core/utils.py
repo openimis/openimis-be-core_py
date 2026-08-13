@@ -27,10 +27,28 @@ from django.db import transaction
 import time
 import os
 
+try:
+    from simple_history.models import HistoricalRecords
+except Exception:
+    HistoricalRecords = None
+
 
 _request_local = threading.local()
 
 logger = logging.getLogger(__file__)
+
+
+def get_original_user():
+    return getattr(_request_local, "original_user", None)
+
+
+def set_original_user(user):
+    _request_local.original_user = user
+
+
+def clear_original_user():
+    if hasattr(_request_local, "original_user"):
+        del _request_local.original_user
 
 
 cache = caches["default"]
@@ -65,6 +83,101 @@ def set_current_user(user):
 def clear_current_user():
     if hasattr(_request_local, "user"):
         del _request_local.user
+    clear_original_user()
+    clear_access_cache()
+
+
+def _get_thread_access_cache(name):
+    cache = getattr(_request_local, name, None)
+    if cache is None:
+        cache = {}
+        setattr(_request_local, name, cache)
+    return cache
+
+
+def is_authentication_checked():
+    return getattr(_request_local, "authentication_checked", False)
+
+
+def set_authentication_checked():
+    _request_local.authentication_checked = True
+
+
+def get_business_access_cache():
+    return _get_thread_access_cache("business_access_cache")
+
+
+def get_content_type_cache():
+    return _get_thread_access_cache("content_type_cache")
+
+
+def clear_access_cache():
+    for attr in ("authentication_checked", "business_access_cache", "content_type_cache"):
+        if hasattr(_request_local, attr):
+            delattr(_request_local, attr)
+
+
+def clear_authentication_cache():
+    clear_access_cache()
+
+
+def clear_history_context():
+    """Clear simple-history request context to avoid stale user references
+    across tests/requests that can lead to history_user FK violations
+    referencing non-existent (rolled back) User rows.
+    """
+    if HistoricalRecords is not None:
+        try:
+            if hasattr(HistoricalRecords, "context") and hasattr(HistoricalRecords.context, "request"):
+                del HistoricalRecords.context.request
+        except Exception:
+            pass
+        # Also clear the backwards compat thread local if present
+        try:
+            if hasattr(HistoricalRecords, "thread") and hasattr(HistoricalRecords.thread, "request"):
+                del HistoricalRecords.thread.request
+        except Exception:
+            pass
+
+
+def handle_impersonation(request, user):
+    """
+    Shared utility for handling the X-Impersonate-User header.
+    - Checks if superuser and valid target user.
+    - Sets thread-local original_user and current_user (so get_current_user()
+      and permission checks see the *impersonated* user's identity/perms).
+    - Returns the effective user (impersonated or original).
+    - Uses lazy imports to prevent circular dependencies with models.
+    - This ensures consistent behavior across first and subsequent calls,
+      especially when combined with ClearUserContextMiddleware.
+    - Lookups for both the base user and the impersonated target now benefit
+      from the object cache (CachedManager) when possible.
+    """
+    impersonate_uuid = request.META.get("HTTP_X_IMPERSONATE_USER")
+    if impersonate_uuid:
+        if not getattr(user, "is_superuser", False):
+            raise PermissionDenied("Impersonation requires superuser privileges")
+        try:
+            target_uuid = uuid.UUID(impersonate_uuid)
+        except (ValueError, TypeError, AttributeError):
+            raise PermissionDenied("Invalid impersonation target")
+        # Use id (pk) lookup so it goes through CachedManager (simple exact on
+        # pk/uuid/id → can hit cs_User_<uuid> cache). The previous combined
+        # get(..., i_user__isnull=False) made it non-simple and always hit DB.
+        # We do the i_user presence check in memory after (the column is always
+        # present on the instance; the relation may be pre-attached via
+        # get_cached_foreign_key when the User came from cache).
+        target_user = core.models.user.User.objects.filter(id=target_uuid).first()
+        if not target_user or getattr(target_user, "i_user_id", None) is None:
+            raise PermissionDenied("Invalid impersonation target")
+        set_original_user(user)
+        set_current_user(target_user)
+        logger.info(f"Superuser {user.username} impersonating {target_user.username}")
+        return target_user
+    else:
+        set_original_user(None)
+        set_current_user(user)
+        return user
 
 
 class TimeUtils(object):
@@ -256,8 +369,8 @@ class CachedManager(models.Manager):
             return super().get(*args, **kwargs)
         is_simple, key, value, field, lookup = self._is_simple_lookup(args, kwargs)
 
-        if is_simple and lookup == "exact":
-            # Try cache lookup for exact queries
+        if is_simple and lookup in ("exact", "iexact"):
+            # Try cache lookup for exact/iexact queries
             cache_result = self._handle_cache_lookup(field, value, lookup)
             if cache_result is not None:
                 cached_qs = cache_result
@@ -284,25 +397,34 @@ class CachedManager(models.Manager):
             return value
 
     def _is_simple_lookup(self, args, kwargs):
-        """Check if query is a single exact or in lookup on unique fields."""
-        if kwargs and len(kwargs) == 1:
+        """Check if query is a single exact/iexact/in lookup on unique fields.
+        Respects UNIQUE_FIELDS declared on the manager or (fallback) on the model class.
+        Only treats as simple (cacheable) when the call has no additional filter args
+        (e.g. validity Qs) to avoid returning stale/invalid instances.
+        """
+        unique_fields = (
+            getattr(self, "UNIQUE_FIELDS", None)
+            or getattr(self.model, "UNIQUE_FIELDS", None)
+            or {"pk", "id", "uuid"}
+        )
+        if kwargs and len(kwargs) == 1 and len(args) == 0:
             key = list(kwargs.keys())[0]
             field = key.split("__")[0] if "__" in key else key
             lookup = key.split("__")[-1] if "__" in key else "exact"
             return (
-                field in self.UNIQUE_FIELDS and lookup in {"exact", "in"},
+                field in unique_fields and lookup in {"exact", "in", "iexact"},
                 key,
                 kwargs.get(key),
                 field,
                 lookup,
             )
-        elif args and len(args) == 1 and isinstance(args[0], Q):
+        elif args and len(args) == 1 and isinstance(args[0], Q) and len(kwargs) == 0:
             if len(args[0].children) == 1 and isinstance(args[0].children[0], tuple):
                 field, value = args[0].children[0]
                 lookup = field.split("__")[-1] if "__" in field else "exact"
                 field = field.split("__")[0]
                 return (
-                    field in self.UNIQUE_FIELDS and lookup in {"exact", "in"},
+                    field in unique_fields and lookup in {"exact", "in", "iexact"},
                     field,
                     value,
                     field,
@@ -326,8 +448,8 @@ class CachedManager(models.Manager):
 
     # In CachedManager, update _handle_cache_lookup for 'exact' (similar changes for 'in' below)
     def _handle_cache_lookup(self, field, value, lookup):
-        """Handle cache lookup for exact or in queries."""
-        if lookup == "exact":
+        """Handle cache lookup for exact/iexact or in queries."""
+        if lookup in ("exact", "iexact"):
             cache_key = get_cache_key(self.model, self._normalize_value(value))
             cached_data = cache.get(cache_key)
             if cached_data:
@@ -342,12 +464,13 @@ class CachedManager(models.Manager):
                             "default"  # Optional: Set DB alias if needed
                         )
 
-                    for fk in self.CACHED_FK:
+                    cached_fks = getattr(self, "CACHED_FK", None) or getattr(self.model, "CACHED_FK", None) or ()
+                    for fk in cached_fks:
                         get_cached_foreign_key(cached_instance, fk)
                     logger.debug("Cache hit for key: %s", cache_key)
                     return self._instances_to_queryset([cached_instance], True)
                 elif isinstance(cached_data, (uuid.UUID, str)):
-                    return self._handle_cache_lookup("pk", cached_data, lookup)
+                    return self._handle_cache_lookup("pk", cached_data, "exact")
                 else:
                     logger.error("Wrong type in cache for key: %s", cache_key)
                     return None
@@ -370,7 +493,8 @@ class CachedManager(models.Manager):
                         instance._state.adding = False
                         if hasattr(instance, "_state"):
                             instance._state.db = "default"
-                        for fk in self.CACHED_FK:
+                        cached_fks = getattr(self, "CACHED_FK", None) or getattr(self.model, "CACHED_FK", None) or ()
+                        for fk in cached_fks:
                             get_cached_foreign_key(instance, fk)
                         cached_instances.append(instance)
                         logger.debug("Cache hit for key: %s", ck)
@@ -411,10 +535,20 @@ class CachedManager(models.Manager):
         # Try cache lookup
         cache_result = self._handle_cache_lookup(field, value, lookup)
         if cache_result is None:
-            # Fallback to default filter for invalid lookups or cache miss
-            return super().filter(*args, **kwargs)
+            # Fallback to default filter for invalid lookups or cache miss.
+            # Opportunistically populate cache for results (helps when filters include
+            # validity Qs + username etc).
+            qs = super().filter(*args, **kwargs)
+            if getattr(self.model, "USE_CACHE", False):
+                try:
+                    for inst in list(qs[:10]):
+                        if getattr(inst, "pk", None):
+                            inst.update_cache()
+                except Exception:
+                    pass
+            return qs
 
-        if lookup == "exact":
+        if lookup in ("exact", "iexact"):
             cached_qs = cache_result
             if cached_qs is not None:
                 return cached_qs
@@ -456,7 +590,7 @@ class CachedManager(models.Manager):
         if cache_result is None:
             return None
 
-        if lookup == "exact":
+        if lookup in ("exact", "iexact"):
             cached_qs = cache_result
             if cached_qs is not None:
                 return cached_qs
@@ -472,6 +606,7 @@ class CachedManager(models.Manager):
 def get_cached_foreign_key(instance, fk_field_name):
     """
     Retrieves a ForeignKey-related object from cache for a given model instance, without querying the database.
+    Reconstructs and attaches the related instance (e.g. User.i_user) if its cache entry exists.
     Args:
         instance: The model instance (e.g., User instance).
         fk_field_name: The name of the ForeignKey field (e.g., 'i_user').
@@ -514,6 +649,36 @@ def get_cached_foreign_key(instance, fk_field_name):
     if fk_value is None:
         logger.debug("ForeignKey value for %s is None", fk_field_name)
         return None
+
+    # Attempt to load the related object purely from cache (no DB)
+    related_model = field.related_model
+    if not getattr(related_model, "USE_CACHE", False):
+        return None
+    try:
+        cache_key = get_cache_key(related_model, fk_value)
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            if isinstance(cached_data, dict):
+                rel_instance = related_model(**cached_data)
+                rel_instance._state.adding = False
+                if hasattr(rel_instance, "_state"):
+                    rel_instance._state.db = "default"
+                # Attach via setattr so descriptors update forward/reverse caches where applicable
+                try:
+                    setattr(instance, fk_field_name, rel_instance)
+                except Exception:
+                    # direct fallback
+                    instance.__dict__[fk_field_name] = rel_instance
+                logger.debug("Populated cached FK %s from key %s", fk_field_name, cache_key)
+                return rel_instance
+            elif isinstance(cached_data, (uuid.UUID, str)):
+                # secondary key stored -> pk value; recurse to primary
+                return get_cached_foreign_key(instance, fk_field_name)
+        # cache miss for related: do not query here; leave unloaded so lazy would hit (rare if related also warmed)
+        logger.debug("No cache entry for FK %s value=%s (key=%s)", fk_field_name, fk_value, cache_key)
+    except Exception as e:
+        logger.debug("Error populating cached FK %s: %s", fk_field_name, e)
+    return None
 
 
 def clean_fk(instance):
@@ -644,8 +809,16 @@ class CachedModelMixin:
         Deletes the cache entry for this object.
         """
         if self.USE_CACHE:
-            cache_key = f"{self.__class__.__name__}:{self.pk}"
+            cache_key = get_cache_key(self.__class__, self.pk)
             cache.delete(cache_key)
+            # also attempt delete of common secondary if username/login_name etc exist
+            for f in getattr(self, "UNIQUE_FIELDS", ("id", "uuid", "pk")):
+                try:
+                    val = getattr(self, f, None)
+                    if val is not None and val != self.pk:
+                        cache.delete(get_cache_key(self.__class__, val))
+                except Exception:
+                    pass
             logger.debug(f"Removed instance from cache: {cache_key}")
 
     class Meta:
@@ -715,13 +888,12 @@ class ExtendedRelayConnection(graphene.relay.Connection):
 
 
 def get_first_or_default_language():
-    from core.models import Language
 
-    sorted_languages = Language.objects.filter(sort_order__isnull=False)
+    sorted_languages = core.models.Language.objects.filter(sort_order__isnull=False)
     if sorted_languages.exists():
         return sorted_languages.order_by("sort_order").first()
     else:
-        return Language.objects.first()
+        return core.models.Language.objects.first()
 
 
 def insert_role_right_for_system(system_role, right_id, apps):
@@ -943,27 +1115,6 @@ def clear_cache(instance):
 
 def get_cache_key(model, id):
     return f"cs_{model.__name__}_{str(id).lower()}"
-
-
-def is_this_session_superuser(session_key):
-    from django.contrib.sessions.models import Session
-    from django.utils.timezone import now
-    from core.models import User
-
-    try:
-        session = Session.objects.get(session_key=session_key, expire_date__gte=now())
-        data = session.get_decoded()
-        user_id = data.get("_auth_user_id")
-        if user_id:
-            user = User.objects.get(id=user_id)
-            if user.is_superuser:
-                return True
-    except Session.DoesNotExist:
-        pass
-    except Exception:
-        pass
-
-    return False
 
 
 @lru_cache(maxsize=1)

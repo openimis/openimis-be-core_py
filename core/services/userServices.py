@@ -4,7 +4,7 @@ from gettext import gettext as _
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
@@ -14,8 +14,8 @@ from core.models.user import User, InteractiveUser, Officer, UserRole, UserManag
 from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
 )
-from django.contrib.auth import authenticate
-from rest_framework import exceptions
+from django.contrib.auth import authenticate, login
+from rest_framework.exceptions import AuthenticationFailed, ParseError
 from django.db.models import Q
 
 logger = logging.getLogger(__file__)
@@ -24,7 +24,8 @@ logger = logging.getLogger(__file__)
 def create_or_update_interactive_user(user_id, data, user_maker, connected):
     admin = User.objects.filter(i_user_id=1).first()
     if not admin:
-        User.objects.create(username="Admin", i_user_id=1)
+        # ensure bootstrap link; do not auto-elevate to superuser (use create_superuser / admin role for that)
+        User.objects.create(username="Admin", i_user_id=1, is_superuser=False)
     i_fields = {
         "username": "login_name",
         "other_names": "other_names",
@@ -70,7 +71,7 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
         i_user.json_ext = json_ext
 
     i_user.save()
-    create_or_update_user_roles(i_user, data["roles"], user_maker.id_for_audit)
+    create_or_update_user_roles(i_user, data.get("roles", []), user_maker.id_for_audit)
     if "districts" in data:
         create_or_update_user_districts(
             i_user, data["districts"], user_maker.id_for_audit
@@ -132,7 +133,7 @@ def create_or_update_officer_villages(officer, village_ids, audit_user_id):
 
 
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_eo, "data")
-def create_or_update_officer(user_id, data, audit_user_id, connected):
+def create_or_update_officer(user_uuid, data, audit_user_id, connected):
     officer_fields = {
         "username": "code",
         "other_names": "other_names",
@@ -150,16 +151,17 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     data_subset = {v: data.get(k) for k, v in officer_fields.items()}
     data_subset["audit_user_id"] = audit_user_id
     data_subset["has_login"] = connected
-    if user_id:
+    officer = None
+    if user_uuid:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         officer = Officer.objects.filter(
-            validity_to__isnull=True, user__id=user_id
+            *Officer.filter_validity(), user__uuid=user_uuid
         ).first()
         if officer is not None and officer.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
-    else:
+    if not officer:
         officer = Officer.objects.filter(
-            code=data_subset["code"], validity_to__isnull=True
+            *Officer.filter_validity(), code=data_subset["code"]
         ).first()
 
     if officer:
@@ -178,7 +180,7 @@ def create_or_update_officer(user_id, data, audit_user_id, connected):
     return officer, created
 
 
-def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
+def create_or_update_claim_admin(user_uuid, data, audit_user_id, connected):
     ca_fields = {
         "username": "code",
         "other_names": "other_names",
@@ -194,16 +196,17 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
     # Since ClaimAdmin is not in the core module, we have to dynamically load it.
     # If the Claim module is not loaded and someone requests a ClaimAdmin, this will raise an Exception
     claim_admin_class = apps.get_model("core", "ClaimAdmin")
-    if user_id:
+    claim_admin = None
+    if user_uuid:
         # TODO we might want to update a user that has been deleted. Use Legacy ID ?
         claim_admin = claim_admin_class.objects.filter(
-            validity_to__isnull=True, user__id=user_id
+            *claim_admin_class.filter_validity(), user__uuid=user_uuid
         ).first()
         if claim_admin is not None and claim_admin.validity_to is not None:
             raise ValidationError(_("core.user.edit_historical_data_error"))
-    else:
+    if not claim_admin:
         claim_admin = claim_admin_class.objects.filter(
-            code=data_subset["code"], validity_to__isnull=True
+            *claim_admin_class.filter_validity(), code=data_subset["code"]
         ).first()
 
     if claim_admin:
@@ -220,7 +223,7 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
 
 
 def create_or_update_core_user(
-    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None
+    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None, silent=False
 ):
     if user_uuid:
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
@@ -234,7 +237,7 @@ def create_or_update_core_user(
         user = None
         created = False
     if not user:
-        user = User(username=username)
+        user = User(username=username, is_superuser=False)
         created = True
     if username:
         user.username = username
@@ -246,8 +249,7 @@ def create_or_update_core_user(
         user.officer = officer
     if claim_admin:
         user.claim_admin = claim_admin
-    if user.is_dirty(check_relationship=True):
-        user.save()
+    user.save(silent=silent)
     return user, created
 
 
@@ -256,7 +258,7 @@ def change_user_password(
 ):
     if username_to_update and username_to_update != logged_user.username:
         if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
-            raise PermissionDenied("unauthorized")
+            raise AuthenticationFailed("unauthorized")
         user_to_update = User.objects.get(username=username_to_update)
     else:
         user_to_update = logged_user
@@ -299,21 +301,30 @@ def _try_auto_provision(username, password):
 
 def user_authentication(request, username, password):
     if not username or not password:
-        raise exceptions.ParseError(_("Missing username or password"))
+        raise ParseError(_("Missing username or password"))
 
     _clear_jwt_cookies(request)
 
     user = authenticate(request, username=username, password=password)
-    if user:
-        return user
-
-    if not User.objects.filter(username__iexact=username).exists():
+    if not user and not User.objects.filter(username__iexact=username).exists():
         user = _try_auto_provision(username, password)
-        if user:
-            return user
 
-    logger.debug(f"Authentication failed for username: {username}")
-    raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+    if not user:
+        logger.debug(f"Authentication failed for username: {username}")
+        raise AuthenticationFailed("INCORRECT_CREDENTIALS")
+
+    if getattr(user, "is_staff", False) and hasattr(request, "session"):
+        from django.conf import settings
+        backend = next(
+            (
+                b
+                for b in settings.AUTHENTICATION_BACKENDS
+                if b.endswith("ModelBackend")
+            ),
+            settings.AUTHENTICATION_BACKENDS[-1],
+        )
+        login(request, user, backend=backend)
+    return user
 
 
 def check_user_unique_email(user_email):

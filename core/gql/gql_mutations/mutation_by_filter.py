@@ -5,7 +5,9 @@ from functools import wraps
 import django.db.models
 from django.db.models import Q
 from graphene_django import DjangoObjectType
+from core.models.user import User
 from typing import Dict
+from core.utils import get_current_user
 
 
 def mutation_on_uuids_from_filter(
@@ -13,6 +15,7 @@ def mutation_on_uuids_from_filter(
     object_gql_type: DjangoObjectType,
     query_filters_field: str = "additional_filters",
     explicit_filters_handlers: Dict[str, str] = None,
+    user: User = None,
     return_objects: bool = False,
 ):
     """
@@ -62,11 +65,93 @@ def mutation_on_uuids_from_filter(
                 base_query = django_object.objects.filter(*django_object.filter_validity()).filter(
                     q_filter
                 )
+                if user is None:
+                    user = get_current_user()
+                base_query = django_object.get_queryset(base_query, user)
                 if return_objects:
                     data["filtered_objects"] = base_query
                 else:
                     uuids = base_query.values_list("uuid", flat=True).distinct()
                     data["uuids"] = uuids
+            return async_mutate(cls, user, **data)
+
+        return wrapper
+
+    return inner_function
+
+
+def mutation_on_queryset_from_filter(
+    django_object: django.db.models.Model,
+    object_gql_type: DjangoObjectType,
+    query_filters_field: str = "additional_filters",
+    explicit_filters_handlers: Dict[str, str] = None,
+    queryset_key: str = "queryset",
+):
+    """
+    A decorator for async_mutate similar to @mutation_on_uuids_from_filter but focused on
+    querysets rather than materializing uuid lists. This avoids unnecessary DB calls for
+    extracting uuids when the mutation logic can work directly with a (lazy) queryset.
+
+    Behavior (when 'uuids' not present in data):
+    - Filters from `query_filters_field` (JSON string) are mapped to Django Q objects using the
+      GQL type's filter_fields plus any explicit_handlers.
+    - If a queryset is already present in data under `queryset_key`, it is *updated* by applying
+      the mutation's additional filter criteria on top: `qs = qs.filter(q_filter)`.
+      Callers can (and should, for business access flows) pre-apply row security / location
+      restrictions / custom base filters and pass the queryset in; the decorator will further
+      narrow it according to the user's chosen mutation filters.
+    - If *no* queryset is provided under the key, the decorator obtains the base via
+      `django_object.get_queryset(django_object.objects, effective_user)`. This means any
+      validity handling, ROW_SECURITY, location/region restrictions, or business access logic
+      implemented inside the model's get_queryset will be honored *before* the mutation filter
+      is applied. The effective user is taken from the wrapper argument or falls back to
+      get_current_user().
+    - The (possibly security-restricted + additionally filtered) queryset is stored under
+      `queryset_key` and the wrapped async_mutate is called.
+
+    This design lets User.get_queryset (and equivalent on other models) be the single source
+    of truth for "what rows is this user allowed to see/touch", so mutations using the
+    decorator without a pre-supplied queryset automatically benefit from it.
+
+    :param django_object: Django model class
+    :param object_gql_type: DjangoObjectType (with Meta.filter_fields)
+    :param query_filters_field: Key in data holding the JSON-serialized filter dict (default "additional_filters")
+    :param explicit_filters_handlers: Map of filter keys (from incoming args) to Django lookup paths
+                                      e.g. {'services': 'services__service__code__in'}
+    :param queryset_key: The key in **data to read a possible input queryset from and write the
+                         (updated) queryset to. Default: "queryset"
+    """
+    if explicit_filters_handlers is None:
+        explicit_filters_handlers = {}
+
+    available_filters = _build_filters_from_gql_filters(
+        object_gql_type._meta.filter_fields
+    )
+
+    def inner_function(async_mutate):
+
+        @wraps(async_mutate)
+        def wrapper(cls, user, **data):
+            if not data.get("uuids", None):
+                args = json.loads(data[query_filters_field])
+
+                q_filter = map_gql_to_django_filter(
+                    args, available_filters, explicit_filters_handlers
+                )
+
+                incoming_qs = data.get(queryset_key)
+
+                if incoming_qs is None:
+                    if user is None:
+                        user = get_current_user()
+                    incoming_qs = django_object.get_queryset(django_object.objects, user)
+
+                # Update the provided queryset with the mutation's filter criteria.
+                # This keeps everything lazy and supports pre-scoped querysets
+                # (e.g. from user business access restrictions).
+                base_query = incoming_qs.filter(q_filter)
+                data[queryset_key] = base_query
+
             return async_mutate(cls, user, **data)
 
         return wrapper

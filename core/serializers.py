@@ -62,4 +62,4 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "username", "i_user", "t_user")
+        fields = ("id", "username", "is_superuser", "i_user", "t_user")

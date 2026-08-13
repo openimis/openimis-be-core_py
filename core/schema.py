@@ -56,6 +56,13 @@ from axes.models import AccessAttempt
 from typing import List, Dict, Any
 
 from core.apps import CoreConfig
+from core.user_types import (
+    UT_INTERACTIVE,
+    UT_TECHNICAL,
+    UT_OFFICER,
+    UT_CLAIM_ADMIN,
+    UserTypeEnum,
+)
 from core.custom_filters import CustomFilterWizardStorage
 from core.gql_queries import (
     RoleGQLType,
@@ -349,7 +356,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         :param data: all parameters passed to the mutation
         :return: error_message if None is returned, the response is considered to be a success
         """
-        pass
+        raise NotImplementedError(f"async_mutate not implemented {cls.__name__}")
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
@@ -431,6 +438,31 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
+                # Perform synchronous authentication validation before queuing
+                try:
+                    mutation_data = cls.coerce_mutation_data(
+                        json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+                    )
+                    mutation_data.pop("mutation_extensions", None)
+                    user = info.context.user if info.context and info.context.user else None
+                    cls._validate_mutation(user, **mutation_data)
+                except PermissionDenied as e:
+                    logger.debug(
+                        "[OpenIMISMutation %s] Authentication failed synchronously: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+                    mutation_log.mark_as_failed(_("mutation.authentication_required"))
+                    return cls(internal_id=mutation_log.id)
+                except Exception as e:
+                    # For other validation errors, still queue the mutation
+                    # as they might be business logic validations that should run async
+                    logger.debug(
+                        "[OpenIMISMutation %s] Other validation error, proceeding with async: %s",
+                        mutation_log.id,
+                        str(e),
+                    )
+
                 openimis_mutation_async.delay(
                     mutation_log.id, cls._mutation_module, cls.__name__
                 )
@@ -704,29 +736,12 @@ class MutationLogGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        if info.context.user.is_anonymous:
+        user = info.context.user
+        if user.is_anonymous:
             return queryset.none()
-        elif info.context.user.is_superuser:
+        if user.is_superuser or getattr(user, "is_imis_admin", False):
             return queryset
-        else:
-            queryset = queryset.filter(user=info.context.user)
-        return queryset
-
-
-UT_INTERACTIVE = "INTERACTIVE"
-UT_TECHNICAL = "TECHNICAL"
-UT_OFFICER = "OFFICER"
-UT_CLAIM_ADMIN = "CLAIM_ADMIN"
-
-UserTypeEnum = graphene.Enum(
-    "UserTypes",
-    [
-        (UT_INTERACTIVE, UT_INTERACTIVE),
-        (UT_OFFICER, UT_OFFICER),
-        (UT_TECHNICAL, UT_TECHNICAL),
-        (UT_CLAIM_ADMIN, UT_CLAIM_ADMIN),
-    ],
-)
+        return queryset.filter(user=user)
 
 
 class ClaimAdminGQLType(DjangoObjectType):
@@ -1105,13 +1120,13 @@ class Query(graphene.ObjectType):
         show_deleted = kwargs.get("showDeleted", False)
         if not show_deleted and not kwargs.get("id", None):
             # active_users_ids = [user.id for user in user_query if user.active]
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__isnull=True) | Q(*InteractiveUser.filter_validity(prefix="i_user__"))
-            )
+            ))
 
         text_search = kwargs.get("str")  # Poorly chosen name, avoid of shadowing "str"
         if text_search:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(username__icontains=text_search)
                 | Q(i_user__last_name__icontains=text_search)
                 | Q(officer__last_name__icontains=text_search)
@@ -1122,7 +1137,7 @@ class Query(graphene.ObjectType):
                 | Q(i_user__email=text_search)
                 | Q(officer__email=text_search)
                 | Q(claim_admin__email_id=text_search)
-            )
+            ))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
@@ -1132,60 +1147,60 @@ class Query(graphene.ObjectType):
             )
 
         if email:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__email=email)
                 | Q(officer__email=email)
                 | Q(claim_admin__email_id=email)
-            )
+            ))
         if phone:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__phone=phone)
                 | Q(officer__phone=phone)
                 | Q(claim_admin__phone=phone)
-            )
+            ))
         if last_name:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__last_name__icontains=last_name)
                 | Q(officer__last_name__icontains=last_name)
                 | Q(claim_admin__last_name__icontains=last_name)
-            )
+            ))
         if other_names:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__other_names__icontains=other_names)
                 | Q(officer__other_names__icontains=other_names)
                 | Q(claim_admin__other_names__icontains=other_names)
-            )
+            ))
         if language:
             user_filters.append(Q(i_user__language=language))
             # Language is not applicable to Office/ClaimAdmin
         if health_facility_id:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__health_facility_id=health_facility_id)
                 | Q(officer__location_id=health_facility_id)
                 | Q(claim_admin__health_facility_id=health_facility_id)
-            )
+            ))
         if birth_date_from:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(officer__dob__gte=birth_date_from)
                 | Q(officer__veo_dob__gte=birth_date_from)
                 | Q(claim_admin__dob__gte=birth_date_from)
-            )
+            ))
         if birth_date_to:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(officer__dob__lte=birth_date_to)
                 | Q(officer__veo_dob__lte=birth_date_to)
                 | Q(claim_admin__dob__lte=birth_date_to)
-            )
+            ))
         if role_id:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__user_roles__role_id=role_id)
                 & Q(i_user__user_roles__validity_to__isnull=True)
-            )
+            ))
         if roles:
-            user_filters.append(
+            user_filters.append(Q(
                 Q(i_user__user_roles__role_id__in=roles)
                 & Q(i_user__user_roles__validity_to__isnull=True)
-            )
+            ))
         if parent_location and parent_location_level is not None:
             location_filters = {
                 0: Q(i_user__userdistrict__location__parent__uuid=parent_location),
@@ -1244,9 +1259,9 @@ class Query(graphene.ObjectType):
 
         text_search = kwargs.get("str")
         if text_search:
-            filters.append(
+            filters.append(Q(
                 Q(name__icontains=text_search) | Q(alt_language__icontains=text_search)
-            )
+            ))
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
 
@@ -1889,7 +1904,7 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    imis_administrator_system = Role.objects.filter(is_system=64).get().id
+    imis_administrator_system = Role.objects.filter(is_system=64, *Role.filter_validity()).first().id
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
@@ -1898,7 +1913,7 @@ def update_or_create_user(data, user):
 
         if (
             uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
-            and user.is_imis_admin
+            and user.is_superuser
             and imis_administrator_system not in data.get("roles", [])
         ):
             raise ValidationError("Administrator cannot deprovision himself.")
@@ -1939,27 +1954,30 @@ def update_or_create_user(data, user):
         i_user = None
     if UT_OFFICER in data["user_types"]:
         health_facility_id = data.get("health_facility_id", None)
-        data_copied = data
+        eo_data = data.copy()
+        eo_data["code"] = data.get('username', data.get('login_name', None))
         if health_facility_id:
             try:
                 HealthFacility = apps.get_model("location", "HealthFacility")
                 hf = HealthFacility.objects.filter(id=health_facility_id).first()
                 if hf:
                     officer_location_id = hf.location
-                    data_copied["location_id"] = officer_location_id.id
+                    eo_data["location_id"] = officer_location_id.id
             except Exception as e:
                 logger.warning("Error %s ", str(e))
         officer, officer_created = create_or_update_officer(
             user_uuid,
-            data_copied,
+            eo_data,
             user.id_for_audit,
             UT_INTERACTIVE in data["user_types"],
         )
     else:
         officer = None
     if UT_CLAIM_ADMIN in data["user_types"]:
+        ca_data = data.copy()
+        ca_data["code"] = data.get('username', data.get('login_name', None))
         claim_admin, claim_admin_created = create_or_update_claim_admin(
-            user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
+            user_uuid, ca_data, user.id_for_audit, UT_INTERACTIVE in data["user_types"]
         )
     else:
         claim_admin = None
@@ -1969,7 +1987,8 @@ def update_or_create_user(data, user):
         i_user=i_user,
         officer=officer,
         claim_admin=claim_admin,
-        user=user
+        user=user,
+        silent=True
     )
 
     if client_mutation_id:

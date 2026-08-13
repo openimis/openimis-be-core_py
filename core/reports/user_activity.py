@@ -3396,7 +3396,7 @@ def user_activity_query(
     user_id = int(requested_user_id)
     if user_id != ALL_USERS:
         try:
-            user = InteractiveUser.objects.get(id=user_id)
+            user = InteractiveUser.objects.get(id=user_id, *InteractiveUser.filter_validity())
         except ObjectDoesNotExist:
             return {"error": "Error - the user requested does not exist"}
 

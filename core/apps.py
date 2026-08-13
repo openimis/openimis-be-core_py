@@ -248,7 +248,6 @@ class CoreConfig(AppConfig):
 
     def ready(self):
         from .models import ModuleConfiguration
-
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_user_config(cfg)

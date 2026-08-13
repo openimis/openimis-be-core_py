@@ -14,7 +14,8 @@ from core.services.userServices import (
     create_or_update_officer_villages,
 )
 from core.services import create_or_update_user_roles
-from core.utils import collect_all_gql_permissions, set_current_user
+from core.utils import collect_all_gql_permissions, set_current_user, clear_history_context, clear_current_user, clear_original_user
+from django.core.cache import caches
 from location.models import Location
 from location.test_helpers import create_test_health_facility
 from uuid import uuid4
@@ -107,34 +108,43 @@ def create_test_interactive_user(
     custom_props=None,
     **kwargs
 ):
-
     if custom_props is None:
         custom_props = {}
-    else:
-        custom_props = {
-            k: v for k, v in custom_props.items() if hasattr(InteractiveUser, k)
-        }
-
+    clear_current_user()
+    clear_original_user()
+    clear_history_context()
+    caches["default"].clear()
+    user_field_names = {
+        f.name for f in User._meta.get_fields()
+        if getattr(f, "concrete", False) and not f.many_to_many
+    }
+    user_props = {k: v for k, v in custom_props.items() if k in user_field_names}
+    iuser_props = {
+        k: v for k, v in custom_props.items()
+        if hasattr(InteractiveUser, k) and k not in ['is_staff', 'is_superuser']
+    }
     # Handle language field specially - convert code to Language instance
-    if "language" in custom_props:
-        language_value = custom_props["language"]
+    if "language" in iuser_props:
+        language_value = iuser_props["language"]
         if isinstance(language_value, str):
-            custom_props["language"] = create_test_language(code=language_value)
+            iuser_props["language"] = create_test_language(code=language_value)
         # If it's already a Language instance, keep it as is
-    elif "language_id" in custom_props:
-        language_code = custom_props["language_id"]
-        custom_props["language"] = create_test_language(code=language_code)
-        del custom_props["language_id"]
+    elif "language_id" in iuser_props:
+        language_code = iuser_props["language_id"]
+        iuser_props["language"] = create_test_language(code=language_code)
+        del iuser_props["language_id"]
     if roles is None:
         # Create a test role with default permissions instead of hardcoded role IDs
         roles = [create_admin_role().id]
+        if "is_superuser" not in user_props:
+            user_props["is_superuser"] = True
     user = None
     i_user = InteractiveUser.objects.filter(login_name=username, *InteractiveUser.filter_validity()).first()
 
     if i_user:
         # Update existing i_user with custom props
-        for key, value in custom_props.items():
-            if hasattr(i_user, key):
+        if iuser_props:
+            for key, value in iuser_props.items():
                 setattr(i_user, key, value)
         try:
             i_user.save()
@@ -147,13 +157,11 @@ def create_test_interactive_user(
             user = User.objects.filter(username=username, *User.filter_validity()).first()
             if user:
                 user.i_user = i_user
-
         if user:
-            user_props = {k: v for k, v in custom_props.items() if hasattr(User, k)}
             if user_props:
                 for key, value in user_props.items():
                     setattr(user, key, value)
-                user.save()
+                user.save(silent=True)
     else:
         user = User.objects.filter(
             username=username, *User.filter_validity()
@@ -167,8 +175,8 @@ def create_test_interactive_user(
                     "last_name": "TestLastName",
                     "other_names": "Test Other Names",
                     "login_name": username,
-                    "role_id": roles[0],
-                    **custom_props,
+                    "role_id": roles[0] if roles else None,
+                    **iuser_props,
                 }
             )
 
@@ -176,6 +184,7 @@ def create_test_interactive_user(
         user = User(
             username=username,
             i_user=i_user,
+            **user_props
         )
     try:
         user.save()
@@ -198,6 +207,7 @@ def create_test_interactive_user(
 def create_test_technical_user(
     username="TestAdminTechnicalTest",
     password="S\\/pe®Pąßw0rd" "",
+    staff=False,
     super_user=False,
     custom_tech_user_props={},
     custom_core_user_props={},
@@ -207,7 +217,7 @@ def create_test_technical_user(
         **{
             "username": username,
             "email": "test_tech_user@openimis.org",
-            "is_staff": super_user,
+            "is_staff": staff,
             "is_superuser": super_user,
             **(custom_tech_user_props),
         }
@@ -432,9 +442,11 @@ def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, cu
 
 
 def create_admin_role(name="IMIS Administrator", is_system=0, is_blocked=False, custom_props=None):
-    is_system = 64
+    existing_role = Role.objects.filter(is_system=64, *Role.filter_validity()).first()
+    if existing_role:
+        return existing_role
     perm_names = []
-    return create_test_role(perm_names, name=name, is_system=is_system, is_blocked=is_blocked, custom_props=custom_props)
+    return create_test_role(perm_names, name=name, is_system=64, is_blocked=is_blocked, custom_props=custom_props)
 
 
 def create_manager_role():
