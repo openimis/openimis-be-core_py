@@ -1,5 +1,3 @@
-import datetime
-
 import factory
 
 from core.models import Role, RoleRight
@@ -317,14 +315,13 @@ class RoleFactory(factory.django.DjangoModelFactory):
     is_system = 0
     is_blocked = False
     audit_user_id = -1
-    validity_from = factory.LazyFunction(datetime.datetime.now)
 
 
 class RoleRightFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = RoleRight
 
+    # no right_id default on purpose: 1 matches no real permission, so a silent default
+    # would let a test assert against a right nothing can ever grant
     role = factory.SubFactory(RoleFactory)
-    right_id = 1
     audit_user_id = -1
-    validity_from = factory.LazyFunction(datetime.datetime.now)

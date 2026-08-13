@@ -34,6 +34,9 @@ setup(
         "django-ratelimit",
         "pandas",
         "uuid6",
+        # core.test_helpers is imported by the shipped generateusers command, so this is
+        # a runtime dependency of the package, not a test-only one
+        "factory_boy",
     ],
     classifiers=[
         "Environment :: Web Environment",

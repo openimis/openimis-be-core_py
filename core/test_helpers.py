@@ -370,7 +370,8 @@ def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, cu
     # resolved before the role exists, so an unknown permission name leaves nothing behind
     right_ids = role_right_ids(perm_names)
 
-    role = RoleFactory(name=name, is_system=is_system, is_blocked=is_blocked, **custom_props)
+    # single dict, so custom_props keeps overriding the defaults instead of colliding with them
+    role = RoleFactory(**{"name": name, "is_system": is_system, "is_blocked": is_blocked, **custom_props})
     for right_id in right_ids:
         RoleRightFactory(role=role, right_id=right_id)
     cache.clear()
