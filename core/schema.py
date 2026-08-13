@@ -1401,6 +1401,7 @@ class RoleBase:
     system_role_id = graphene.Int(required=False)
 
 
+@transaction.atomic
 def update_or_create_role(data, user):
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
@@ -1415,33 +1416,38 @@ def update_or_create_role(data, user):
         role = Role.objects.get(uuid=role_uuid)
         role.save_history()
         [setattr(role, k, v) for k, v in data.items()]
+        # the acting user is authoritative: UpdateRoleMutation does not put
+        # audit_user_id in data, so without this the role keeps the id written
+        # when it was created and every later change names the wrong person
+        role.audit_user_id = user.id_for_audit
         role.save()
         if rights_id is not None:
-            # reset all role rights assigned to the chosen role
             import datetime
 
             now = datetime.datetime.now()
-            role_rights_currently_assigned = RoleRight.objects.filter(role_id=role.id)
-            role_rights_currently_assigned.update(validity_to=now)
-            role_rights_currently_assigned = role_rights_currently_assigned.values_list(
-                "right_id", flat=True
+            currently_assigned = RoleRight.objects.filter(
+                role_id=role.id, validity_to__isnull=True
             )
-            for right_id in rights_id:
-                if right_id not in role_rights_currently_assigned:
-                    # create role right because it is a new role right
-                    RoleRight.objects.create(
-                        role_id=role.id,
-                        right_id=right_id,
-                        audit_user_id=role.audit_user_id,
-                        validity_from=now,
-                    )
-                else:
-                    # set date valid to - None
-                    role_right = RoleRight.objects.get(
-                        Q(role_id=role.id, right_id=right_id)
-                    )
-                    role_right.validity_to = None
-                    role_right.save()
+            currently_assigned_rights = set(
+                currently_assigned.values_list("right_id", flat=True)
+            )
+            requested_rights = set(rights_id)
+
+            # list() forces evaluation before validity_to is mutated, so the
+            # queryset cannot re-evaluate against rows already closed
+            for role_right in list(
+                currently_assigned.exclude(right_id__in=requested_rights)
+            ):
+                role_right.validity_to = now
+                role_right.save()
+
+            for right_id in requested_rights - currently_assigned_rights:
+                RoleRight.objects.create(
+                    role_id=role.id,
+                    right_id=right_id,
+                    audit_user_id=role.audit_user_id,
+                    validity_from=now,
+                )
     else:
         role = Role.objects.create(**data)
         # create role rights for that role if they were passed to mutation
