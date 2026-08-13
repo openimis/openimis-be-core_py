@@ -1,12 +1,15 @@
 import logging
+import hashlib
+from datetime import timedelta
 from gettext import gettext as _
 
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.mail import send_mail, BadHeaderError
+from django.core.mail import send_mail
 from django.template import loader
+from django.utils import timezone
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
@@ -15,10 +18,16 @@ from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
 )
 from django.contrib.auth import authenticate
+from django.db import transaction
 from rest_framework import exceptions
 from django.db.models import Q
+from core.models import PasswordExpiryReminderLog
 
 logger = logging.getLogger(__file__)
+
+
+def _local_date(value):
+    return timezone.localtime(value).date() if timezone.is_aware(value) else value.date()
 
 
 def create_or_update_interactive_user(user_id, data, user_maker, connected):
@@ -272,14 +281,18 @@ def change_user_password(
     user_to_update.set_password(new_password)
     user_to_update.save()
 
-
 def set_user_password(request, username, token, password):
-    user = User.objects.get(username=username)
-    if default_token_generator.check_token(user, token):
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(
+            username__iexact=username.strip()
+        )
+
+        if not default_token_generator.check_token(user, token):
+            raise ValidationError("Invalid or expired token")
+
         user.set_password(password)
         user.save()
-    else:
-        raise ValidationError("Invalid Token")
+        user.clear_refresh_tokens()
 
 
 def _clear_jwt_cookies(request):
@@ -297,7 +310,7 @@ def _try_auto_provision(username, password):
     return None
 
 
-def user_authentication(request, username, password):
+def user_authentication(request, username, password, allow_expired=False):
     if not username or not password:
         raise exceptions.ParseError(_("Missing username or password"))
 
@@ -305,11 +318,19 @@ def user_authentication(request, username, password):
 
     user = authenticate(request, username=username, password=password)
     if user:
+        if user.i_user and user.i_user.is_password_expired:
+            if allow_expired:
+                return user
+            raise exceptions.AuthenticationFailed("PASSWORD_EXPIRED")
         return user
 
     if not User.objects.filter(username__iexact=username).exists():
         user = _try_auto_provision(username, password)
         if user:
+            if user.i_user and user.i_user.is_password_expired:
+                if allow_expired:
+                    return user
+                raise exceptions.AuthenticationFailed("PASSWORD_EXPIRED")
             return user
 
     logger.debug(f"Authentication failed for username: {username}")
@@ -323,44 +344,215 @@ def check_user_unique_email(user_email):
         return [{"message": "User email %s already exists" % user_email}]
     return []
 
+def _increment_reset_counter(key, timeout):
+    if cache.add(key, 1, timeout=timeout):
+        return 1
 
+    try:
+        return cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=timeout)
+        return 1
+
+
+def is_password_reset_rate_limited(request, username):
+    window = settings.PASSWORD_RESET_RATE_LIMIT_WINDOW
+    ip_address = (
+        getattr(request, "axes_ip_address", None)
+        or request.META.get("REMOTE_ADDR", "unknown")
+    )
+
+    normalized_username = (username or "").strip().lower()
+    account_hash = hashlib.sha256(
+        normalized_username.encode("utf-8")
+    ).hexdigest()
+
+    ip_count = _increment_reset_counter(
+        f"password-reset:ip:{ip_address}",
+        window,
+    )
+    account_count = _increment_reset_counter(
+        f"password-reset:account:{account_hash}",
+        window,
+    )
+
+    return (
+        ip_count > settings.PASSWORD_RESET_RATE_LIMIT_PER_IP
+        or account_count > settings.PASSWORD_RESET_RATE_LIMIT_PER_ACCOUNT
+    )
 def reset_user_password(request, username):
+    normalized_username = (username or "").strip()
+
     user = User.objects.filter(
-        Q(username=username) | Q(i_user__email=username),
+        Q(username__iexact=normalized_username)
+        | Q(i_user__email__iexact=normalized_username),
         *User.filter_validity(),
         *InteractiveUser.filter_validity(prefix="i_user__"),
     ).first()
-    # we don't want to inform is a username was not found
-    if not user:
-        return None
 
-    user.clear_refresh_tokens()
+    if not user:
+        logger.info("Password reset requested for an unknown account")
+        return False
 
     if not user.email:
-        raise ValidationError(
-            f"User {username} cannot reset password because he has no email address"
+        logger.warning(
+            "Password reset requested for user without email; user_id=%s",
+            user.pk,
         )
+        return False
 
     token = default_token_generator.make_token(user)
+    params = urlencode({
+        "token": token,
+        "username": user.username,
+    })
+    reset_url = f"{settings.FRONTEND_URL}/set_password?{params}"
+
+    message = loader.render_to_string(
+        CoreConfig.password_reset_template,
+        {
+            "reset_url": reset_url,
+            "user": user,
+        },
+    )
+    html_message = loader.render_to_string(
+        "password_reset.html",
+        {
+            "reset_url": reset_url,
+            "user": user,
+        },
+    )
+
+    send_result = send_mail(
+        subject="[CoreMIS] Reset Password",
+        message=message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=False,
+        html_message=html_message,
+    )
+
+    logger.info(
+        "Password reset email accepted by email backend; user_id=%s",
+        user.pk,
+    )
+
+    return send_result > 0
+
+
+def get_password_expiry_reminder_users(reference_time=None, reminder_days=None):
+    reference_time = reference_time or timezone.now()
+    reminder_days = (
+        CoreConfig.password_expiry_email_reminder_days
+        if reminder_days is None
+        else reminder_days
+    )
+    reminder_until = reference_time + timedelta(days=reminder_days)
+
+    return (
+        User.objects.filter(
+            i_user__isnull=False,
+            i_user__email__isnull=False,
+            i_user__password_validity__gt=reference_time,
+            i_user__password_validity__lte=reminder_until,
+            *User.filter_validity(),
+            *InteractiveUser.filter_validity(prefix="i_user__"),
+        )
+        .exclude(i_user__email="")
+        .select_related("i_user")
+    )
+
+
+def send_password_expiry_reminder(user, reference_time=None):
+    reference_time = reference_time or timezone.now()
+    reminder_date = _local_date(reference_time)
+    password_validity = user.i_user.password_validity
+    email = user.i_user.email
+
+    reminder_log, created = PasswordExpiryReminderLog.objects.get_or_create(
+        user=user,
+        password_validity=password_validity,
+        reminder_date=reminder_date,
+        defaults={
+            "email": email,
+            "sent_at": reference_time,
+        },
+    )
+    if not created:
+        logger.info(
+            "Password expiry reminder already sent; user_id=%s reminder_date=%s",
+            user.pk,
+            reminder_date,
+        )
+        return False
+
+    days_left = _local_date(password_validity) - reminder_date
+
+    message = loader.render_to_string(
+        CoreConfig.password_expiry_reminder_template,
+        {
+            "user": user,
+            "password_validity": password_validity,
+            "days_left": days_left.days,
+        },
+    )
+    html_message = loader.render_to_string(
+        "password_expiry_reminder.html",
+        {
+            "user": user,
+            "password_validity": password_validity,
+            "days_left": days_left.days,
+        },
+    )
+
     try:
-        logger.info(f"Send mail to reset password for {user} with token '{token}'")
-        params = urlencode({"token": token})
-        reset_url = f"{settings.FRONTEND_URL}/set_password?{params}"
-        message = loader.render_to_string(
-            CoreConfig.password_reset_template,
-            {
-                "reset_url": reset_url,
-                "user": user,
-            },
-        )
-        logger.debug("Message sent: %s" % message)
-        email_to_send = send_mail(
-            subject="[OpenIMIS] Reset Password",
+        send_result = send_mail(
+            subject="[CoreMIS] Password Expiry Reminder",
             message=message,
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[user.email],
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
             fail_silently=False,
+            html_message=html_message,
         )
-        return email_to_send
-    except BadHeaderError:
-        return ValueError("Invalid header found.")
+    except Exception:
+        reminder_log.delete()
+        raise
+
+    if send_result <= 0:
+        reminder_log.delete()
+        return False
+
+    logger.info(
+        "Password expiry reminder email accepted by email backend; user_id=%s",
+        user.pk,
+    )
+    return True
+
+
+def send_password_expiry_reminders(reference_time=None, reminder_days=None):
+    reference_time = reference_time or timezone.now()
+    sent_count = 0
+    skipped_count = 0
+
+    for user in get_password_expiry_reminder_users(reference_time, reminder_days):
+        try:
+            if send_password_expiry_reminder(user, reference_time):
+                sent_count += 1
+            else:
+                skipped_count += 1
+        except Exception:
+            skipped_count += 1
+            logger.exception(
+                "Unable to send password expiry reminder; user_id=%s",
+                user.pk,
+            )
+
+    logger.info(
+        "Password expiry reminders processed; sent=%s skipped=%s",
+        sent_count,
+        skipped_count,
+    )
+    return {
+        "sent": sent_count,
+        "skipped": skipped_count,
+    }

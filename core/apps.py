@@ -29,6 +29,7 @@ DEFAULT_CFG = {
         else "False"
     ),
     "password_reset_template": "password_reset.txt",
+    "password_expiry_reminder_template": "password_expiry_reminder.txt",
     "currency": "$",
     "gql_query_claim_admins_perms": [],
     "gql_query_users_perms": ["121701"],
@@ -58,6 +59,13 @@ DEFAULT_CFG = {
     "is_valid_health_facility_contract_required": False,
     "secondary_calendar": None,
     "locked_user_password_hash": "locked",
+    "password_validity_days": 90,
+    "password_reuse_limit": 5,
+    "password_expiry_warning_days": 5,
+    "password_expiry_email_reminder_days": 5,
+    "password_expiry_email_reminder_hour": 8,
+    "password_expiry_email_reminder_minute": 0,
+    "password_expiry_email_reminder_timezone": "Africa/Blantyre",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
 }
@@ -70,6 +78,7 @@ class CoreConfig(AppConfig):
     username_changeable = True
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
+    password_expiry_reminder_template = "password_expiry_reminder.txt"
 
     gql_query_claim_admins_perms = []
     gql_query_roles_perms = []
@@ -95,6 +104,13 @@ class CoreConfig(AppConfig):
     gql_mutation_delete_claim_administrator_perms = []
     is_valid_health_facility_contract_required = None
     locked_user_password_hash = None
+    password_validity_days = 90
+    password_reuse_limit = 5
+    password_expiry_warning_days = 5
+    password_expiry_email_reminder_days = 5
+    password_expiry_email_reminder_hour = 8
+    password_expiry_email_reminder_minute = 0
+    password_expiry_email_reminder_timezone = "Africa/Blantyre"
 
     fields_controls_user = {}
     fields_controls_eo = {}
@@ -260,7 +276,25 @@ class CoreConfig(AppConfig):
         self._configure_additional_settings(cfg)
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
+        CoreConfig.password_expiry_reminder_template = cfg[
+            "password_expiry_reminder_template"
+        ]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
+        CoreConfig.password_validity_days = int(cfg["password_validity_days"])
+        CoreConfig.password_reuse_limit = int(cfg["password_reuse_limit"])
+        CoreConfig.password_expiry_warning_days = int(cfg["password_expiry_warning_days"])
+        CoreConfig.password_expiry_email_reminder_days = int(
+            cfg["password_expiry_email_reminder_days"]
+        )
+        CoreConfig.password_expiry_email_reminder_hour = int(
+            cfg["password_expiry_email_reminder_hour"]
+        )
+        CoreConfig.password_expiry_email_reminder_minute = int(
+            cfg["password_expiry_email_reminder_minute"]
+        )
+        CoreConfig.password_expiry_email_reminder_timezone = cfg[
+            "password_expiry_email_reminder_timezone"
+        ]
 
         # The scheduler starts as soon as it gets a job, which could be before Django is ready, so we enable it here
         from core import scheduler

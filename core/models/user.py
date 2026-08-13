@@ -12,9 +12,11 @@ from django.contrib.auth.models import (
     PermissionsMixin,
     Group,
 )
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.utils.crypto import salted_hmac
+from django.utils import timezone
+from django.utils.translation import gettext as _
 from graphql import ResolveInfo
 import core
 from hashlib import sha256
@@ -24,6 +26,7 @@ from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
+from core.apps import CoreConfig
 from core.utils import to_list_permissions
 from rest_framework import exceptions
 
@@ -353,14 +356,54 @@ class InteractiveUser(OpenIMISMigrationModel):
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
+    def _matches_password_hash(self, raw_password, private_key, password_hash):
+        if not raw_password or not password_hash:
+            return False
+        pwd_hash = sha256()
+        pwd_hash.update(f"{raw_password.rstrip()}{private_key}".encode())
+        return pwd_hash.hexdigest().lower() == password_hash.lower()
+
+    def _password_was_used(self, raw_password):
+        if self._matches_password_hash(raw_password, self.private_key, self.password):
+            return True
+        if not self.pk:
+            return False
+
+        password_reuse_limit = max(0, int(CoreConfig.password_reuse_limit))
+        if password_reuse_limit:
+            password_history = self.history.exclude(password__isnull=True).order_by(
+                "-history_date"
+            )
+            password_history = password_history[:password_reuse_limit]
+        else:
+            password_history = self.history.none()
+
+        return any(
+            self._matches_password_hash(
+                raw_password,
+                history.private_key,
+                history.password,
+            )
+            for history in password_history
+        )
+
+    @property
+    def is_password_expired(self):
+        return bool(self.password_validity and self.password_validity <= timezone.now())
+
     def set_password(self, raw_password, private_key=token_hex(128)):
         validate_password(raw_password)
+        if self._password_was_used(raw_password):
+            raise ValidationError(_("core.password_already_used"))
         self.private_key = private_key
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         self.password = (
             pwd_hash.hexdigest().upper()
         )  # Legacy requires this to be uppercase
+        self.password_validity = timezone.now() + timedelta(
+            days=CoreConfig.password_validity_days
+        )
 
     def check_password(self, raw_password):
         from hashlib import sha256
@@ -876,6 +919,23 @@ class UserGroup(models.Model):
         managed = False
         db_table = "core_User_groups"
         unique_together = (("user", "group"),)
+
+
+class PasswordExpiryReminderLog(models.Model):
+    user = models.ForeignKey(
+        User,
+        models.CASCADE,
+        related_name="password_expiry_reminder_logs",
+    )
+    password_validity = models.DateTimeField()
+    reminder_date = models.DateField()
+    sent_at = models.DateTimeField(default=timezone.now)
+    email = models.EmailField(max_length=200)
+
+    class Meta:
+        managed = True
+        db_table = "core_PasswordExpiryReminderLog"
+        unique_together = (("user", "password_validity", "reminder_date"),)
 
 
 def _get_default_expire_date():

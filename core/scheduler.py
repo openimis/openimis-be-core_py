@@ -21,6 +21,10 @@ def schedule_tasks(task_scheduler):
     execution
     :param scheduler: scheduler to which we'll add the tasks
     """
+    from core.scheduled_tasks import schedule_tasks as schedule_core_tasks
+
+    schedule_core_tasks(task_scheduler)
+
     if settings.SCHEDULER_JOBS:
         for job in settings.SCHEDULER_JOBS:
             logger.debug("Scheduling job %s", job["method"])

@@ -147,8 +147,10 @@ def schedule_tasks(scheduler: BackgroundScheduler): # Has to accept BackgroundSc
         max_instances=1
     )    
 ```
-Task will be automatically registered, but it will not be triggered unless `SCHEDULER_AUTOSTART` setting is
-set to `True`.
+Task will be automatically registered, but it will not be triggered unless the scheduler is running.
+For production deployments, run scheduled tasks in one dedicated scheduler process, for example
+`python manage.py runapscheduler`. Do not enable in-process scheduler autostart on gunicorn/web
+replicas, because each replica/worker could register and run the same jobs.
 
 ### Graphene Custom Types & Helper Classes/Methods
 * schema.SmallInt: Integer, with values ranging from -32768 to +32767

@@ -2,19 +2,26 @@ import importlib
 import logging
 import datetime
 
+from django.core import mail
+from django.core.exceptions import ValidationError
 from django.test.client import RequestFactory
 from django.apps import apps
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 
 import core
-from core.models import InteractiveUser, Language, User
+from core.apps import CoreConfig
+from core.models import InteractiveUser, Language, User, PasswordExpiryReminderLog
 from core.services import (
     create_or_update_interactive_user,
     create_or_update_core_user,
     create_or_update_officer,
     create_or_update_claim_admin,
     reset_user_password,
+    get_password_expiry_reminder_users,
+    send_password_expiry_reminder,
+    send_password_expiry_reminders,
     set_user_password,
     user_authentication,
 )
@@ -26,6 +33,10 @@ from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
 PASSWORD = "FoBoar72!"
+
+
+def local_date(value):
+    return timezone.localtime(value).date() if timezone.is_aware(value) else value.date()
 
 
 class UserServicesTest(TestCase):
@@ -114,6 +125,8 @@ class UserServicesTest(TestCase):
         self.assertNotEqual(i_user.password, PASSWORD)  # No clear text password
         self.assertTrue(i_user.check_password(PASSWORD))
         self.assertFalse(i_user.check_password("wrong_password"))
+        self.assertIsNotNone(i_user.password_validity)
+        self.assertGreater(i_user.password_validity, timezone.now())
 
     def test_iuser_update(self):
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]
@@ -431,8 +444,6 @@ class UserServicesTest(TestCase):
         self.assertEqual(claim_admin.email_id, "imis@foo.be")
 
     def test_user_reset_password(self):
-        from django.core import mail
-
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]
         username = "user_reset"
         i_user, created = create_or_update_interactive_user(
@@ -465,6 +476,106 @@ class UserServicesTest(TestCase):
         self.assertTrue(len(mail.outbox) == 1)
         self.assertTrue(mail.outbox[0].subject == "[OpenIMIS] Reset Password")
 
+    def test_password_expiry_reminder_user_selection(self):
+        reference_time = timezone.now()
+        expiring_user = create_test_interactive_user(
+            username="expiry_email_selected",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_selected@example.invalid"},
+        )
+        expiring_user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        expiring_user.i_user.save(update_fields=["password_validity"])
+
+        outside_window_user = create_test_interactive_user(
+            username="expiry_email_outside",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_outside@example.invalid"},
+        )
+        outside_window_user.i_user.password_validity = reference_time + datetime.timedelta(days=6)
+        outside_window_user.i_user.save(update_fields=["password_validity"])
+
+        no_email_user = create_test_interactive_user(
+            username="expiry_email_no_email",
+            password=PASSWORD,
+            custom_props={"email": ""},
+        )
+        no_email_user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        no_email_user.i_user.save(update_fields=["password_validity"])
+
+        selected_usernames = {
+            user.username
+            for user in get_password_expiry_reminder_users(reference_time, reminder_days=5)
+        }
+
+        self.assertIn(expiring_user.username, selected_usernames)
+        self.assertNotIn(outside_window_user.username, selected_usernames)
+        self.assertNotIn(no_email_user.username, selected_usernames)
+
+    def test_send_password_expiry_reminder_creates_log_and_sends_email(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_send",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_send@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        sent = send_password_expiry_reminder(user, reference_time)
+
+        self.assertTrue(sent)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "[CoreMIS] Password Expiry Reminder")
+        self.assertEqual(mail.outbox[0].to, ["expiry_email_send@example.invalid"])
+        self.assertTrue(
+            PasswordExpiryReminderLog.objects.filter(
+                user=user,
+                password_validity=user.i_user.password_validity,
+                reminder_date=local_date(reference_time),
+            ).exists()
+        )
+
+    def test_send_password_expiry_reminder_skips_duplicate_same_day(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_duplicate",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_duplicate@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        first_sent = send_password_expiry_reminder(user, reference_time)
+        second_sent = send_password_expiry_reminder(user, reference_time)
+
+        self.assertTrue(first_sent)
+        self.assertFalse(second_sent)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            PasswordExpiryReminderLog.objects.filter(
+                user=user,
+                password_validity=user.i_user.password_validity,
+                reminder_date=local_date(reference_time),
+            ).count(),
+            1,
+        )
+
+    def test_send_password_expiry_reminders_returns_counts(self):
+        reference_time = timezone.now()
+        user = create_test_interactive_user(
+            username="expiry_email_batch",
+            password=PASSWORD,
+            custom_props={"email": "expiry_email_batch@example.invalid"},
+        )
+        user.i_user.password_validity = reference_time + datetime.timedelta(days=4)
+        user.i_user.save(update_fields=["password_validity"])
+
+        result = send_password_expiry_reminders(reference_time, reminder_days=5)
+
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(result["skipped"], 0)
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_user_set_password(self):
         roles = [create_test_role(name="TestRole1").id, create_test_role(name="TestRole2").id]
         username = "user_set"
@@ -494,6 +605,17 @@ class UserServicesTest(TestCase):
         request = self.factory.get("/")
         with self.assertRaises(ValidationError):
             set_user_password(request, username, "TOKEN", "new_password")
+
+    def test_setting_password_updates_password_validity(self):
+        self.user.i_user.set_password("NewStrongPass123!")
+        self.user.i_user.save()
+
+        self.assertIsNotNone(self.user.i_user.password_validity)
+        self.assertGreater(self.user.i_user.password_validity, timezone.now())
+        self.assertLessEqual(
+            self.user.i_user.password_validity,
+            timezone.now() + datetime.timedelta(days=91),
+        )
 
 
 class UserAuthenticationTest(TestCase):
@@ -540,6 +662,53 @@ class UserAuthenticationTest(TestCase):
         self.assertIsNotNone(user)
         self.assertTrue(User.objects.filter(username=self.legacy_username).exists())
         self.assertEqual(user.i_user.id, self.legacy_i_user.id)
+
+    def test_expired_password_rejects_authentication(self):
+        self.legacy_i_user.password_validity = timezone.now() - datetime.timedelta(days=1)
+        self.legacy_i_user.save()
+
+        request = self.factory.post("/")
+        with self.assertRaises(AuthenticationFailed) as cm:
+            user_authentication(request, self.legacy_username, self.legacy_password)
+
+        self.assertEqual(str(cm.exception.detail), "PASSWORD_EXPIRED")
+
+    def test_expired_password_can_be_returned_when_explicitly_allowed(self):
+        self.legacy_i_user.password_validity = timezone.now() - datetime.timedelta(days=1)
+        self.legacy_i_user.save()
+
+        request = self.factory.post("/")
+        user = user_authentication(
+            request,
+            self.legacy_username,
+            self.legacy_password,
+            allow_expired=True,
+        )
+
+        self.assertEqual(user.i_user.id, self.legacy_i_user.id)
+
+    def test_current_password_reuse_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self.legacy_i_user.set_password(self.legacy_password)
+
+    def test_historical_password_reuse_is_rejected(self):
+        self.legacy_i_user.set_password("NewLegacy123!")
+        self.legacy_i_user.save()
+
+        with self.assertRaises(ValidationError):
+            self.legacy_i_user.set_password(self.legacy_password)
+
+    def test_password_reuse_check_is_limited_to_recent_history(self):
+        previous_limit = CoreConfig.password_reuse_limit
+        CoreConfig.password_reuse_limit = 5
+        try:
+            for index in range(6):
+                self.legacy_i_user.set_password(f"NewLegacy123!{index}")
+                self.legacy_i_user.save()
+
+            self.legacy_i_user.set_password(self.legacy_password)
+        finally:
+            CoreConfig.password_reuse_limit = previous_limit
 
     def test_auto_provision_fails_with_wrong_password(self):
         self.assertFalse(User.objects.filter(username=self.legacy_username).exists())

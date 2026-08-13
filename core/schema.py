@@ -30,6 +30,7 @@ from core.services import (
     reset_user_password,
     set_user_password,
     user_authentication,
+    is_password_reset_rate_limited, # added
     wait_for_mutation,
 )
 from core.tasks import openimis_mutation_async
@@ -46,6 +47,7 @@ from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
 from django.middleware.csrf import get_token
 from django.utils import translation
+from django.utils import timezone
 from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
@@ -2116,15 +2118,20 @@ class ResetPasswordMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, username, **input):
-        try:
-            reset_user_password(info.context, username)
+        request = info.context
+
+        if is_password_reset_rate_limited(request, username):
+            logger.warning("Password reset request was rate limited")
             return ResetPasswordMutation(success=True)
-        except Exception as exc:
-            logger.exception(exc)
-            return ResetPasswordMutation(
-                success=False,
-                error=gettext_lazy("Failed to reset password."),
-            )
+
+        try:
+            reset_user_password(request, username)
+        except Exception:
+            logger.exception("Unable to process password reset email")
+
+        # Not disclosing whether the account exists, has an email address,
+        # or whether the SMTP provider accepted the message.
+        return ResetPasswordMutation(success=True)
 
 
 class SetPasswordMutation(graphene.relay.ClientIDMutation):
@@ -2160,6 +2167,16 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
                 success=False,
                 error=gql_error.message,
             )
+        except ValidationError as validation_error:
+            logger.exception(validation_error)
+            if hasattr(validation_error, "messages"):
+                error_message = "; ".join(str(message) for message in validation_error.messages)
+            else:
+                error_message = str(validation_error)
+            return SetPasswordMutation(
+                success=False,
+                error=error_message,
+            )
         except Exception as exc:
             logger.exception(exc)
             return SetPasswordMutation(
@@ -2171,6 +2188,45 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers"""
 
+    password_expired = graphene.Boolean()
+    password_expiry_warning = graphene.Boolean()
+    password_expires_in_days = graphene.Int()
+    password_expires_at = graphene.DateTime()
+    reset_email_sent = graphene.Boolean()
+    username = graphene.String()
+
+    @staticmethod
+    def _get_password_expiry_info(user):
+        expires_at = getattr(getattr(user, "i_user", None), "password_validity", None)
+        if not expires_at:
+            return {
+                "password_expiry_warning": False,
+                "password_expires_in_days": None,
+                "password_expires_at": None,
+            }
+
+        current_time = timezone.now()
+        if timezone.is_naive(expires_at) and timezone.is_aware(current_time):
+            expires_at = timezone.make_aware(expires_at)
+        elif timezone.is_aware(expires_at) and timezone.is_naive(current_time):
+            expires_at = timezone.make_naive(expires_at)
+
+        if expires_at <= current_time:
+            return {
+                "password_expiry_warning": False,
+                "password_expires_in_days": 0,
+                "password_expires_at": expires_at,
+            }
+
+        expires_on = timezone.localtime(expires_at).date() if timezone.is_aware(expires_at) else expires_at.date()
+        today = timezone.localdate() if timezone.is_aware(current_time) else current_time.date()
+        days_left = (expires_on - today).days
+        return {
+            "password_expiry_warning": 0 <= days_left <= CoreConfig.password_expiry_warning_days,
+            "password_expires_in_days": days_left,
+            "password_expires_at": expires_at,
+        }
+
     @classmethod
     def mutate(cls, root, info, **kwargs):
 
@@ -2179,8 +2235,36 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         request = info.context
 
         check_lockout(request)
-        info.context.user = user_authentication(request, username, password)
-        return super().mutate(cls, info, **kwargs)
+        user = user_authentication(request, username, password, allow_expired=True)
+        if user.i_user and user.i_user.is_password_expired:
+            reset_email_sent = False
+            if is_password_reset_rate_limited(request, user.username):
+                logger.warning("Expired-password reset email request was rate limited")
+            else:
+                try:
+                    reset_email_sent = bool(reset_user_password(request, user.username))
+                except Exception:
+                    logger.exception("Unable to process expired-password reset email")
+
+            return cls(
+                password_expired=True,
+                password_expiry_warning=False,
+                password_expires_in_days=0,
+                password_expires_at=user.i_user.password_validity,
+                reset_email_sent=reset_email_sent,
+                refresh_expires_in=0,
+                token="",
+                username=user.username,
+            )
+        info.context.user = user
+        response = super().mutate(cls, info, **kwargs)
+        expiry_info = cls._get_password_expiry_info(user)
+        response.password_expired = False
+        response.password_expiry_warning = expiry_info["password_expiry_warning"]
+        response.password_expires_in_days = expiry_info["password_expires_in_days"]
+        response.password_expires_at = expiry_info["password_expires_at"]
+        response.username = user.username
+        return response
 
 
 class GetCsrfTokenMutation(graphene.Mutation):
