@@ -67,6 +67,7 @@ from core.custom_filters import CustomFilterWizardStorage
 from core.gql_queries import (
     RoleGQLType,
     RoleRightGQLType,
+    RoleChangeLogGQLType,
     UserGQLType,
     InteractiveUserGQLType,
     LanguageGQLType,
@@ -776,6 +777,13 @@ class Query(graphene.ObjectType):
         max_limit=None,
     )
 
+    role_change_log = graphene.Field(
+        RoleChangeLogGQLType,
+        role_uuid=graphene.String(required=True),
+        first=graphene.Int(),
+        offset=graphene.Int(),
+    )
+
     interactiveUsers = OrderedDjangoFilterConnectionField(
         InteractiveUserGQLType,
         orderBy=graphene.List(of_type=graphene.String),
@@ -1262,6 +1270,21 @@ class Query(graphene.ObjectType):
             query = query.filter(is_system=system_role_id)
 
         return gql_optimizer.query(query.filter(*filters), info)
+
+    def resolve_role_change_log(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
+            raise PermissionError("Unauthorized")
+        from core.services.roleChangeLog import get_role_change_log
+
+        try:
+            entries = get_role_change_log(kwargs["role_uuid"])
+        except Role.DoesNotExist:
+            raise ValidationError("core.role_change_log.role_not_found")
+
+        offset = kwargs.get("offset") or 0
+        first = kwargs.get("first")
+        page = entries[offset: offset + first] if first else entries[offset:]
+        return RoleChangeLogGQLType(total_count=len(entries), items=page)
 
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):

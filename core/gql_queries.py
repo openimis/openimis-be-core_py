@@ -281,3 +281,29 @@ class ValidationMessageGQLType(graphene.ObjectType):
     is_valid = graphene.Boolean()
     error_code = graphene.Int()
     error_message = graphene.String()
+
+
+class RoleChangeEntryGQLType(graphene.ObjectType):
+    """
+    A single entry in a role's change history. Not backed by a model: entries
+    are derived from the versioned tblRole, tblRoleRight and tblUserRole rows.
+    """
+
+    timestamp = graphene.DateTime()
+    change_type = graphene.String()
+    field = graphene.String()
+    old_value = graphene.String()
+    new_value = graphene.String()
+    # null when the change kind does not record an actor, e.g. a revocation:
+    # a closed row's audit_user_id belongs to whoever opened it
+    audit_user_id = graphene.Int()
+
+
+class RoleChangeLogGQLType(graphene.ObjectType):
+    """
+    A page of a role's change history. total_count is the size of the whole
+    feed, independent of the requested page.
+    """
+
+    total_count = graphene.Int()
+    items = graphene.List(RoleChangeEntryGQLType)
