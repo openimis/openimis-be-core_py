@@ -5,7 +5,6 @@ from core.models import (
     TechnicalUser,
     Language,
     Role,
-    RoleRight,
 )
 from django.core.cache import cache
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
@@ -14,12 +13,12 @@ from core.services.userServices import (
     create_or_update_officer_villages,
 )
 from core.services import create_or_update_user_roles
-from core.utils import collect_all_gql_permissions, set_current_user, clear_history_context, clear_current_user
+from core.utils import set_current_user, clear_history_context, clear_current_user
+from core.test_factories import ROLE_PRESETS, RoleFactory, RoleRightFactory, role_right_ids
 from django.core.cache import caches
 from location.models import Location
 from location.test_helpers import create_test_health_facility
 from uuid import uuid4
-import datetime
 from django.core.exceptions import ValidationError
 
 
@@ -335,40 +334,11 @@ class LogInHelper:
 
 
 def create_enrolment_officer_role():
-    """
-    Create the Enrolment Officer role with specific permissions.
-    This role should have permissions for insuree, location, product, and policy management.
-    """
-    enrolment_officer_perms = [
-        "gql_query_insuree_perms",
-        "gql_mutation_update_insurees_perms",
-        "gql_mutation_create_insurees_perms",
-        "gql_query_locations_perms",
-        "gql_query_products_perms",
-        "gql_query_policies_perms",
-        "gql_mutation_create_policies_perms",
-        "gql_mutation_edit_policies_perms",
-    ]
-    return create_test_role(perm_names=enrolment_officer_perms, name="EnrolmentOfficer", is_system=1)
+    return _create_preset_role("EnrolmentOfficer")
 
 
 def create_claim_admin_role():
-    """
-    Create the Claim Admin role with specific permissions.
-    This role should have permissions for policy, search insuree, read policy,
-    create update search HF claims with medical service and item.
-    """
-    claim_admin_perms = [
-        "gql_query_policies_perms",
-        "gql_query_insuree_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-        "gql_query_claims_perms",
-        "gql_query_health_facilities_perms",
-        "gql_query_medical_services_perms",
-        "gql_query_medical_items_perms",
-    ]
-    return create_test_role(perm_names=claim_admin_perms, name="ClaimAdministrator", is_system=16)
+    return _create_preset_role("ClaimAdministrator")
 
 
 def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, custom_props=None):
@@ -393,51 +363,24 @@ def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, cu
     if name is None:
         name = "TestRole"
 
-    # Check if role already exists by name
     existing_role = Role.objects.filter(name=name, *Role.filter_validity()).first()
     if existing_role:
         return existing_role
 
-    # Collect all permissions from DEFAULT configs
-    permissions_dict = collect_all_gql_permissions()
+    # resolved before the role exists, so an unknown permission name leaves nothing behind
+    right_ids = role_right_ids(perm_names)
 
-    # Flatten permission IDs for the given names
-    flat_perms = {}
-    for app_perms in permissions_dict.values():
-        for perm_name, perm_ids in app_perms.items():
-            flat_perms[perm_name] = perm_ids
-
-    right_ids = []
-    for perm_name in perm_names:
-        if perm_name not in flat_perms:
-            raise Exception(f"Permission {perm_name} not found")
-        right_ids.extend(flat_perms[perm_name])
-
-    # Remove duplicates
-    right_ids = list(set(right_ids))
-    # Create the role
-    role_data = {
-        "name": name,
-        "is_system": is_system,
-        "is_blocked": is_blocked,
-        "audit_user_id": -1,
-        "validity_from": datetime.datetime.now(),
-        **custom_props,
-    }
-
-    role = Role.objects.create(**role_data)
-    cache.clear()
-    RoleRight.objects.filter(role=role).delete()
-    # Create role rights
+    role = RoleFactory(name=name, is_system=is_system, is_blocked=is_blocked, **custom_props)
     for right_id in right_ids:
-        RoleRight.objects.create(
-            role=role,
-            right_id=right_id,
-            audit_user_id=-1,
-            validity_from=datetime.datetime.now(),
-        )
+        RoleRightFactory(role=role, right_id=right_id)
+    cache.clear()
 
     return role
+
+
+def _create_preset_role(preset):
+    spec = ROLE_PRESETS[preset]
+    return create_test_role(perm_names=spec["perm_names"], name=preset, is_system=spec["is_system"])
 
 
 def create_admin_role(name="IMIS Administrator", is_system=0, is_blocked=False, custom_props=None):
@@ -449,235 +392,23 @@ def create_admin_role(name="IMIS Administrator", is_system=0, is_blocked=False, 
 
 
 def create_manager_role():
-    """
-    Create the Manager role with specific permissions.
-    This role should have permissions for reports and insuree inquiry.
-    """
-    manager_perms = [
-        "gql_reports_primary_operational_indicators_claims_perms",
-        "gql_reports_derived_operational_indicators_perms",
-        "gql_reports_contribution_collection_perms",
-        "gql_reports_user_activity_perms",
-        "gql_query_insuree_inquire_perms",
-    ]
-    return create_test_role(perm_names=manager_perms, name="Manager", is_system=2)
+    return _create_preset_role("Manager")
 
 
 def create_accountant_role():
-    """
-    Create the Accountant role with specific permissions.
-    This role should have permissions for families, insurees, policies, premiums, payments, claims, and various reports.
-    """
-    accountant_perms = [
-        "gql_query_families_perms",
-        "gql_query_insurees_perms",
-        "gql_query_insuree_inquire_perms",
-        "gql_query_policies_perms",
-        "gql_query_premiums_perms",
-        "gql_query_payments_perms",
-        "gql_mutation_create_payments_perms",
-        "gql_mutation_update_payments_perms",
-        "gql_mutation_delete_payments_perms",
-        "gql_query_claims_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-        "gql_mutation_delete_claims_perms",
-        "gql_reports_contribution_collection_perms",
-        "gql_reports_product_sales_perms",
-        "gql_reports_contribution_distribution_perms",
-        "gql_reports_payment_category_overview_perms",
-        "gql_reports_matching_funds_perms",
-        "gql_reports_claim_overview_report_perms",
-        "gql_reports_percentage_referrals_perms",
-        "gql_reports_families_insurees_overview_perms",
-        "gql_reports_pending_insurees_perms",
-        "gql_reports_renewals_perms",
-        "gql_reports_capitation_payment_perms",
-        "gql_reports_rejected_photo_perms",
-        "gql_reports_contribution_payment_perms",
-        "gql_reports_control_number_assignment_perms",
-        "gql_reports_overview_of_commissions_perms",
-    ]
-    return create_test_role(perm_names=accountant_perms, name="Accountant", is_system=4)
+    return _create_preset_role("Accountant")
 
 
 def create_clerk_role():
-    """
-    Create the Clerk role with specific permissions.
-    This role has the same permissions as Enrolment Officer.
-    """
-    clerk_perms = [
-        "gql_query_families_perms",
-        "gql_mutation_create_families_perms",
-        "gql_mutation_update_families_perms",
-        "gql_mutation_delete_families_perms",
-        "gql_query_insurees_perms",
-        "gql_mutation_create_insurees_perms",
-        "gql_mutation_update_insurees_perms",
-        "gql_mutation_delete_insurees_perms",
-        "gql_query_insuree_inquire_perms",
-        "gql_query_policies_perms",
-        "gql_mutation_create_policies_perms",
-        "gql_mutation_edit_policies_perms",
-        "gql_mutation_delete_policies_perms",
-        "gql_mutation_renew_policies_perms",
-        "gql_query_premiums_perms",
-        "gql_mutation_create_premiums_perms",
-        "gql_mutation_update_premiums_perms",
-        "gql_mutation_delete_premiums_perms",
-        "gql_query_claims_perms",
-        "gql_mutation_deliver_claim_feedback_perms",
-    ]
-    return create_test_role(perm_names=clerk_perms, name="Clerk", is_system=8)
+    return _create_preset_role("Clerk")
 
 
 def create_medical_officer_role():
-    """
-    Create the Medical Officer role with specific permissions.
-    This role should have permissions for claims and claim history reports.
-    """
-    medical_officer_perms = [
-        "gql_query_claims_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-        "gql_mutation_submit_claims_perms",
-        "gql_mutation_process_claims_perms",
-        "gql_reports_claim_history_report_perms",
-    ]
-    return create_test_role(perm_names=medical_officer_perms, name="MedicalOfficer", is_system=16)
+    return _create_preset_role("MedicalOfficer")
 
 
 def create_scheme_admin_role():
-    """
-    Create the Scheme Administrator role with extensive permissions.
-    This role has broad access to most modules.
-    """
-    scheme_admin_perms = [
-        "gql_query_insuree_inquire_perms",
-        "gql_query_locations_perms",
-        "gql_query_health_facilities_perms",
-        "gql_mutation_create_locations_perms",
-        "gql_mutation_edit_locations_perms",
-        "gql_mutation_delete_locations_perms",
-        "gql_mutation_move_location_perms",
-        "gql_mutation_create_region_locations_perms",
-        "gql_mutation_create_health_facilities_perms",
-        "gql_mutation_edit_health_facilities_perms",
-        "gql_mutation_delete_health_facilities_perms",
-        "gql_query_medical_items_perms",
-        "gql_query_medical_services_perms",
-        "gql_mutation_medical_items_add_perms",
-        "gql_mutation_medical_items_update_perms",
-        "gql_mutation_medical_items_delete_perms",
-        "gql_mutation_medical_services_add_perms",
-        "gql_mutation_medical_services_update_perms",
-        "gql_mutation_medical_services_delete_perms",
-        "gql_query_pricelists_medical_items_perms",
-        "gql_mutation_pricelists_medical_items_add_perms",
-        "gql_mutation_pricelists_medical_items_update_perms",
-        "gql_mutation_pricelists_medical_items_delete_perms",
-        "gql_mutation_pricelists_medical_items_duplicate_perms",
-        "gql_query_pricelists_medical_services_perms",
-        "gql_mutation_pricelists_medical_services_add_perms",
-        "gql_mutation_pricelists_medical_services_update_perms",
-        "gql_mutation_pricelists_medical_services_delete_perms",
-        "gql_mutation_pricelists_medical_services_duplicate_perms",
-        "gql_query_products_perms",
-        "gql_mutation_products_add_perms",
-        "gql_mutation_products_edit_perms",
-        "gql_mutation_products_delete_perms",
-        "gql_mutation_products_duplicate_perms",
-        "gql_query_insurees_perms",
-        "gql_query_families_perms",
-        "gql_query_insuree_policy_perms",
-        "gql_mutation_create_families_perms",
-        "gql_mutation_update_families_perms",
-        "gql_mutation_delete_families_perms",
-        "gql_mutation_create_insurees_perms",
-        "gql_mutation_update_insurees_perms",
-        "gql_mutation_delete_insurees_perms",
-        "gql_query_policies_perms",
-        "gql_query_policies_by_insuree_perms",
-        "gql_query_policies_by_family_perms",
-        "gql_query_eligibilities_perms",
-        "gql_mutation_create_policies_perms",
-        "gql_mutation_renew_policies_perms",
-        "gql_mutation_edit_policies_perms",
-        "gql_mutation_suspend_policies_perms",
-        "gql_mutation_delete_policies_perms",
-        "gql_query_premiums_perms",
-        "gql_mutation_create_premiums_perms",
-        "gql_mutation_update_premiums_perms",
-        "gql_mutation_delete_premiums_perms",
-        "gql_query_payers_perms",
-        "gql_mutation_payer_add_perms",
-        "gql_mutation_payer_update_perms",
-        "gql_mutation_payer_delete_perms",
-        "gql_query_payments_perms",
-        "gql_mutation_create_payments_perms",
-        "gql_mutation_update_payments_perms",
-        "gql_mutation_delete_payments_perms",
-        "gql_query_claims_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-        "gql_mutation_load_claims_perms",
-        "gql_mutation_submit_claims_perms",
-        "gql_mutation_select_claim_feedback_perms",
-        "gql_mutation_bypass_claim_feedback_perms",
-        "gql_mutation_skip_claim_feedback_perms",
-        "gql_mutation_deliver_claim_feedback_perms",
-        "gql_mutation_select_claim_review_perms",
-        "gql_mutation_bypass_claim_review_perms",
-        "gql_mutation_skip_claim_review_perms",
-        "gql_mutation_deliver_claim_review_perms",
-        "gql_mutation_process_claims_perms",
-        "gql_mutation_restore_claims_perms",
-        "gql_mutation_delete_claims_perms",
-        "claim_print_perms",
-        "gql_query_batch_runs_perms",
-        "gql_mutation_process_batch_perms",
-        "gql_reports_capitation_payment_perms",
-        "account_preview_perms",
-        "registers_perms",
-        "registers_diagnoses_perms",
-        "registers_health_facilities_perms",
-        "registers_locations_perms",
-        "registers_items_perms",
-        "registers_services_perms",
-        "extracts_master_data_perms",
-        "extracts_officer_feedbacks_perms",
-        "extracts_officer_renewals_perms",
-        "extracts_phone_extract_perms",
-        "extracts_upload_claims_perms",
-        "gql_query_report_perms",
-        "gql_reports_primary_operational_indicator_policies_perms",
-        "gql_reports_primary_operational_indicators_claims_perms",
-        "gql_reports_derived_operational_indicators_perms",
-        "gql_reports_contribution_collection_perms",
-        "gql_reports_product_sales_perms",
-        "gql_reports_contribution_distribution_perms",
-        "gql_reports_user_activity_perms",
-        "gql_reports_enrolment_performance_indicators_perms",
-        "gql_reports_status_of_register_perms",
-        "gql_reports_insuree_without_photos_perms",
-        "gql_reports_payment_category_overview_perms",
-        "gql_reports_matching_funds_perms",
-        "gql_reports_claim_overview_report_perms",
-        "gql_reports_percentage_referrals_perms",
-        "gql_reports_families_insurees_overview_perms",
-        "gql_reports_pending_insurees_perms",
-        "gql_reports_renewals_perms",
-        "gql_reports_capitation_payment_perms",
-        "gql_reports_rejected_photo_perms",
-        "gql_reports_contribution_payment_perms",
-        "gql_reports_control_number_assignment_perms",
-        "gql_reports_overview_of_commissions_perms",
-        "gql_reports_claim_history_report_perms",
-        "gql_mutation_report_add_perms",
-        "gql_mutation_report_edit_perms",
-        "gql_mutation_report_delete_perms",
-    ]
-    return create_test_role(perm_names=scheme_admin_perms, name="SchemeAdministrator", is_system=32)
+    return _create_preset_role("SchemeAdministrator")
 
 
 def create_imis_admin_role():
@@ -689,90 +420,16 @@ def create_imis_admin_role():
 
 
 def create_receptionist_role():
-    """
-    Create the Receptionist role with specific permissions.
-    This role should have permissions for families, insurees, policies, and premiums.
-    """
-    receptionist_perms = [
-        "gql_query_families_perms",
-        "gql_query_insurees_perms",
-        "gql_query_insuree_inquire_perms",
-        "gql_query_policies_perms",
-        "gql_query_premiums_perms",
-    ]
-    return create_test_role(perm_names=receptionist_perms, name="Receptionist", is_system=128)
+    return _create_preset_role("Receptionist")
 
 
 def create_claim_contributor_role():
-    """
-    Create the Claim Contributor role with specific permissions.
-    This role should have permissions for claims and claim feedback.
-    """
-    claim_contributor_perms = [
-        "gql_query_claims_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-    ]
-    return create_test_role(perm_names=claim_contributor_perms, name="ClaimContributor", is_system=512)
+    return _create_preset_role("ClaimContributor")
 
 
 def create_hf_admin_role():
-    """
-    Create the HF Administrator role with specific permissions.
-    This role should have permissions for users, reports, locations, and medical items/services.
-    """
-    hf_admin_perms = [
-        "gql_query_users_perms",
-        "gql_mutation_create_users_perms",
-        "gql_mutation_update_users_perms",
-        "gql_mutation_delete_users_perms",
-        "gql_query_health_facilities_perms",
-        "gql_mutation_edit_health_facilities_perms",
-        "gql_mutation_delete_health_facilities_perms",
-        "gql_query_medical_items_perms",
-        "gql_mutation_medical_items_update_perms",
-        "gql_query_medical_services_perms",
-        "gql_mutation_medical_services_update_perms",
-        "gql_query_pricelists_medical_items_perms",
-        "gql_mutation_pricelists_medical_items_update_perms",
-        "gql_mutation_pricelists_medical_items_delete_perms",
-        "gql_query_pricelists_medical_services_perms",
-        "gql_mutation_pricelists_medical_services_update_perms",
-        "gql_mutation_pricelists_medical_services_delete_perms",
-        "gql_reports_capitation_payment_perms",
-        "gql_reports_user_activity_perms",
-        "gql_reports_status_of_register_perms",
-        "gql_reports_overview_of_commissions_perms",
-    ]
-    return create_test_role(perm_names=hf_admin_perms, name="HFAdministrator", is_system=524288)
+    return _create_preset_role("HFAdministrator")
 
 
 def create_offline_admin_role():
-    """
-    Create the Offline Administrator role with specific permissions.
-    This role has the same permissions as HF Administrator.
-    """
-    offline_admin_perms = [
-        "gql_query_users_perms",
-        "gql_mutation_create_users_perms",
-        "gql_mutation_update_users_perms",
-        "gql_mutation_delete_users_perms",
-        "gql_query_health_facilities_perms",
-        "gql_mutation_edit_health_facilities_perms",
-        "gql_mutation_delete_health_facilities_perms",
-        "gql_query_medical_items_perms",
-        "gql_mutation_medical_items_update_perms",
-        "gql_query_medical_services_perms",
-        "gql_mutation_medical_services_update_perms",
-        "gql_query_pricelists_medical_items_perms",
-        "gql_mutation_pricelists_medical_items_update_perms",
-        "gql_mutation_pricelists_medical_items_delete_perms",
-        "gql_query_pricelists_medical_services_perms",
-        "gql_mutation_pricelists_medical_services_update_perms",
-        "gql_mutation_pricelists_medical_services_delete_perms",
-        "gql_reports_capitation_payment_perms",
-        "gql_reports_user_activity_perms",
-        "gql_reports_status_of_register_perms",
-        "gql_reports_overview_of_commissions_perms",
-    ]
-    return create_test_role(perm_names=offline_admin_perms, name="OfflineAdministrator", is_system=1048576)
+    return _create_preset_role("OfflineAdministrator")
