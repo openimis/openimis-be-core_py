@@ -193,7 +193,7 @@ class RoleRight(VersionedModel):
 
 class InteractiveUser(OpenIMISMigrationModel):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "login_name"}
-    USE_CACHE = not settings.IS_TESTING
+    USE_CACHE = not getattr(settings, "IS_TESTING", False)
     # id = models.AutoField(db_column="UserID", primary_key=True)
     # uuid = models.CharField(
     #     db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True
@@ -639,7 +639,7 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
-    USE_CACHE = not settings.IS_TESTING
+    USE_CACHE = not getattr(settings, "IS_TESTING", False)
     objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
     # is_superuser = models.BooleanField(default=False)
