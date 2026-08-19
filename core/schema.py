@@ -526,16 +526,38 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             mutation_log.mark_as_failed(exc)
 
-        metadata = None
+        metadata = {}
         try:
-            if isinstance(messages, dict):
-                metadata = messages
-            elif mutation_log.json_content:
+            if mutation_log.json_content:
                 metadata = json.loads(mutation_log.json_content)
             elif data:
                 metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+            if isinstance(messages, dict):
+                metadata.update(messages)
+
+            if isinstance(metadata, dict):
+                if not metadata.get("uuid"):
+                    if data.get("uuid"):
+                        metadata["uuid"] = str(data.get("uuid"))
+                    elif isinstance(messages, dict) and messages.get("uuid"):
+                        metadata["uuid"] = str(messages.get("uuid"))
+                    else:
+                        for rel in mutation_log._meta.related_objects:
+                            rel_name = rel.get_accessor_name()
+                            if hasattr(mutation_log, rel_name):
+                                rel_mgr = getattr(mutation_log, rel_name)
+                                first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                                if first_link:
+                                    for f in first_link._meta.fields:
+                                        if f.is_relation and f.name != "mutation":
+                                            linked_obj = getattr(first_link, f.name, None)
+                                            if linked_obj and hasattr(linked_obj, "uuid"):
+                                                metadata["uuid"] = str(linked_obj.uuid)
+                                                break
+                                    if metadata.get("uuid"):
+                                        break
         except Exception:
-            metadata = None
+            pass
 
         return cls(
             internal_id=mutation_log.id,
@@ -544,7 +566,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             success=(mutation_log.status == MutationLog.SUCCESS),
             error=mutation_log.error,
             message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
-            metadata=metadata,
+            metadata=metadata if metadata else None,
         )
 
 
@@ -740,12 +762,33 @@ class MutationLogGQLType(DjangoObjectType):
         return self.status == MutationLog.SUCCESS
 
     def resolve_metadata(self, info):
+        metadata = {}
         if self.json_content:
             try:
-                return json.loads(self.json_content)
+                metadata = json.loads(self.json_content)
             except Exception:
                 pass
-        return None
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if not metadata.get("uuid"):
+            try:
+                for rel in self._meta.related_objects:
+                    rel_name = rel.get_accessor_name()
+                    if hasattr(self, rel_name):
+                        rel_mgr = getattr(self, rel_name)
+                        first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                        if first_link:
+                            for f in first_link._meta.fields:
+                                if f.is_relation and f.name != "mutation":
+                                    linked_obj = getattr(first_link, f.name, None)
+                                    if linked_obj and hasattr(linked_obj, "uuid"):
+                                        metadata["uuid"] = str(linked_obj.uuid)
+                                        break
+                            if metadata.get("uuid"):
+                                break
+            except Exception:
+                pass
+        return metadata if metadata else None
 
     @classmethod
     def get_queryset(cls, queryset, info):
