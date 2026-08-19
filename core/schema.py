@@ -258,6 +258,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         abstract = True
 
     internal_id = graphene.Field(graphene.String)
+    client_mutation_id = graphene.Field(graphene.String)
+    status = graphene.Field(graphene.Int)
+    success = graphene.Field(graphene.Boolean)
+    error = graphene.Field(graphene.String)
+    message = graphene.Field(graphene.String)
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -414,7 +419,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
-                return cls(internal_id=mutation_log.id)
+                return cls(
+                    internal_id=mutation_log.id,
+                    client_mutation_id=mutation_log.client_mutation_id,
+                    status=mutation_log.status,
+                    success=False,
+                    error=mutation_log.error,
+                    message=mutation_log.client_mutation_label or mutation_log.error,
+                )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls,
@@ -513,7 +525,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             mutation_log.mark_as_failed(exc)
 
-        return cls(internal_id=mutation_log.id)
+        return cls(
+            internal_id=mutation_log.id,
+            client_mutation_id=mutation_log.client_mutation_id,
+            status=mutation_log.status,
+            success=(mutation_log.status == MutationLog.SUCCESS),
+            error=mutation_log.error,
+            message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
+        )
 
 
 class FieldControlGQLType(DjangoObjectType):
@@ -701,6 +720,10 @@ class MutationLogGQLType(DjangoObjectType):
             [f"{pair[0]}: {pair[1]}" for pair in MutationLog.STATUS_CHOICES]
         ),
     )
+    success = graphene.Field(graphene.Boolean)
+
+    def resolve_success(self, info):
+        return self.status == MutationLog.SUCCESS
 
     @classmethod
     def get_queryset(cls, queryset, info):
