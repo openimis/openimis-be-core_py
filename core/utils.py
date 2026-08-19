@@ -24,9 +24,13 @@ from functools import lru_cache
 import threading
 from django.db import transaction
 # from simple_history.utils import update_change_reason
-import time
-import os
-
+from django.db.models import Func, UUIDField
+from django.db import connection as db_connection
+from uuid6 import uuid7 as uuidv7  # noqa: F401
+try:
+    from simple_history.models import HistoricalRecords
+except Exception:
+    HistoricalRecords = None
 
 _request_local = threading.local()
 
@@ -65,6 +69,60 @@ def set_current_user(user):
 def clear_current_user():
     if hasattr(_request_local, "user"):
         del _request_local.user
+    clear_access_cache()
+
+
+def _get_thread_access_cache(name):
+    cache = getattr(_request_local, name, None)
+    if cache is None:
+        cache = {}
+        setattr(_request_local, name, cache)
+    return cache
+
+
+def is_authentication_checked():
+    return getattr(_request_local, "authentication_checked", False)
+
+
+def set_authentication_checked():
+    _request_local.authentication_checked = True
+
+
+def get_business_access_cache():
+    return _get_thread_access_cache("business_access_cache")
+
+
+def get_content_type_cache():
+    return _get_thread_access_cache("content_type_cache")
+
+
+def clear_access_cache():
+    for attr in ("authentication_checked", "business_access_cache", "content_type_cache"):
+        if hasattr(_request_local, attr):
+            delattr(_request_local, attr)
+
+
+def clear_authentication_cache():
+    clear_access_cache()
+
+
+def clear_history_context():
+    """Clear simple-history request context to avoid stale user references
+    across tests/requests that can lead to history_user FK violations
+    referencing non-existent (rolled back) User rows.
+    """
+    if HistoricalRecords is not None:
+        try:
+            if hasattr(HistoricalRecords, "context") and hasattr(HistoricalRecords.context, "request"):
+                del HistoricalRecords.context.request
+        except Exception:
+            pass
+        # Also clear the backwards compat thread local if present
+        try:
+            if hasattr(HistoricalRecords, "thread") and hasattr(HistoricalRecords.thread, "request"):
+                del HistoricalRecords.thread.request
+        except Exception:
+            pass
 
 
 class TimeUtils(object):
@@ -544,29 +602,72 @@ def clean_fk(instance):
     return field_values
 
 
-def uuidv7() -> uuid.UUID:
+class GenerateUUIDv7(Func):
     """
-    Generate a UUIDv7.
+    Cross-database UUIDv7 generator.
+
+    Usage:
+        from yourapp.db_functions import GenerateUUIDv7
+
+        class YourModel(models.Model):
+            id = models.UUIDField(
+                primary_key=True,
+                db_default=GenerateUUIDv7(),
+                editable=False,
+            )
     """
-    # random bytes
-    value = bytearray(os.urandom(16))
+    output_field = UUIDField()
+    template = '%(function)s()'
 
-    # current timestamp in ms
-    timestamp = int(time.time() * 1000)
+    def as_sql(self, compiler, connection, **extra_context):
+        vendor = db_connection.vendor
 
-    # timestamp
-    value[0] = (timestamp >> 40) & 0xFF
-    value[1] = (timestamp >> 32) & 0xFF
-    value[2] = (timestamp >> 24) & 0xFF
-    value[3] = (timestamp >> 16) & 0xFF
-    value[4] = (timestamp >> 8) & 0xFF
-    value[5] = timestamp & 0xFF
+        if vendor == 'postgresql':
+            # PostgreSQL 18+ has native uuidv7()
+            # Older versions use our custom uuid_generate_v7()
+            pg_version = getattr(connection, 'pg_version', 0)
+            if pg_version >= 180000:
+                function = 'uuidv7'
+            else:
+                function = 'uuid_generate_v7'
 
-    # version and variant
-    value[6] = (value[6] & 0x0F) | 0x70
-    value[8] = (value[8] & 0x3F) | 0x80
+        elif vendor == 'microsoft':
+            # SQL Server - uses our custom function
+            # Change to 'dbo.uuid_v8mssql' if you want the optimized version
+            # for better clustered index performance
+            function = 'dbo.uuid_v7'
 
-    return uuid.UUID(bytes=bytes(value))
+        else:
+            # Fallback for other databases (or raise error)
+            function = 'uuid_generate_v7'
+
+        extra_context['function'] = function
+        return super().as_sql(compiler, connection, **extra_context)
+
+
+class RandomUUID(Func):
+    """Cross-database random UUID for Django 4.2"""
+    function = None  # Will be overridden per backend
+    output_field = UUIDField()
+    arity = 0
+
+    def as_postgresql(self, compiler, connection, **extra_context):
+        # PostgreSQL 13+ has gen_random_uuid() built-in
+        return self.as_sql(compiler, connection, function='gen_random_uuid', **extra_context)
+
+    def as_microsoft(self, compiler, connection, **extra_context):  # MSSQL
+        return self.as_sql(compiler, connection, function='NEWID', **extra_context)
+
+    # Optional: fallback for other DBs (e.g. SQLite for dev)
+    def as_sql(self, compiler, connection, **extra_context):
+        # if connection.vendor == 'postgresql':
+        #     return self.as_postgresql(compiler, connection, **extra_context)
+        # elif connection.vendor in ('microsoft', 'mssql'):
+        #     return self.as_microsoft(compiler, connection, **extra_context)
+        if extra_context.get('function', self.function) is None:
+            # You can raise or use a default
+            raise NotImplementedError(f"RandomUUID not supported on {connection.vendor}")
+        return super().as_sql(compiler, connection, **extra_context)
 
 
 class CachedModelMixin:
@@ -943,27 +1044,6 @@ def clear_cache(instance):
 
 def get_cache_key(model, id):
     return f"cs_{model.__name__}_{str(id).lower()}"
-
-
-def is_this_session_superuser(session_key):
-    from django.contrib.sessions.models import Session
-    from django.utils.timezone import now
-    from core.models import User
-
-    try:
-        session = Session.objects.get(session_key=session_key, expire_date__gte=now())
-        data = session.get_decoded()
-        user_id = data.get("_auth_user_id")
-        if user_id:
-            user = User.objects.get(id=user_id)
-            if user.is_superuser:
-                return True
-    except Session.DoesNotExist:
-        pass
-    except Exception:
-        pass
-
-    return False
 
 
 @lru_cache(maxsize=1)

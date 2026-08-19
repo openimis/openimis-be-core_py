@@ -22,6 +22,8 @@ from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
 )
+from core.utils import clear_current_user, clear_history_context
+from django.core.cache import caches
 from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
@@ -31,17 +33,21 @@ PASSWORD = "FoBoar72!"
 class UserServicesTest(TestCase):
     claim_admin_class = None
 
-    def setUp(self):
-        super(UserServicesTest, self).setUp()
+    @classmethod
+    def setUpTestData(cls):
         # This shouldn't be necessary but cleanup from date tests tend not to cleanup properly
+        # (removed erroneous super call to TestCase.setUp)
+        clear_current_user()
+        clear_history_context()
+        caches["default"].clear()
         core.calendar = importlib.import_module(".calendars.ad_calendar", "core")
         core.datetime = importlib.import_module(".datetimes.ad_datetime", "core")
-        self.claim_admin_class = apps.get_model("core", "ClaimAdmin")
-        self.factory = RequestFactory()
+        cls.claim_admin_class = apps.get_model("core", "ClaimAdmin")
+        cls.factory = RequestFactory()
         # Create test villages
-        self.test_village1 = create_test_village(custom_props={"name": "Test Village 1", "code": "TV1"})
-        self.test_village2 = create_test_village(custom_props={"name": "Test Village 2", "code": "TV2"})
-        self.test_village3 = create_test_village(custom_props={"name": "Test Village 3", "code": "TV3"})
+        cls.test_village1 = create_test_village(custom_props={"name": "Test Village 1", "code": "TV1"})
+        cls.test_village2 = create_test_village(custom_props={"name": "Test Village 2", "code": "TV2"})
+        cls.test_village3 = create_test_village(custom_props={"name": "Test Village 3", "code": "TV3"})
 
         # Create French language if it doesn't exist
         Language.objects.get_or_create(
@@ -50,9 +56,9 @@ class UserServicesTest(TestCase):
         )
 
         # Create test health facility
-        self.test_hf = create_test_health_facility()
-        self.test_hf2 = create_test_health_facility()
-        self.user = create_test_interactive_user()
+        cls.test_hf = create_test_health_facility()
+        cls.test_hf2 = create_test_health_facility()
+        cls.user = create_test_interactive_user()
 
     def test_create_iuser_required_fields_only(self):
         role_id = create_test_role().id
@@ -254,6 +260,24 @@ class UserServicesTest(TestCase):
     def test_officer_max(self):
         username = "tstsvco2"
         village_ids = [self.test_village1.id, self.test_village2.id, self.test_village3.id]
+        # ensure a valid substitution officer exists (avoid FK violation on legacy officer table)
+        sub_officer, _ = create_or_update_officer(
+            user_id=None,
+            data=dict(
+                username="suboff1",  # short to satisfy legacy officer code/varchar(8) limits
+                last_name="Sub",
+                other_names="Officer",
+                dob="1990-01-01",
+                phone="+000",
+                email="sub@ex.com",
+                location_id=1,
+                village_ids=[self.test_village1.id],
+                substitution_officer_id=None,
+            ),
+            audit_user_id=999,
+            connected=False,
+        )
+        sub_officer.refresh_from_db()
         officer, created = create_or_update_officer(
             user_id=None,
             data=dict(
@@ -265,7 +289,7 @@ class UserServicesTest(TestCase):
                 email="imis@foo.be",
                 location_id=1,
                 village_ids=village_ids,
-                substitution_officer_id=1,
+                substitution_officer_id=sub_officer.id,
                 works_to="2025-01-01",
                 phone_communication=True,
                 address="Multi\nline\naddress",
@@ -283,7 +307,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(officer.has_login)
         self.assertTrue(officer.phone_communication)
         self.assertEqual(officer.location_id, 1)
-        self.assertEqual(officer.substitution_officer_id, 1)
+        self.assertEqual(officer.substitution_officer_id, sub_officer.id)
         self.assertEqual(officer.address, "Multi\nline\naddress")
         self.assertEqual(str(officer.works_to.date()), "2025-01-01")
         self.assertEqual(
@@ -311,7 +335,7 @@ class UserServicesTest(TestCase):
                 email="imis@foo.be",
                 location_id=1,
                 village_ids=village_ids,
-                substitution_officer_id=1,
+                substitution_officer_id=None,
                 works_to="2025-01-01",
                 phone_communication=True,
                 address="Multi\nline\naddress",
@@ -329,7 +353,7 @@ class UserServicesTest(TestCase):
         self.assertTrue(officer.has_login)
         self.assertTrue(officer.phone_communication)
         self.assertEqual(officer.location_id, 1)
-        self.assertEqual(officer.substitution_officer_id, 1)
+        self.assertIsNone(officer.substitution_officer_id)
         self.assertEqual(officer.address, "Multi\nline\naddress")
         self.assertEqual(str(officer.works_to.date()), "2025-01-01")
         self.assertEqual(

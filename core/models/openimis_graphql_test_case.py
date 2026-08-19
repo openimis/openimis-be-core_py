@@ -12,8 +12,9 @@ from graphql_jwt.shortcuts import get_token as get_token_jwt
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
-from core.utils import clear_current_user
+from core.utils import clear_current_user, clear_history_context
 from django.db import transaction
+from graphene.utils.str_converters import to_camel_case
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ class BaseTestContext:
 
         # Add CSRF token if needed
         if self.method in ["POST", "PUT", "PATCH"]:
+
             self.META["CSRF_COOKIE"] = get_token(self.request)
             self.request.CSRF_TOKEN = self.META["CSRF_COOKIE"]
 
@@ -134,14 +136,30 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         with transaction.atomic():
             super().run(result)
 
+    def _instance_to_gql_input(self, instance, gql_input_class, map_mutation_field=None):
+        if map_mutation_field is None:
+            map_mutation_field = {}
+        return {
+            to_camel_case(map_mutation_field.get(k, k)): str(p)
+            for k, p in instance.__dict__.items()
+            if hasattr(gql_input_class, map_mutation_field.get(k, k)) and p
+        }
+
+    @classmethod
+    def get_jwt_token(cls, user, password=None, **kwargs):
+        context = BaseTestContext(user)
+        return context.get_jwt()
+
     @classmethod
     def setUpClass(cls):
         clear_current_user()
+        clear_history_context()
         cache.clear()
         super(openIMISGraphQLTestCase, cls).setUpClass()
 
     def setUp(self):
         clear_current_user()
+        clear_history_context()
         cache.clear()
         super(openIMISGraphQLTestCase, self).setUp()
 
@@ -187,11 +205,15 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
             if "data" in content:
                 if "mutationLogs" in content["data"]:
                     if "edges" in content["data"]["mutationLogs"]:
+                        if content["data"]["mutationLogs"]['edges'] == []:
+                            raise ValueError("no mutation found")
+                        if len(content["data"]["mutationLogs"]['edges']) > 1:
+                            raise ValueError("several mutation found")
                         for e in content["data"]["mutationLogs"]["edges"]:
                             if "node" in e:
                                 e = e["node"]
                                 if e and "status" in e and e["status"] != 0:
-                                    self._assert_mutationEdge_no_error(e)
+                                    self._assert_mutationEdge_no_error(e, allow_exceptions)
                                     return content
                 else:
                     if allow_exceptions:
@@ -209,20 +231,23 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         if self._assert_mutationEdge_no_error(content):
             return None
 
-    def _assert_mutationEdge_no_error(self, e):
+    def _assert_mutationEdge_no_error(self, e, allow_exceptions=True):
 
         if "error" in e and e["error"]:
-            raise ValueError(
-                f"At least one edge of the mutation has error: {e['error']}"
-            )
+            if allow_exceptions:
+                raise ValueError(
+                    f"At least one edge of the mutation has error: {e['error']}"
+                )
             return False
         elif "errors" in e and e["errors"]:
-            raise ValueError(
-                f"At least one edge of the mutation has error: {e['errors']}"
-            )
+            if allow_exceptions:
+                raise ValueError(
+                    f"At least one edge of the mutation has error: {e['errors']}"
+                )
             return False
         elif "status" in e and e["status"] == 1:
-            raise ValueError("Mutation failed with status 1")
+            if allow_exceptions:
+                raise ValueError("Mutation failed with status 1")
             return False
         return True
 
@@ -315,4 +340,5 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
     def tearDown(self):
         cache.clear()
         clear_current_user()
+        clear_history_context()
         super().tearDown()

@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import uuid
 from datetime import timedelta, datetime as py_datetime
@@ -25,7 +26,8 @@ from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
-from rest_framework import exceptions
+from rest_framework.exceptions import AuthenticationFailed
+from core.access import evaluate_access_requirements, has_role_perms
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,14 @@ logger = logging.getLogger(__name__)
 class UserManager(BaseUserManager, CachedManager):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "username"}
     CACHED_FK = {"i_user"}
+
+    def _auto_provisioning_user_group(self, user):
+        group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
+        if group:
+            user_group = UserGroup(user=user, group=group)
+            user_group.save()
+        else:
+            logger.error(f"Group {core.auto_provisioning_user_group} was not found")
 
     def _create_core_user(self, **fields):
         user = User(**fields)
@@ -45,35 +55,47 @@ class UserManager(BaseUserManager, CachedManager):
         tech.save()
         return tech
 
-    def create_user(self, username, password, email=None, **extra_fields):
-        extra_fields.setdefault("is_staff", False)
-        extra_fields["is_superuser"] = False
-        self._create_tech_user(username, email, password, **extra_fields)
+    def _create_interactive_user(self, username, email, password, **extra_fields):
+        if extra_fields is None:
+            extra_fields = {}
+        if "language__code" not in extra_fields:
+            extra_fields["language"] = Language.objects.all().order_by("sort_order").first()
+        else:
+            extra_fields = {"language": Language.objects.filter(code=extra_fields["language__code"]).first()}
+            del extra_fields["language__code"]
+        iuser = InteractiveUser(login_name=username, email=email, **extra_fields)
+        iuser.set_password(password)
+        iuser.save()
+        return iuser
 
-    def create_superuser(self, username, password=None, email=None, **extra_fields):
-        extra_fields["is_staff"] = True
-        extra_fields["is_superuser"] = True
-        self._create_tech_user(username, email, password, **extra_fields)
+    def create_user(self, username, password, email=None, **kwargs):
+        # extra_fields.setdefault("is_staff", False)
+        # extra_fields["is_superuser"] = False
+        iuser = self._create_interactive_user(username, email, password, **kwargs)
+        user, success = self.auto_provision_user(username=username, i_user=iuser)
+        return user
+
+    def create_superuser(self, username, password=None, email=None, **kwargs):
+        if password is None:
+            password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
+        iuser = self._create_interactive_user(username, email, password, **kwargs)
+        user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser=True)
+        return user
 
     def auto_provision_user(self, **kwargs):
         # only auto-provision django user if registered as interactive user
         username = kwargs.get("username", kwargs.get("login_name", None))
         if not username:
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+            raise AuthenticationFailed("INCORRECT_CREDENTIALS")
         i_user = InteractiveUser.objects.filter(
             login_name__iexact=username, *InteractiveUser.filter_validity()
         ).first()
         if not i_user:
-            raise exceptions.AuthenticationFailed("INCORRECT_CREDENTIALS")
+            raise AuthenticationFailed("INCORRECT_CREDENTIALS")
         kwargs["i_user"] = i_user
         user = self._create_core_user(**kwargs)
         if core.auto_provisioning_user_group:
-            group = Group.objects.filter(name=core.auto_provisioning_user_group).first()
-            if group:
-                user_group = UserGroup(user=user, group=group)
-                user_group.save()
-            else:
-                logger.error(f"Group {core.auto_provisioning_user_group} was not found")
+            self._auto_provisioning_user_group(user)
         return user, True
 
     def get_or_create(self, **kwargs):
@@ -98,6 +120,8 @@ class TechnicalUser(AbstractBaseUser):
     validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
     validity_to = models.DateTimeField(blank=True, null=True)
     is_imis_admin = False
+    validity_from = models.DateTimeField(blank=True, null=True, default=py_datetime.now)
+    validity_to = models.DateTimeField(blank=True, null=True)
 
     @property
     def id_for_audit(self):
@@ -157,6 +181,7 @@ class Role(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblRole"
 
 
@@ -188,6 +213,7 @@ class RoleRight(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblRoleRight"
 
 
@@ -269,7 +295,17 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
+        if self.user and self.user.is_superuser:
+            return True
         return self.is_imis_admin
+
+    @is_superuser.setter
+    def is_superuser(self, value):
+        if self.user:
+            self.user.is_superuser = value
+            self.user.save()
+        else:
+            raise AttributeError("Cannot set is_superuser: no associated User found")
 
     @property
     def rights(self):
@@ -396,6 +432,7 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblUsers"
 
 
@@ -513,6 +550,7 @@ class Officer(VersionedModel, ExtendableModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblOfficer"
 
 
@@ -616,6 +654,7 @@ class ClaimAdmin(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblClaimAdmin"
 
 
@@ -634,6 +673,7 @@ class UserRole(VersionedModel):
 
     class Meta:
         managed = True
+        app_label = 'core'
         db_table = "tblUserRole"
 
 
@@ -642,7 +682,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     USE_CACHE = not settings.IS_TESTING
     objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
-    # is_superuser = models.BooleanField(default=False)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True
     )
@@ -689,15 +728,51 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def language(self):
         return self._u.langage if self._u else None
 
-    def has_perms(self, perm_list, obj=None, list_evaluation_or=True):
-        if not perm_list:
+    """
+    Check if the user has the specified permissions, with optional business-level access control.
+
+    This method first evaluates standard Django permissions based on the user's superuser status
+    and the provided permission list. If standard permissions are insufficient and business-level
+    permissions are provided, it checks for specific business object access through the
+    UserBusinessAccess model.
+
+    Args:
+        perm_list (list): A list of permission strings to check against the user's rights.
+            If empty, the method will return True (no permissions required).
+        access_requirements (list, optional): Business access fallback using the same
+            format as ``check_authentication``:
+            ``[['app_label.modelname', object_id]]`` or
+            ``[['app_label.modelname', object_id, [perm_ids...]]]``.
+            When standard permissions fail, any matching requirement grants access.
+        list_evaluation_or (bool, optional): Determines how permissions in perm_list are evaluated.
+            - If True: User must have at least one permission from perm_list (OR logic).
+            - If False: User must have all permissions from perm_list (AND logic).
+            Defaults to True.
+
+    Returns:
+        bool: True if the user has the required permissions, False otherwise.
+
+    Notes:
+        - Superusers always have access (returns True).
+        - If perm_list is empty or None, returns True.
+        - Business access checking only occurs if standard permissions fail
+          and access_requirements is provided.
+        - The method uses UserBusinessAccess to verify time-bound access to specific
+          business objects.
+    """
+    def has_perms(self, perm_list, obj=None, access_requirements=None, list_evaluation_or=True):
+        if not perm_list and not access_requirements:
             return True
-        if self.is_imis_admin:
-            return True
-        elif list_evaluation_or:
-            return any(self.has_perm(perm, obj) for perm in perm_list)
-        else:
-            return super().has_perms(perm_list, obj)
+        has_perm = has_role_perms(self, perm_list, list_evaluation_or=list_evaluation_or)
+        # once we use django user super().has_perm(perm_list, obj)
+        if not has_perm and access_requirements:
+            has_perm = evaluate_access_requirements(
+                self,
+                access_requirements,
+                match_all=False,
+            )
+
+        return has_perm
 
     @property
     def id_for_audit(self):
@@ -724,14 +799,12 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         return self._u.is_staff
 
     @property
-    def is_superuser(self):
-        return self._u.is_superuser
-
-    @property
     def is_imis_admin(self):
+        if self.is_superuser:
+            return True
         # 64 is system number for IMIS Administrator
         user = self._u
-        if isinstance(user, InteractiveUser):
+        if user and isinstance(user, InteractiveUser):
             return user.is_imis_admin
         else:
             return False
@@ -753,7 +826,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
         if i_user is not None and (
-            i_user.is_superuser or any(str(right) == perm for right in i_user.rights)
+            i_user.is_superuser or any(str(right) == str(perm) for right in i_user.rights)
         ):
             return True
         else:
@@ -875,6 +948,7 @@ class UserGroup(models.Model):
     class Meta:
         managed = False
         db_table = "core_User_groups"
+        app_label = 'core'
         unique_together = (("user", "group"),)
 
 

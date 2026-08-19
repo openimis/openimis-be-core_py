@@ -33,6 +33,7 @@ setup(
         "zxcvbn",
         "django-ratelimit",
         "pandas",
+        "uuid6",
     ],
     classifiers=[
         "Environment :: Web Environment",
