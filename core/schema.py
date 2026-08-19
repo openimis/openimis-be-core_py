@@ -556,6 +556,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                                 break
                                     if metadata.get("uuid"):
                                         break
+                if metadata:
+                    mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
+                    MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
         except Exception:
             pass
 
@@ -762,33 +765,12 @@ class MutationLogGQLType(DjangoObjectType):
         return self.status == MutationLog.SUCCESS
 
     def resolve_metadata(self, info):
-        metadata = {}
         if self.json_content:
             try:
-                metadata = json.loads(self.json_content)
+                return json.loads(self.json_content)
             except Exception:
                 pass
-        if not isinstance(metadata, dict):
-            metadata = {}
-        if not metadata.get("uuid"):
-            try:
-                for rel in self._meta.related_objects:
-                    rel_name = rel.get_accessor_name()
-                    if hasattr(self, rel_name):
-                        rel_mgr = getattr(self, rel_name)
-                        first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
-                        if first_link:
-                            for f in first_link._meta.fields:
-                                if f.is_relation and f.name != "mutation":
-                                    linked_obj = getattr(first_link, f.name, None)
-                                    if linked_obj and hasattr(linked_obj, "uuid"):
-                                        metadata["uuid"] = str(linked_obj.uuid)
-                                        break
-                            if metadata.get("uuid"):
-                                break
-            except Exception:
-                pass
-        return metadata if metadata else None
+        return None
 
     @classmethod
     def get_queryset(cls, queryset, info):
