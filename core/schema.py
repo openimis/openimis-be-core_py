@@ -263,6 +263,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     success = graphene.Field(graphene.Boolean)
     error = graphene.Field(graphene.String)
     message = graphene.Field(graphene.String)
+    metadata = GenericScalar(description="Metadata dictionary containing the mutated entity details or input parameters.")
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -525,6 +526,17 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             mutation_log.mark_as_failed(exc)
 
+        metadata = None
+        try:
+            if isinstance(messages, dict):
+                metadata = messages
+            elif mutation_log.json_content:
+                metadata = json.loads(mutation_log.json_content)
+            elif data:
+                metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+        except Exception:
+            metadata = None
+
         return cls(
             internal_id=mutation_log.id,
             client_mutation_id=mutation_log.client_mutation_id,
@@ -532,6 +544,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             success=(mutation_log.status == MutationLog.SUCCESS),
             error=mutation_log.error,
             message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
+            metadata=metadata,
         )
 
 
@@ -721,9 +734,18 @@ class MutationLogGQLType(DjangoObjectType):
         ),
     )
     success = graphene.Field(graphene.Boolean)
+    metadata = GenericScalar(description="Metadata dictionary of the mutation log content.")
 
     def resolve_success(self, info):
         return self.status == MutationLog.SUCCESS
+
+    def resolve_metadata(self, info):
+        if self.json_content:
+            try:
+                return json.loads(self.json_content)
+            except Exception:
+                pass
+        return None
 
     @classmethod
     def get_queryset(cls, queryset, info):
