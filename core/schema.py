@@ -40,7 +40,7 @@ from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, transaction, models
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -534,6 +534,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
             if isinstance(messages, dict):
                 metadata.update(messages)
+            elif isinstance(messages, models.Model):
+                if hasattr(messages, "uuid"):
+                    metadata["uuid"] = str(messages.uuid)
+                if hasattr(messages, "id") and not metadata.get("id"):
+                    metadata["id"] = messages.id
 
             if isinstance(metadata, dict):
                 if not metadata.get("uuid"):
@@ -765,12 +770,33 @@ class MutationLogGQLType(DjangoObjectType):
         return self.status == MutationLog.SUCCESS
 
     def resolve_metadata(self, info):
+        metadata = {}
         if self.json_content:
             try:
-                return json.loads(self.json_content)
+                metadata = json.loads(self.json_content)
             except Exception:
                 pass
-        return None
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if not metadata.get("uuid"):
+            try:
+                for rel in self._meta.related_objects:
+                    rel_name = rel.get_accessor_name()
+                    if hasattr(self, rel_name):
+                        rel_mgr = getattr(self, rel_name)
+                        first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                        if first_link:
+                            for f in first_link._meta.fields:
+                                if f.is_relation and f.name != "mutation":
+                                    linked_obj = getattr(first_link, f.name, None)
+                                    if linked_obj and hasattr(linked_obj, "uuid"):
+                                        metadata["uuid"] = str(linked_obj.uuid)
+                                        break
+                            if metadata.get("uuid"):
+                                break
+            except Exception:
+                pass
+        return metadata if metadata else None
 
     @classmethod
     def get_queryset(cls, queryset, info):
