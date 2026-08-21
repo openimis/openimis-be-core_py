@@ -427,6 +427,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     success=False,
                     error=mutation_log.error,
                     message=mutation_log.client_mutation_label or mutation_log.error,
+                    metadata=data if data else None,
                 )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
