@@ -265,7 +265,7 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def id_for_audit(self):
-        return id
+        return self.id
 
     @property
     def username(self):
@@ -491,7 +491,7 @@ class Officer(VersionedModel, ExtendableModel):
 
     @property
     def id_for_audit(self):
-        return id
+        return self.id
 
     @property
     def username(self):
