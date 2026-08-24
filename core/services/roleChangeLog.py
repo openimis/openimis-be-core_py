@@ -37,18 +37,18 @@ def _as_str(value) -> Optional[str]:
 
 def _creation_entry(role: Role, versions: List[Role]) -> List[RoleChangeEntry]:
     # Creating a role writes no history row, so synthesise the first entry.
-    # delete_history() overwrites validity_from on the live row with the
-    # deletion timestamp, so the oldest clone is the only row that still
-    # carries the creation time.
-    created_at = versions[0].validity_from if versions else role.validity_from
+    # The live row is not a witness to its own creation: every update stamps
+    # audit_user_id on it, and delete_history() overwrites validity_from with
+    # the deletion timestamp. The oldest clone still holds both as created.
+    origin = versions[0] if versions else role
     return [
         RoleChangeEntry(
-            timestamp=created_at,
+            timestamp=origin.validity_from,
             change_type=ROLE_CREATED,
             field=None,
             old_value=None,
             new_value=role.name,
-            audit_user_id=role.audit_user_id,
+            audit_user_id=origin.audit_user_id,
         )
     ]
 

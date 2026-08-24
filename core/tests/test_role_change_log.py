@@ -232,3 +232,12 @@ class RoleChangeLogTest(TestCase):
         self.assertEqual(
             [e.new_value for e in entries], [str(r.right_id) for r in rows]
         )
+
+    def test_creation_reports_the_creator_not_the_last_editor(self):
+        other = create_test_interactive_user(username="RoleChangeLogEditor")
+
+        update_or_create_role({"uuid": self.role.uuid, "name": "EditedByOther"}, other)
+
+        created = self._of_type("ROLE_CREATED")[0]
+        self.assertEqual(created.audit_user_id, self.user.i_user.id)
+        self.assertEqual(created.audit_user_name, self.user.i_user.login_name)
