@@ -1283,7 +1283,9 @@ class Query(graphene.ObjectType):
 
         offset = kwargs.get("offset") or 0
         first = kwargs.get("first")
-        page = entries[offset: offset + first] if first else entries[offset:]
+        if offset < 0 or (first is not None and first < 0):
+            raise ValidationError("core.role_change_log.negative_paging")
+        page = entries[offset: offset + first] if first is not None else entries[offset:]
         return RoleChangeLogGQLType(total_count=len(entries), items=page)
 
     def resolve_role_right(self, info, **kwargs):

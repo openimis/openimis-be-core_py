@@ -35,13 +35,15 @@ def _as_str(value) -> Optional[str]:
     return None if value is None else str(value)
 
 
-def _creation_entry(role: Role) -> List[RoleChangeEntry]:
+def _creation_entry(role: Role, versions: List[Role]) -> List[RoleChangeEntry]:
     # Creating a role writes no history row, so synthesise the first entry.
-    # Caveat: delete_history() overwrites validity_from with the deletion
-    # timestamp, so for a deleted role this reports the deletion time.
+    # delete_history() overwrites validity_from on the live row with the
+    # deletion timestamp, so the oldest clone is the only row that still
+    # carries the creation time.
+    created_at = versions[0].validity_from if versions else role.validity_from
     return [
         RoleChangeEntry(
-            timestamp=role.validity_from,
+            timestamp=created_at,
             change_type=ROLE_CREATED,
             field=None,
             old_value=None,
@@ -51,14 +53,20 @@ def _creation_entry(role: Role) -> List[RoleChangeEntry]:
     ]
 
 
-def _attribute_entries(role: Role) -> List[RoleChangeEntry]:
-    # save_history() clones the row before the edit is applied and points
-    # legacy_id at the live row, so each clone holds the pre-edit values.
-    versions = list(
+def _versions(role: Role) -> List[Role]:
+    """Older revisions of the role, oldest first.
+
+    save_history() clones the row before the edit is applied and points
+    legacy_id at the live row, so each clone holds the pre-edit values.
+    """
+    return list(
         Role.objects.filter(legacy_id=role.id, validity_to__isnull=False).order_by(
             "validity_to"
         )
     )
+
+
+def _attribute_entries(role: Role, versions: List[Role]) -> List[RoleChangeEntry]:
     entries = []
     for previous, current in zip(versions, versions[1:] + [role]):
         for field in TRACKED_ATTRIBUTES:
@@ -167,9 +175,10 @@ def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
     Raises Role.DoesNotExist for an unknown uuid.
     """
     role = Role.objects.get(uuid=role_uuid)
+    versions = _versions(role)
     entries = (
-        _creation_entry(role)
-        + _attribute_entries(role)
+        _creation_entry(role, versions)
+        + _attribute_entries(role, versions)
         + _right_entries(role)
         + _user_entries(role)
     )

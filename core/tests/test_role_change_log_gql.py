@@ -6,7 +6,7 @@ from core.models.openimis_graphql_test_case import (
     openIMISGraphQLTestCase,
 )
 from core.schema import update_or_create_role
-from core.test_helpers import create_test_interactive_user
+from core.test_helpers import create_test_interactive_user, create_test_role
 
 _RIGHT_A = 121901
 _RIGHT_B = 121902
@@ -58,10 +58,12 @@ class RoleChangeLogGQLTest(openIMISGraphQLTestCase):
             {"uuid": self.role.uuid, "name": "GQLRenamedRole"}, self.admin_user
         )
 
-    def _query(self, variables, authenticated=True):
+    def _query(self, variables, authenticated=True, token=None):
         params = {}
         if authenticated:
-            params["headers"] = {"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+            params["headers"] = {
+                "HTTP_AUTHORIZATION": f"Bearer {token or self.admin_token}"
+            }
         response = self.query(_QUERY, variables=variables, **params)
         return json.loads(response.content)
 
@@ -123,3 +125,42 @@ class RoleChangeLogGQLTest(openIMISGraphQLTestCase):
             len(offset["items"]), len(unpaged["items"]) - 1
         )
         self.assertEqual(offset["items"][0], unpaged["items"][1])
+
+    def test_change_log_requires_the_roles_right(self):
+        # 121701 (users) is a different right from 122001 (roles).
+        role = create_test_role(
+            perm_names=["gql_query_users_perms"],
+            name="ChangeLogUsersOnly",
+            is_system=0,
+        )
+        limited = create_test_interactive_user(
+            username="RoleChangeLogNoRolesRight",
+            password=self.admin_password,
+            roles=[role.id],
+        )
+        token = BaseTestContext(user=limited).get_jwt()
+
+        content = self._query({"uuid": self.role.uuid}, token=token)
+
+        self.assertIsNotNone(content.get("errors"))
+        self.assertIsNone(content.get("data", {}).get("roleChangeLog"))
+
+    def test_first_zero_returns_an_empty_page(self):
+        content = self._query({"uuid": self.role.uuid, "first": 0})["data"][
+            "roleChangeLog"
+        ]
+
+        self.assertEqual(content["items"], [])
+        self.assertGreater(content["totalCount"], 0)
+
+    def test_negative_first_is_rejected(self):
+        content = self._query({"uuid": self.role.uuid, "first": -1})
+
+        self.assertIsNotNone(content.get("errors"))
+        self.assertIn("negative_paging", json.dumps(content["errors"]))
+
+    def test_negative_offset_is_rejected(self):
+        content = self._query({"uuid": self.role.uuid, "offset": -1})
+
+        self.assertIsNotNone(content.get("errors"))
+        self.assertIn("negative_paging", json.dumps(content["errors"]))

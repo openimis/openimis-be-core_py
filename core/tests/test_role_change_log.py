@@ -7,7 +7,11 @@ from django.test.utils import CaptureQueriesContext
 
 from core.models import Role, RoleRight
 from core.schema import set_role_deleted, update_or_create_role
-from core.services.roleChangeLog import get_role_change_log
+from core.services.roleChangeLog import (
+    RoleChangeEntry,
+    _resolve_actor_names,
+    get_role_change_log,
+)
 from core.services.userServices import create_or_update_user_roles
 from core.test_helpers import create_test_interactive_user
 
@@ -176,3 +180,30 @@ class RoleChangeLogTest(TestCase):
             get_role_change_log(self.role.uuid)
 
         self.assertEqual(len(after), baseline)
+
+    def test_resolving_only_sentinel_actors_issues_no_query(self):
+        entries = [
+            RoleChangeEntry(
+                timestamp=datetime.datetime.now(),
+                change_type="RIGHT_GRANTED",
+                field="right_id",
+                old_value=None,
+                new_value=str(_RIGHT_A),
+                audit_user_id=actor_id,
+            )
+            for actor_id in (-1, None)
+        ]
+
+        with CaptureQueriesContext(connection) as context:
+            _resolve_actor_names(entries)
+
+        self.assertEqual(context.captured_queries, [])
+        self.assertTrue(all(e.audit_user_name is None for e in entries))
+
+    def test_creation_timestamp_is_not_overwritten_by_deletion(self):
+        created_at = self._of_type("ROLE_CREATED")[0].timestamp
+
+        update_or_create_role({"uuid": self.role.uuid, "name": "Doomed"}, self.user)
+        set_role_deleted(Role.objects.get(uuid=self.role.uuid))
+
+        self.assertEqual(self._of_type("ROLE_CREATED")[0].timestamp, created_at)
