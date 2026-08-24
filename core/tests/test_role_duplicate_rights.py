@@ -81,7 +81,9 @@ class DuplicateRoleRightsTest(TestCase):
             role_right.validity_from, stored_duplicate.validity_from
         )
 
-    def test_explicit_rights_argument_is_honoured(self):
+    def test_explicit_rights_cannot_resurrect_a_revoked_right(self):
+        # _RIGHT_B is revoked on the source; naming it explicitly must not
+        # bring it back on the duplicate.
         duplicate = duplicate_role(
             {
                 "uuid": self.role.uuid,
@@ -91,7 +93,23 @@ class DuplicateRoleRightsTest(TestCase):
             self.user,
         )
 
-        self.assertEqual(self._open_rights(duplicate), {_RIGHT_B})
+        self.assertEqual(self._open_rights(duplicate), set())
+
+    def test_explicit_rights_narrow_the_copy(self):
+        update_or_create_role(
+            {"uuid": self.role.uuid, "rights_id": [_RIGHT_A, _RIGHT_B]}, self.user
+        )
+
+        duplicate = duplicate_role(
+            {
+                "uuid": self.role.uuid,
+                "name": "DupExplicitA",
+                "rights_id": [_RIGHT_A],
+            },
+            self.user,
+        )
+
+        self.assertEqual(self._open_rights(duplicate), {_RIGHT_A})
 
     def test_a_failed_duplicate_leaves_no_orphan_role(self):
         roles_before = Role.objects.filter(name="DupDoomed").count()

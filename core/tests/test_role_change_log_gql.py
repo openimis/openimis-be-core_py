@@ -6,6 +6,7 @@ from core.models.openimis_graphql_test_case import (
     openIMISGraphQLTestCase,
 )
 from core.schema import update_or_create_role
+from core.services.userServices import create_or_update_user_roles
 from core.test_helpers import create_test_interactive_user, create_test_role
 
 _RIGHT_A = 121901
@@ -164,3 +165,46 @@ class RoleChangeLogGQLTest(openIMISGraphQLTestCase):
 
         self.assertIsNotNone(content.get("errors"))
         self.assertIn("negative_paging", json.dumps(content["errors"]))
+
+    def _assign_admin_to_the_role(self):
+        create_or_update_user_roles(
+            self.admin_user.i_user, [self.role.id], self.admin_user.i_user.id
+        )
+
+    def test_logins_are_hidden_from_callers_without_the_users_right(self):
+        # 122001 (roles) without 121701 (users): the timeline stays readable,
+        # the identities do not.
+        self._assign_admin_to_the_role()
+        role = create_test_role(
+            perm_names=["gql_query_roles_perms"],
+            name="ChangeLogRolesOnly",
+            is_system=0,
+        )
+        limited = create_test_interactive_user(
+            username="RoleChangeLogRolesOnly",
+            password=self.admin_password,
+            roles=[role.id],
+        )
+        token = BaseTestContext(user=limited).get_jwt()
+
+        items = self._query({"uuid": self.role.uuid}, token=token)["data"][
+            "roleChangeLog"
+        ]["items"]
+
+        self.assertTrue(items)
+        self.assertTrue(all(i["auditUserName"] is None for i in items))
+        assignments = [i for i in items if i["changeType"] == "USER_ASSIGNED"]
+        self.assertTrue(assignments)
+        self.assertTrue(all(i["newValue"].startswith("#") for i in assignments))
+
+    def test_logins_are_visible_with_the_users_right(self):
+        self._assign_admin_to_the_role()
+
+        items = self._query({"uuid": self.role.uuid})["data"]["roleChangeLog"][
+            "items"
+        ]
+
+        assignments = [i for i in items if i["changeType"] == "USER_ASSIGNED"]
+        self.assertIn(
+            self.admin_user.i_user.login_name, {i["newValue"] for i in assignments}
+        )

@@ -112,7 +112,7 @@ def _right_entries(role: Role) -> List[RoleChangeEntry]:
     return entries
 
 
-def _user_entries(role: Role) -> List[RoleChangeEntry]:
+def _user_entries(role: Role, include_user_names: bool) -> List[RoleChangeEntry]:
     entries = []
     user_roles = (
         UserRole.objects.filter(role_id=role.id)
@@ -120,7 +120,11 @@ def _user_entries(role: Role) -> List[RoleChangeEntry]:
         .order_by("id")
     )
     for user_role in user_roles:
-        login = user_role.user.login_name
+        login = (
+            user_role.user.login_name
+            if include_user_names
+            else f"#{user_role.user_id}"
+        )
         entries.append(
             RoleChangeEntry(
                 timestamp=user_role.validity_from,
@@ -169,8 +173,15 @@ def _resolve_actor_names(entries: List[RoleChangeEntry]) -> None:
         entry.audit_user_name = names.get(entry.audit_user_id)
 
 
-def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
+def get_role_change_log(
+    role_uuid: str, include_user_names: bool = True
+) -> List[RoleChangeEntry]:
     """Merged, newest-first change feed for a single role.
+
+    include_user_names=False keeps every login out of the feed: actor names stay
+    unresolved and assignment entries carry the user id instead. Reading users is
+    a separate right from reading roles, so a caller holding only the role right
+    gets the timeline without the identities.
 
     Deliberately does not filter on validity_to: set_role_deleted() stamps
     validity_to on the live row, so a validity filter would make the audit log
@@ -189,7 +200,8 @@ def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
         _creation_entry(role, versions)
         + _attribute_entries(role, versions)
         + _right_entries(role)
-        + _user_entries(role)
+        + _user_entries(role, include_user_names)
     )
-    _resolve_actor_names(entries)
+    if include_user_names:
+        _resolve_actor_names(entries)
     return sorted(entries, key=lambda entry: entry.timestamp, reverse=True)

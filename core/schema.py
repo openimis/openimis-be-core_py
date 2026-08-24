@@ -1277,7 +1277,12 @@ class Query(graphene.ObjectType):
         from core.services.roleChangeLog import get_role_change_log
 
         try:
-            entries = get_role_change_log(kwargs["role_uuid"])
+            entries = get_role_change_log(
+                kwargs["role_uuid"],
+                include_user_names=info.context.user.has_perms(
+                    CoreConfig.gql_query_users_perms
+                ),
+            )
         except Role.DoesNotExist:
             raise ValidationError("core.role_change_log.role_not_found")
 
@@ -1528,7 +1533,7 @@ def duplicate_role(data, user):
             role_id=role.id, validity_to__isnull=True
         ).values_list("right_id", flat=True)
     )
-    rights_to_copy = set(rights_id) if rights_id else source_rights
+    rights_to_copy = (set(rights_id) & source_rights) if rights_id else source_rights
     for right_id in rights_to_copy:
         RoleRight.objects.create(
             role_id=duplicated_role.id,
