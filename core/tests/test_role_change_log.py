@@ -207,3 +207,28 @@ class RoleChangeLogTest(TestCase):
         set_role_deleted(Role.objects.get(uuid=self.role.uuid))
 
         self.assertEqual(self._of_type("ROLE_CREATED")[0].timestamp, created_at)
+
+    def test_entries_sharing_a_timestamp_follow_row_order(self):
+        # created in one call, so every right shares one validity_from
+        role = update_or_create_role(
+            {
+                "name": "OrderedRightsRole",
+                "is_system": 0,
+                "is_blocked": False,
+                "audit_user_id": self.user.i_user.id,
+                "validity_from": datetime.datetime.now(),
+                "rights_id": [_RIGHT_A, _RIGHT_B, 121903, 121904],
+            },
+            self.user,
+        )
+
+        entries = [
+            e for e in get_role_change_log(role.uuid) if e.change_type == "RIGHT_GRANTED"
+        ]
+        rows = RoleRight.objects.filter(role_id=role.id).order_by("id")
+
+        # NeDatetime is unhashable, so the timestamps cannot go into a set
+        self.assertTrue(all(e.timestamp == entries[0].timestamp for e in entries))
+        self.assertEqual(
+            [e.new_value for e in entries], [str(r.right_id) for r in rows]
+        )

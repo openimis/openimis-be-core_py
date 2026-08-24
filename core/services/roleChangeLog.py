@@ -87,7 +87,7 @@ def _attribute_entries(role: Role, versions: List[Role]) -> List[RoleChangeEntry
 
 def _right_entries(role: Role) -> List[RoleChangeEntry]:
     entries = []
-    for role_right in RoleRight.objects.filter(role_id=role.id):
+    for role_right in RoleRight.objects.filter(role_id=role.id).order_by("id"):
         entries.append(
             RoleChangeEntry(
                 timestamp=role_right.validity_from,
@@ -114,7 +114,12 @@ def _right_entries(role: Role) -> List[RoleChangeEntry]:
 
 def _user_entries(role: Role) -> List[RoleChangeEntry]:
     entries = []
-    for user_role in UserRole.objects.filter(role_id=role.id).select_related("user"):
+    user_roles = (
+        UserRole.objects.filter(role_id=role.id)
+        .select_related("user")
+        .order_by("id")
+    )
+    for user_role in user_roles:
         login = user_role.user.login_name
         entries.append(
             RoleChangeEntry(
@@ -171,6 +176,10 @@ def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
     validity_to on the live row, so a validity filter would make the audit log
     of a deleted role unreachable. uuid is unique per row, because both
     save_history() and duplicate_role() assign a fresh one.
+
+    Entries sharing a timestamp keep the order of the rows they came from:
+    sorted() is stable and every source is ordered, so a page boundary inside
+    a group of equal timestamps stays in the same place between requests.
 
     Raises Role.DoesNotExist for an unknown uuid.
     """
