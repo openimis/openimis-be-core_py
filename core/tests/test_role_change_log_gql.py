@@ -22,6 +22,7 @@ query ($uuid: String!, $first: Int, $offset: Int) {
       oldValue
       newValue
       auditUserId
+      auditUserName
     }
   }
 }
@@ -76,6 +77,15 @@ class RoleChangeLogGQLTest(openIMISGraphQLTestCase):
         self.assertEqual(len(renames), 1)
         self.assertEqual(renames[0]["oldValue"], "GQLChangeLogRole")
         self.assertEqual(renames[0]["newValue"], "GQLRenamedRole")
+
+    def test_change_log_reports_the_actor_by_name(self):
+        content = self._query({"uuid": self.role.uuid})
+
+        items = content["data"]["roleChangeLog"]["items"]
+        grants = [i for i in items if i["changeType"] == "RIGHT_GRANTED"]
+        self.assertEqual(
+            grants[0]["auditUserName"], self.admin_user.i_user.login_name
+        )
 
     def test_change_log_requires_authentication(self):
         content = self._query({"uuid": self.role.uuid}, authenticated=False)

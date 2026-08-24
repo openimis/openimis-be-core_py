@@ -1,9 +1,11 @@
 import datetime
 
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
-from core.models import Role
+from core.models import Role, RoleRight
 from core.schema import set_role_deleted, update_or_create_role
 from core.services.roleChangeLog import get_role_change_log
 from core.services.userServices import create_or_update_user_roles
@@ -118,3 +120,59 @@ class RoleChangeLogTest(TestCase):
     def test_unknown_role_uuid_raises(self):
         with self.assertRaises(Role.DoesNotExist):
             get_role_change_log("00000000-0000-0000-0000-000000000000")
+
+    def test_actor_name_is_resolved_for_a_real_user(self):
+        entries = self._of_type("RIGHT_GRANTED")
+
+        self.assertEqual(
+            entries[0].audit_user_name, self.user.i_user.login_name
+        )
+
+    def test_actor_name_is_none_for_the_technical_sentinel(self):
+        # User.id_for_audit returns -1 for a user with no InteractiveUser, so
+        # -1 is a sentinel with no row to resolve.
+        RoleRight.objects.create(
+            role_id=self.role.id, right_id=_RIGHT_B, audit_user_id=-1
+        )
+
+        entry = [
+            e
+            for e in self._of_type("RIGHT_GRANTED")
+            if e.new_value == str(_RIGHT_B)
+        ][0]
+        self.assertEqual(entry.audit_user_id, -1)
+        self.assertIsNone(entry.audit_user_name)
+
+    def test_actor_name_is_none_when_no_actor_was_recorded(self):
+        # Most pre-existing rows have a NULL audit_user_id.
+        RoleRight.objects.create(
+            role_id=self.role.id, right_id=_RIGHT_B, audit_user_id=None
+        )
+
+        entry = [
+            e
+            for e in self._of_type("RIGHT_GRANTED")
+            if e.new_value == str(_RIGHT_B)
+        ][0]
+        self.assertIsNone(entry.audit_user_id)
+        self.assertIsNone(entry.audit_user_name)
+
+    def test_resolving_actor_names_does_not_scale_with_entry_count(self):
+        # Guards against an N+1: the query count must not grow when more
+        # distinct actors appear in the feed.
+        with CaptureQueriesContext(connection) as before:
+            get_role_change_log(self.role.uuid)
+        baseline = len(before)
+
+        for i in range(3):
+            actor = create_test_interactive_user(username=f"RoleChangeLogActor{i}")
+            RoleRight.objects.create(
+                role_id=self.role.id,
+                right_id=200000 + i,
+                audit_user_id=actor.i_user.id,
+            )
+
+        with CaptureQueriesContext(connection) as after:
+            get_role_change_log(self.role.uuid)
+
+        self.assertEqual(len(after), baseline)

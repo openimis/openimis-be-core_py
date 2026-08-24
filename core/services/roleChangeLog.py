@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
-from core.models import Role, RoleRight, UserRole
+from core.models import InteractiveUser, Role, RoleRight, UserRole
 
 ROLE_CREATED = "ROLE_CREATED"
 ATTRIBUTE_CHANGED = "ATTRIBUTE_CHANGED"
@@ -25,6 +25,10 @@ class RoleChangeEntry:
     # row's audit_user_id belongs to whoever opened it, so reusing it for the
     # closing event would name the wrong person.
     audit_user_id: Optional[int]
+    # Resolved login name, filled in by _resolve_actor_names(). Stays None when
+    # there is nothing to resolve: no actor recorded, or the -1 sentinel that
+    # User.id_for_audit returns for a user with no InteractiveUser.
+    audit_user_name: Optional[str] = None
 
 
 def _as_str(value) -> Optional[str]:
@@ -128,6 +132,30 @@ def _user_entries(role: Role) -> List[RoleChangeEntry]:
     return entries
 
 
+def _resolve_actor_names(entries: List[RoleChangeEntry]) -> None:
+    """Fill in audit_user_name for every entry, in a single query.
+
+    audit_user_id points at InteractiveUser.id. Resolving per entry would be an
+    N+1, so all distinct ids are looked up at once. Ids that cannot refer to a
+    row are skipped: None (no actor recorded, which is the case for most
+    pre-existing data) and -1 (the technical-user sentinel).
+    """
+    actor_ids = {
+        entry.audit_user_id
+        for entry in entries
+        if entry.audit_user_id is not None and entry.audit_user_id > 0
+    }
+    if not actor_ids:
+        return
+    names = dict(
+        InteractiveUser.objects.filter(id__in=actor_ids).values_list(
+            "id", "login_name"
+        )
+    )
+    for entry in entries:
+        entry.audit_user_name = names.get(entry.audit_user_id)
+
+
 def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
     """Merged, newest-first change feed for a single role.
 
@@ -145,4 +173,5 @@ def get_role_change_log(role_uuid: str) -> List[RoleChangeEntry]:
         + _right_entries(role)
         + _user_entries(role)
     )
+    _resolve_actor_names(entries)
     return sorted(entries, key=lambda entry: entry.timestamp, reverse=True)

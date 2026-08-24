@@ -297,6 +297,9 @@ class RoleChangeEntryGQLType(graphene.ObjectType):
     # null when the change kind does not record an actor, e.g. a revocation:
     # a closed row's audit_user_id belongs to whoever opened it
     audit_user_id = graphene.Int()
+    # resolved login name, null when there is nothing to resolve: no actor
+    # recorded, or the -1 sentinel used for users with no InteractiveUser
+    audit_user_name = graphene.String()
 
 
 class RoleChangeLogGQLType(graphene.ObjectType):
