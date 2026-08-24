@@ -17,6 +17,7 @@ from core.validation.obligatoryFieldValidation import (
 from django.contrib.auth import authenticate, login
 from rest_framework.exceptions import AuthenticationFailed, ParseError
 from django.db.models import Q
+from program import models as program_models
 
 logger = logging.getLogger(__file__)
 
@@ -76,6 +77,15 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
             i_user, data["districts"], user_maker.id_for_audit
         )
     cache.delete("cs_InteractiveUserSerializer_" + str(i_user.id))
+    if CoreConfig.is_program_available:
+        if "programs" in data:
+            current_programs = program_models.Program.objects.filter(user=i_user)
+            programs_to_remove = current_programs.exclude(idProgram__in=data["programs"])
+            for program in programs_to_remove:
+                program.user.remove(i_user)
+            programs = program_models.Program.objects.filter(idProgram__in=data["programs"])
+            for program in programs:
+                program.user.add(i_user)
     return i_user, created
 
 
