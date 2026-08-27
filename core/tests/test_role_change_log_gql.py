@@ -24,6 +24,7 @@ query ($uuid: String!, $first: Int, $offset: Int) {
       newValue
       auditUserId
       auditUserName
+      changeReason
     }
   }
 }
@@ -208,3 +209,12 @@ class RoleChangeLogGQLTest(openIMISGraphQLTestCase):
         self.assertIn(
             self.admin_user.i_user.login_name, {i["newValue"] for i in assignments}
         )
+
+    def test_change_log_exposes_the_change_reason(self):
+        content = self._query({"uuid": self.role.uuid})
+        items = content["data"]["roleChangeLog"]["items"]
+
+        renamed = next(i for i in items if i["changeType"] == "ATTRIBUTE_CHANGED")
+        self.assertEqual(renamed["changeReason"], "ATTRIBUTE_CHANGED")
+        granted = next(i for i in items if i["changeType"] == "RIGHT_GRANTED")
+        self.assertEqual(granted["changeReason"], "RIGHT_GRANTED")

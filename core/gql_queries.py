@@ -286,7 +286,7 @@ class ValidationMessageGQLType(graphene.ObjectType):
 class RoleChangeEntryGQLType(graphene.ObjectType):
     """
     A single entry in a role's change history. Not backed by a model: entries
-    are derived from the versioned tblRole, tblRoleRight and tblUserRole rows.
+    are derived from the simple_history records of Role, RoleRight and UserRole.
     """
 
     timestamp = graphene.DateTime()
@@ -294,12 +294,17 @@ class RoleChangeEntryGQLType(graphene.ObjectType):
     field = graphene.String()
     old_value = graphene.String()
     new_value = graphene.String()
-    # null when the change kind does not record an actor, e.g. a revocation:
-    # a closed row's audit_user_id belongs to whoever opened it
+    # the InteractiveUser id behind the change. Int rather than the history
+    # record's own user reference, whose primary key is a UUID. Null for
+    # records written before the role models were versioned by simple_history.
     audit_user_id = graphene.Int()
     # resolved login name, null when there is nothing to resolve: no actor
     # recorded, or the -1 sentinel used for users with no InteractiveUser
     audit_user_name = graphene.String()
+    # why the change was made, when the caller of the mutation recorded one.
+    # Null for entries the data migration backfilled: its marker describes the
+    # migration, not a reason a person gave.
+    change_reason = graphene.String()
 
 
 class RoleChangeLogGQLType(graphene.ObjectType):

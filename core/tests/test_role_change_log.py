@@ -252,3 +252,14 @@ class RoleChangeLogTest(TestCase):
         created = self._of_type("ROLE_CREATED")[0]
         self.assertEqual(created.audit_user_id, self.user.i_user.id)
         self.assertEqual(created.audit_user_name, self.user.i_user.login_name)
+
+    def test_the_migration_marker_is_not_reported_as_a_reason(self):
+        # the data migration stamps every backfilled row; that is bookkeeping
+        # about the migration, not a reason a person gave for a change
+        Role.history.filter(id=self.role.id).update(
+            history_change_reason="Backfilled from validity dates"
+        )
+
+        created = self._of_type("ROLE_CREATED")
+        self.assertEqual(len(created), 1)
+        self.assertIsNone(created[0].change_reason)
