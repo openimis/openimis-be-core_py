@@ -114,9 +114,7 @@ class DuplicateRoleRightsTest(TestCase):
     def test_a_failed_duplicate_leaves_no_orphan_role(self):
         roles_before = Role.objects.filter(name="DupDoomed").count()
 
-        with patch.object(
-            RoleRight.objects, "create", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(RoleRight, "save", side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
                 duplicate_role(
                     {"uuid": self.role.uuid, "name": "DupDoomed"}, self.user

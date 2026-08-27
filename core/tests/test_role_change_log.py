@@ -83,12 +83,16 @@ class RoleChangeLogTest(TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0].new_value, str(_RIGHT_A))
 
-    def test_revocation_has_no_actor(self):
-        # audit_user_id on a RoleRight row identifies the granter, so it must
-        # not be reported as the person who revoked the right.
-        update_or_create_role({"uuid": self.role.uuid, "rights_id": []}, self.user)
+    def test_revocation_names_the_revoker(self):
+        # The history record carries history_user, so a revocation now names
+        # whoever performed it. The row's own audit_user_id still belongs to
+        # the granter and is no longer what the feed reports here.
+        revoker = create_test_interactive_user(username="RoleChangeLogRevoker")
+        update_or_create_role({"uuid": self.role.uuid, "rights_id": []}, revoker)
 
-        self.assertIsNone(self._of_type("RIGHT_REVOKED")[0].audit_user_id)
+        self.assertEqual(
+            self._of_type("RIGHT_REVOKED")[0].audit_user_id, revoker.i_user.id
+        )
 
     def test_grant_reports_the_granting_user(self):
         entries = self._of_type("RIGHT_GRANTED")
@@ -116,7 +120,7 @@ class RoleChangeLogTest(TestCase):
         # validity-filtered lookup would make this unreachable.
         update_or_create_role({"uuid": self.role.uuid, "name": "Doomed"}, self.user)
         role = Role.objects.get(uuid=self.role.uuid)
-        set_role_deleted(role)
+        set_role_deleted(role, self.user)
 
         entries = get_role_change_log(self.role.uuid)
         self.assertTrue(any(e.change_type == "ATTRIBUTE_CHANGED" for e in entries))
@@ -204,7 +208,7 @@ class RoleChangeLogTest(TestCase):
         created_at = self._of_type("ROLE_CREATED")[0].timestamp
 
         update_or_create_role({"uuid": self.role.uuid, "name": "Doomed"}, self.user)
-        set_role_deleted(Role.objects.get(uuid=self.role.uuid))
+        set_role_deleted(Role.objects.get(uuid=self.role.uuid), self.user)
 
         self.assertEqual(self._of_type("ROLE_CREATED")[0].timestamp, created_at)
 
@@ -221,6 +225,13 @@ class RoleChangeLogTest(TestCase):
             },
             self.user,
         )
+
+        # simple_history stamps every save with its own history_date, so equal
+        # timestamps no longer arise from one request and have to be built here.
+        # What is pinned is unchanged: when a group does share a timestamp, a
+        # page boundary inside it stays in the same place between requests.
+        shared = datetime.datetime.now()
+        RoleRight.history.filter(role_id=role.id).update(history_date=shared)
 
         entries = [
             e for e in get_role_change_log(role.uuid) if e.change_type == "RIGHT_GRANTED"

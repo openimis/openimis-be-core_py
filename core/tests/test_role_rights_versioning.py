@@ -137,25 +137,24 @@ class RoleRightsVersioningTest(TestCase):
         self.assertEqual(closed_row.audit_user_id, granter_id)
 
     def test_a_failed_update_leaves_no_orphan_history_row(self):
-        # save_history() writes a Role clone before the rights are touched.
-        # If the rights update then fails and the function is not atomic, that
-        # clone survives and the change feed renders it as a phantom change.
-        history_before = Role.objects.filter(legacy_id=self.role.id).count()
+        # The role's own history record is written before the rights are
+        # touched. If the rights update then fails and the function is not
+        # atomic, that record survives and the feed renders a phantom change.
+        history_before = Role.history.filter(id=self.role.id).count()
 
-        with patch.object(
-            RoleRight.objects, "create", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(RoleRight, "save", side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
                 update_or_create_role(
                     {
                         "uuid": self.role.uuid,
+                        "name": "DoomedRename",
                         "rights_id": [_RIGHT_A, _RIGHT_B, _RIGHT_C],
                     },
                     self.user,
                 )
 
         self.assertEqual(
-            Role.objects.filter(legacy_id=self.role.id).count(), history_before
+            Role.history.filter(id=self.role.id).count(), history_before
         )
 
     def test_pre_existing_duplicate_rows_do_not_crash_the_update(self):

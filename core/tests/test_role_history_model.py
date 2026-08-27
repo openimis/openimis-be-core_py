@@ -1,6 +1,9 @@
 from django.test import TestCase
 
+from core.datetimes.ne_datetime import NeDatetime
 from core.models import Role, RoleRight, UserRole
+from core.schema import update_or_create_role
+from core.test_helpers import create_test_interactive_user
 
 
 class RoleHistoryModelTest(TestCase):
@@ -43,3 +46,21 @@ class RoleHistoryModelTest(TestCase):
         right.active = False
         right.save()
         self.assertEqual([h.history_type for h in right.history.all()], ["~", "+"])
+
+    def test_a_calendar_aware_datetime_is_accepted(self):
+        # DirtyFieldsMixin, which the history model brings in, runs to_python()
+        # on every field at construction. NeDatetime is not a datetime
+        # subclass, so it has to be normalised before it reaches the model.
+        user = create_test_interactive_user(username="RoleHistoryNeCalendar")
+        role = update_or_create_role(
+            {
+                "name": "NepaliCalendarRole",
+                "is_system": 0,
+                "is_blocked": False,
+                "audit_user_id": user.i_user.id,
+                "validity_from": NeDatetime.now(),
+            },
+            user,
+        )
+        self.assertIsNotNone(role.id)
+        self.assertEqual(role.history.count(), 1)

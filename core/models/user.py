@@ -153,10 +153,18 @@ class TechnicalUser(AbstractBaseUser):
         db_table = "core_TechnicalUser"
 
 
+def role_uuid_default():
+    # RoleUUID is a CharField, so the default has to produce the string that
+    # column stores. VersionedModel used to normalise a UUID object to str on
+    # save; the history model does not, and callers of update_or_create_role
+    # read the returned role's uuid as a string.
+    return str(uuid.uuid4())
+
+
 class Role(OpenIMISMigrationModel):
     id = models.AutoField(db_column="RoleID", primary_key=True)
     uuid = models.CharField(
-        db_column="RoleUUID", max_length=36, default=uuid.uuid4, unique=True
+        db_column="RoleUUID", max_length=36, default=role_uuid_default, unique=True
     )
     legacy_id = models.IntegerField(db_column="LegacyID", blank=True, null=True)
     name = models.CharField(db_column="RoleName", max_length=50)
