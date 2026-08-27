@@ -12,9 +12,6 @@ RIGHT_REVOKED = "RIGHT_REVOKED"
 USER_ASSIGNED = "USER_ASSIGNED"
 USER_UNASSIGNED = "USER_UNASSIGNED"
 
-# The whitelist is what keeps bookkeeping out of the feed: the history record
-# also carries version, active, json_ext and date_deactivated, none of which
-# describe a change an auditor asked about.
 TRACKED_ATTRIBUTES = ("name", "alt_language", "is_system", "is_blocked")
 
 BACKFILL_REASON = "Backfilled from validity dates"
@@ -27,13 +24,7 @@ class RoleChangeEntry:
     field: Optional[str]
     old_value: Optional[str]
     new_value: Optional[str]
-    # InteractiveUser.id of whoever made the change. None when the history
-    # record names nobody, which is the case for everything written before the
-    # role models were versioned by simple_history.
     audit_user_id: Optional[int]
-    # Resolved login name, filled in by _resolve_actor_names(). Stays None when
-    # there is nothing to resolve: no actor recorded, or the -1 sentinel that
-    # User.id_for_audit returns for a user with no InteractiveUser.
     audit_user_name: Optional[str] = None
     change_reason: Optional[str] = None
 
@@ -43,14 +34,7 @@ def _as_str(value) -> Optional[str]:
 
 
 def _actor(record) -> Optional[int]:
-    """The InteractiveUser id behind a history record.
-
-    history_user is a FK to core.User, whose primary key is a UUID, so it can
-    never be handed out as the contract's Int. i_user_id is the interactive
-    account behind that login and is an int. Records written before this
-    feature name nobody, and there the row's own audit_user_id is the only
-    actor information that exists.
-    """
+    """InteractiveUser id, not core.User's UUID PK."""
     actor = getattr(record, "history_user", None)
     if actor is not None and actor.i_user_id:
         return actor.i_user_id
@@ -59,8 +43,6 @@ def _actor(record) -> Optional[int]:
 
 def _reason(record) -> Optional[str]:
     reason = record.history_change_reason
-    # the data migration stamps every backfilled row; that is bookkeeping about
-    # the migration, not a reason a person gave for a change
     return None if reason == BACKFILL_REASON else reason
 
 
@@ -89,8 +71,7 @@ def _role_entries(role: Role) -> List[RoleChangeEntry]:
         _entry(records[0], ROLE_CREATED, None, None, records[0].name)
     ]
     for previous, current in zip(records, records[1:]):
-        # openIMIS deletes softly, so a removal arrives as an ordinary update
-        # that flips active — there is no history_type '-' to key on
+        # soft delete: a removal arrives as an update flipping active, not as '-'
         if previous.active and not current.active:
             entries.append(
                 _entry(current, ROLE_DELETED, None, None, current.name)
@@ -118,12 +99,7 @@ def _grant_entries(
     revoked: str,
     subject,
 ) -> List[RoleChangeEntry]:
-    """Turn one row's history into grant and revoke events.
-
-    A row opens as a grant. Every later record that flips `active` is the
-    matching revoke or a re-grant, which is how revoking and granting the same
-    right again leaves two distinct events instead of overwriting one.
-    """
+    """Turn one row's history into grant and revoke events, one per active flip."""
     entries = []
     by_row = {}
     for record in records:
@@ -218,22 +194,8 @@ def get_role_change_log(
 ) -> List[RoleChangeEntry]:
     """Merged, newest-first change feed for a single role.
 
-    Every entry comes from a simple_history record, so revoking a right and
-    granting it again leaves two events rather than one overwritten row.
-
-    include_user_names=False keeps every login out of the feed: actor names stay
-    unresolved and assignment entries carry the user id instead. Reading users is
-    a separate right from reading roles, so a caller holding only the role right
-    gets the timeline without the identities.
-
-    Deliberately does not filter on active: deleting a role is itself an entry,
-    so a filter would make the audit log of a deleted role unreachable.
-
-    Entries sharing a timestamp keep the order of the rows they came from:
-    sorted() is stable and every source is ordered, so a page boundary inside
-    a group of equal timestamps stays in the same place between requests.
-
-    Raises Role.DoesNotExist for an unknown uuid.
+    include_user_names=False keeps logins out of the feed, for callers holding
+    the role right but not the user right. Raises Role.DoesNotExist.
     """
     role = Role.objects.get(uuid=role_uuid)
     entries = (

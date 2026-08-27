@@ -1439,14 +1439,7 @@ class RoleBase:
 
 
 def _normalise_calendar_dates(data):
-    """Turn openIMIS's calendar-aware datetimes into plain AD ones.
-
-    DirtyFieldsMixin, which the history model brings in, runs to_python() on
-    every field while the instance is being constructed. AdDatetime survives
-    that because it subclasses datetime; NeDatetime does not, so it reaches
-    Django's string parser and raises. The column stores an AD datetime either
-    way, which is exactly what get_prep_value would have produced.
-    """
+    """Flatten calendar-aware datetimes to AD; NeDatetime is not a datetime subclass."""
     for key in ("validity_from", "validity_to"):
         value = data.get(key)
         if hasattr(value, "to_ad_datetime"):
@@ -1469,14 +1462,10 @@ def update_or_create_role(data, user):
     if role_uuid:
         role = Role.objects.get(uuid=role_uuid)
         [setattr(role, k, v) for k, v in data.items()]
-        # the acting user is authoritative: UpdateRoleMutation does not put
-        # audit_user_id in data, so without this the role keeps the id written
-        # when it was created and every later change names the wrong person
+        # UpdateRoleMutation does not carry audit_user_id
         role.audit_user_id = user.id_for_audit
         role._change_reason = ATTRIBUTE_CHANGED
-        # silent: an edit that only changes rights leaves the role row itself
-        # untouched, and the history model treats saving an unchanged row as an
-        # error rather than a no-op
+        # silent: a rights-only edit leaves the role row unchanged, which would raise
         role.save(user=user, silent=True)
         if rights_id is not None:
             import datetime
@@ -1490,14 +1479,11 @@ def update_or_create_role(data, user):
             )
             requested_rights = set(rights_id)
 
-            # list() forces evaluation before active is mutated, so the
-            # queryset cannot re-evaluate against rows already closed
+            # list() forces evaluation before active is mutated
             for role_right in list(
                 currently_assigned.exclude(right_id__in=requested_rights)
             ):
-                # validity_to is kept in step with active for as long as both
-                # columns exist: the permission path in models.user and four
-                # other modules' migrations still read validity_to
+                # validity_to kept in step with active: still read elsewhere
                 role_right.active = False
                 role_right.validity_to = now
                 role_right._change_reason = RIGHT_REVOKED
@@ -1561,9 +1547,7 @@ def duplicate_role(data, user):
     [setattr(duplicated_role, k, v) for k, v in data.items()]
     duplicated_role._change_reason = ROLE_CREATED
     duplicated_role.save(user=user)
-    # only rights the source currently holds may be copied: a revoked right
-    # must not come back to life on the duplicate, and one open row per right
-    # keeps the duplicate's history unambiguous
+    # a revoked right must not come back to life on the duplicate
     source_rights = set(
         RoleRight.objects.filter(role_id=role.id, active=True).values_list(
             "right_id", flat=True
@@ -1575,9 +1559,7 @@ def duplicate_role(data, user):
             role_id=duplicated_role.id,
             right_id=right_id,
             audit_user_id=duplicated_role.audit_user_id,
-            # always "now": on the duplicate this genuinely is a new grant, so
-            # inheriting the source role's validity_from would date the grant
-            # before the duplicate existed
+            # always "now": on the duplicate this is a new grant
             validity_from=now,
         )
         role_right._change_reason = RIGHT_GRANTED
@@ -1658,9 +1640,6 @@ def set_role_deleted(role, user):
     try:
         import datetime
 
-        # delete_history() is a no-op on the history model, so the removal is
-        # written here: active carries it, and validity_to is kept in step for
-        # as long as the column is still read elsewhere
         role.active = False
         role.validity_to = datetime.datetime.now()
         role._change_reason = ROLE_DELETED

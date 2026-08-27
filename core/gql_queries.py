@@ -284,34 +284,21 @@ class ValidationMessageGQLType(graphene.ObjectType):
 
 
 class RoleChangeEntryGQLType(graphene.ObjectType):
-    """
-    A single entry in a role's change history. Not backed by a model: entries
-    are derived from the simple_history records of Role, RoleRight and UserRole.
-    """
+    """One entry in a role's change history, derived from simple_history records."""
 
     timestamp = graphene.DateTime()
     change_type = graphene.String()
     field = graphene.String()
     old_value = graphene.String()
     new_value = graphene.String()
-    # the InteractiveUser id behind the change. Int rather than the history
-    # record's own user reference, whose primary key is a UUID. Null for
-    # records written before the role models were versioned by simple_history.
+    # InteractiveUser id, not the history record's UUID user reference
     audit_user_id = graphene.Int()
-    # resolved login name, null when there is nothing to resolve: no actor
-    # recorded, or the -1 sentinel used for users with no InteractiveUser
     audit_user_name = graphene.String()
-    # why the change was made, when the caller of the mutation recorded one.
-    # Null for entries the data migration backfilled: its marker describes the
-    # migration, not a reason a person gave.
     change_reason = graphene.String()
 
 
 class RoleChangeLogGQLType(graphene.ObjectType):
-    """
-    A page of a role's change history. total_count is the size of the whole
-    feed, independent of the requested page.
-    """
+    """A page of a role's change history; total_count covers the whole feed."""
 
     total_count = graphene.Int()
     items = graphene.List(RoleChangeEntryGQLType)

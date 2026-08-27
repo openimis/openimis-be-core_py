@@ -154,10 +154,7 @@ class TechnicalUser(AbstractBaseUser):
 
 
 def role_uuid_default():
-    # RoleUUID is a CharField, so the default has to produce the string that
-    # column stores. VersionedModel used to normalise a UUID object to str on
-    # save; the history model does not, and callers of update_or_create_role
-    # read the returned role's uuid as a string.
+    # RoleUUID is a CharField; the history model no longer normalises UUID to str
     return str(uuid.uuid4())
 
 

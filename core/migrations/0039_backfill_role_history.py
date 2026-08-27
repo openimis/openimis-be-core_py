@@ -33,9 +33,7 @@ def _history_row(historical_model, record, history_date, history_type, active):
 
 
 def _role_history(apps):
-    """Roles are versioned by cloning: save_history() copies the pre-edit state
-    into a new row and points its legacy_id at the live row. One logical role is
-    therefore a chain, and only its oldest link is a creation."""
+    """One logical role is a chain of cloned rows; only its oldest link is a creation."""
     role_model = apps.get_model("core", "Role")
     historical = apps.get_model("core", "HistoricalRole")
 
@@ -60,8 +58,7 @@ def _role_history(apps):
 
 
 def _grant_history(apps, model_name):
-    """Rights and assignments are not cloned: every row is one grant, so it opens
-    at validity_from and, if closed, is revoked at validity_to."""
+    """Every rights/assignment row is one grant: opens at validity_from, closes at validity_to."""
     model = apps.get_model("core", model_name)
     historical = apps.get_model("core", f"Historical{model_name}")
 
@@ -92,15 +89,11 @@ def _grant_history(apps, model_name):
 def forwards(apps, schema_editor):
     for model_name in ("Role", "RoleRight", "UserRole"):
         model = apps.get_model("core", model_name)
-        # `active` is derived, never left on its default: RoleRight.filter_queryset()
-        # sits on the rights hot path, and rows closed by validity_to would
-        # otherwise come back as live grants.
+        # derived, never left on its default: filter_queryset() sits on the rights hot path
         model.objects.filter(validity_to__isnull=True).update(active=True)
         model.objects.filter(validity_to__isnull=False).update(active=False)
 
-    # the timeline is rebuilt while validity_from still exists — OpenIMISModel
-    # has no date_created, so once that column goes there is nothing to derive
-    # a creation entry from
+    # rebuilt while validity_from still exists: OpenIMISModel has no date_created
     for historical, rows in (
         _role_history(apps),
         _grant_history(apps, "RoleRight"),
