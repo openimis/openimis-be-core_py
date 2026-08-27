@@ -153,11 +153,12 @@ class TechnicalUser(AbstractBaseUser):
         db_table = "core_TechnicalUser"
 
 
-class Role(VersionedModel):
+class Role(OpenIMISMigrationModel):
     id = models.AutoField(db_column="RoleID", primary_key=True)
     uuid = models.CharField(
         db_column="RoleUUID", max_length=36, default=uuid.uuid4, unique=True
     )
+    legacy_id = models.IntegerField(db_column="LegacyID", blank=True, null=True)
     name = models.CharField(db_column="RoleName", max_length=50)
     alt_language = models.CharField(
         db_column='AltLanguage', max_length=50, blank=True, null=True)
@@ -185,8 +186,9 @@ class Role(VersionedModel):
         db_table = "tblRole"
 
 
-class RoleRight(VersionedModel):
+class RoleRight(OpenIMISMigrationModel):
     id = models.AutoField(db_column="RoleRightID", primary_key=True)
+    legacy_id = models.IntegerField(db_column="LegacyID", blank=True, null=True)
     role = models.ForeignKey(
         Role, models.DO_NOTHING, db_column="RoleID", related_name="rights"
     )
@@ -658,8 +660,9 @@ class ClaimAdmin(VersionedModel):
         db_table = "tblClaimAdmin"
 
 
-class UserRole(VersionedModel):
+class UserRole(OpenIMISMigrationModel):
     id = models.AutoField(db_column="UserRoleID", primary_key=True)
+    legacy_id = models.IntegerField(db_column="LegacyID", blank=True, null=True)
     user = models.ForeignKey(
         InteractiveUser,
         models.DO_NOTHING,
