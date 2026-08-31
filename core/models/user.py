@@ -389,9 +389,9 @@ class InteractiveUser(OpenIMISMigrationModel):
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
-    def set_password(self, raw_password, private_key=token_hex(128)):
+    def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
-        self.private_key = private_key
+        self.private_key = private_key or token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         self.password = (
