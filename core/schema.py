@@ -211,7 +211,9 @@ class ParsedJSONString(graphene.JSONString):
 
 def _check_csrf_token(request):
     user_agent = request.headers.get("User-Agent", "")
-    if not (settings.MODE == 'dev' or settings.IS_TESTING or any(
+    mode = getattr(settings, "MODE", "")
+    is_testing = getattr(settings, "IS_TESTING", False)
+    if not (mode == 'dev' or is_testing or any(
         bypass in user_agent
         for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])
     )):
