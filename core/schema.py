@@ -451,14 +451,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
                     )  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                    messages = cls.async_mutate(
-                        (
-                            info.context.user
-                            if info.context and info.context.user
-                            else None
-                        ),
-                        **mutation_data,
-                    )
+                                        # run the mutation inside a savepoint: should it leave the
+                    # transaction broken (a database error, raised or caught by
+                    # the service itself), exiting this block rolls the savepoint
+                    # back and resets connection.needs_rollback, so the
+                    # mark_as_failed/mark_as_successful below can still be
+                    # written. Without it they raise TransactionManagementError
+                    # and the mutation log stays in "received" state for ever.
+                    with transaction.atomic():
+                        messages = cls.async_mutate(
+                            info.context.user if info.context and info.context.user else None,
+                            **mutation_data
+                        )
                     # TODO this code is necessary for autogenerate functionality to work
                     # TODO General mutation code should be reworked
                     if mutation_data.get("autogenerate", False) and isinstance(
@@ -493,16 +497,16 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                 exc_info=exc,
                             )
                         mutation_log.mark_as_failed(errors_json)
-                except BaseException as exc:
-                    error_messages = exc
-                    logger.error(
-                        "async_mutate threw an exception. It should have gotten this far.",
-                        exc_info=exc,
-                    )
+                except Exception as exc:
+                    logger.error("async_mutate threw an exception. It should have gotten this far.", exc_info=exc)
+                    # the after_mutating receivers expect a list of messages,
+                    # not the exception itself
+                    error_messages = [
+                        {"message": f"The mutation threw a {type(exc).__name__}"}
+                    ]
                     # Record the failure of the mutation but don't include details for security reasons
-                    mutation_log.mark_as_failed(
-                        f"The mutation threw a {type(exc)}, check logs for details"
-                    )
+                    mutation_log.safe_mark_as_failed(
+                        f"The mutation threw a {type(exc)}, check logs for details")
                 logger.debug(
                     "[OpenIMISMutation %s] send post mutation signal", mutation_log.id
                 )
@@ -518,9 +522,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         except Exception as exc:
             logger.error(
                 f"Exception while processing mutation id {mutation_log.id}",
-                exc_info=exc,
+                exc_info=exc
             )
-            mutation_log.mark_as_failed(exc)
+            mutation_log.safe_mark_as_failed(str(exc))
 
         return cls(internal_id=mutation_log.id)
 
