@@ -17,9 +17,9 @@ from core.apps import CoreConfig
 from core.user_types import UserTypeEnum, get_user_types
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
-from graphene.types.generic import GenericScalar
-from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints
+from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints  # noqa: F401  (re-exported)
 from .utils import prefix_filterset
+
 
 class OfficerGQLType(DjangoObjectType):
     """
