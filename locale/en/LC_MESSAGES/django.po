@@ -36,6 +36,10 @@ msgstr ""
 msgid "unauthorized"
 msgstr "User not authorized for this operation"
 
+#: core/gql_errors.py:9
+msgid "unauthenticated"
+msgstr "Authentication required"
+
 #: core/schema.py:1340
 msgid "mutation.duplicate_of_role_name"
 msgstr ""
