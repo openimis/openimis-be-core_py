@@ -157,6 +157,13 @@ class InteractiveUserGQLType(DjangoObjectType):
         else:
             return None
 
+    def resolve_user_roles(self, info, **kwargs):
+        # Same data as `roles`, exposed through the user_roles reverse relation;
+        # gate it the same way so it can't be used to bypass resolve_roles.
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return self.user_roles
+
     def resolve_userdistrict_set(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))

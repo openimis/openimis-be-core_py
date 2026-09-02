@@ -69,12 +69,14 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
     """Regression for the roles/districts authZ downgrade, simulating the real
     attack rather than calling resolvers with a mocked info.
 
-    InteractiveUserGQLType implements relay.Node, so its roles/districts are
-    reachable through the global `node(id)` query — which is not behind the
-    `users` connection's permission gate. An authenticated user with no rights
-    should not be able to read another user's roles/districts by enumerating
-    global IDs. ROW_SECURITY is disabled because otherwise
-    InteractiveUser.get_queryset raises before the field resolver runs.
+    InteractiveUserGQLType implements relay.Node, so a target user's role and
+    district assignments are reachable through the global `node(id)` query —
+    which is not behind the `users` connection's permission gate. The same
+    assignments are exposed three ways: the `roles` list, the `userRoles`
+    reverse relation, and `userdistrictSet`. An authenticated user with no
+    rights must not read any of them by enumerating global IDs. ROW_SECURITY is
+    disabled because otherwise InteractiveUser.get_queryset raises before the
+    field resolver runs.
     """
 
     @classmethod
@@ -124,6 +126,11 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
         content = self._node(self.attacker, "roles { id name }")
         self.assertTrue(self._is_unauthorized(content))
         self.assertIsNone(self._node_field(content, "roles"))
+
+    def test_node_user_roles_denied_without_users_permission(self):
+        content = self._node(self.attacker, "userRoles { role { name } }")
+        self.assertTrue(self._is_unauthorized(content))
+        self.assertIsNone(self._node_field(content, "userRoles"))
 
     def test_node_districts_denied_without_users_permission(self):
         content = self._node(self.attacker, "userdistrictSet { location { id } }")
