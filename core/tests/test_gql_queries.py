@@ -72,9 +72,10 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
     InteractiveUserGQLType implements relay.Node, so a target user's role and
     district assignments are reachable through the global `node(id)` query —
     which is not behind the `users` connection's permission gate. The same
-    assignments are exposed three ways: the `roles` list, the `userRoles`
-    reverse relation, and `userdistrictSet`. An authenticated user with no
-    rights must not read any of them by enumerating global IDs. ROW_SECURITY is
+    assignments are exposed several ways: the `roles` list, the `userRoles`
+    reverse relation, `userdistrictSet`, and the legacy `roleId` field. An
+    authenticated user with no rights must not read any of them by enumerating
+    global IDs. ROW_SECURITY is
     disabled because otherwise InteractiveUser.get_queryset raises before the
     field resolver runs.
     """
@@ -136,6 +137,11 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
         content = self._node(self.attacker, "userdistrictSet { location { id } }")
         self.assertTrue(self._is_unauthorized(content))
         self.assertIsNone(self._node_field(content, "userdistrictSet"))
+
+    def test_node_role_id_denied_without_users_permission(self):
+        content = self._node(self.attacker, "roleId")
+        self.assertTrue(self._is_unauthorized(content))
+        self.assertIsNone(self._node_field(content, "roleId"))
 
     def test_node_roles_allowed_with_users_permission(self):
         content = self._node(self.privileged, "roles { id name }")

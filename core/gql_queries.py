@@ -164,6 +164,13 @@ class InteractiveUserGQLType(DjangoObjectType):
             raise PermissionDenied(_("unauthorized"))
         return self.user_roles
 
+    def resolve_role_id(self, info, **kwargs):
+        # Legacy role_id column is auto-exposed as roleId — a role assignment;
+        # gate it like the other role fields.
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return self.role_id
+
     def resolve_userdistrict_set(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
