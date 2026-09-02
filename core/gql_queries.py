@@ -148,7 +148,7 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_roles(self, info, **kwargs):
-        if not info.context.user.is_authenticated:
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         if self.user_roles:
             return Role.objects.filter(validity_to__isnull=True).filter(
@@ -158,7 +158,7 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_userdistrict_set(self, info, **kwargs):
-        if not info.context.user.is_authenticated:
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         if self.userdistrict_set:
             return self.userdistrict_set.filter(*UserDistrict.filter_validity())
