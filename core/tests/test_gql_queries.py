@@ -1,3 +1,5 @@
+import json
+
 from django.test import TestCase
 
 from core.gql.max_length_constraints import build_max_length_constraints
@@ -81,7 +83,12 @@ class ResolverAuthenticationStatusTests(openIMISGraphQLTestCase):
         return self.query("query { languages { name } }", headers=headers)
 
     def test_unauthenticated_query_returns_401(self):
-        self.assertEqual(self._languages_query().status_code, 401)
+        resp = self._languages_query()
+        self.assertEqual(resp.status_code, 401)
+        # Guard the payload message: AuthenticationRequired() relies on
+        # JSONWebTokenError using its default_message, so lock in "unauthenticated".
+        messages = [e.get("message") for e in json.loads(resp.content).get("errors", [])]
+        self.assertIn("unauthenticated", messages)
 
     def test_authenticated_query_not_401(self):
         token = BaseTestContext(user=self.user).get_jwt()
