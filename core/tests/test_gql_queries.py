@@ -1,6 +1,7 @@
 import json
 
 from django.test import TestCase
+from django.utils.translation import gettext
 
 from core.gql.max_length_constraints import build_max_length_constraints
 from core.models.openimis_graphql_test_case import (
@@ -85,10 +86,11 @@ class ResolverAuthenticationStatusTests(openIMISGraphQLTestCase):
     def test_unauthenticated_query_returns_401(self):
         resp = self._languages_query()
         self.assertEqual(resp.status_code, 401)
-        # Guard the payload message: AuthenticationRequired() relies on
-        # JSONWebTokenError using its default_message, so lock in "unauthenticated".
+        # Compare against the resolved translation, not the raw msgid: the en catalog
+        # maps "unauthenticated" -> "Authentication required", so a compiled/active
+        # catalog would break a hard-coded-msgid assertion.
         messages = [e.get("message") for e in json.loads(resp.content).get("errors", [])]
-        self.assertIn("unauthenticated", messages)
+        self.assertIn(gettext("unauthenticated"), messages)
 
     def test_authenticated_query_not_401(self):
         token = BaseTestContext(user=self.user).get_jwt()
