@@ -5,6 +5,7 @@ import logging
 from celery import shared_task
 from core.models import MutationLog, Language
 from core.utils import set_current_user
+from django.db import transaction
 from django.utils import translation
 
 logger = logging.getLogger(__name__)
@@ -35,25 +36,34 @@ def openimis_mutation_async(mutation_id, module, class_name):
                 translation.activate(lang.code)
             else:
                 translation.activate(lang)
-        error_messages = mutation_class.async_mutate(
-            mutation.user,
-            **mutation_class.coerce_mutation_data(json.loads(mutation.json_content)),
-        )
+        # run the mutation inside a savepoint: should it leave the transaction
+        # broken (a database error, raised or caught by the service itself),
+        # exiting this block rolls the savepoint back and resets
+        # connection.needs_rollback, so the mark_as_* calls below can still be
+        # written. Without it they raise TransactionManagementError and the
+        # mutation log stays in RECEIVED status for ever, the client polling it
+        # waiting for an answer that never comes.
+        with transaction.atomic():
+            error_messages = mutation_class.async_mutate(
+                mutation.user,
+                **mutation_class.coerce_mutation_data(
+                    json.loads(mutation.json_content)
+                )
+            )
         if not error_messages:
             mutation.mark_as_successful()
         else:
             logger.debug(f"error :{error_messages}")
             try:
-                mutation.mark_as_failed(json.dumps(error_messages))
+                error = json.dumps(error_messages)
             except Exception:
-                mutation.mark_as_failed(error_messages)
+                error = str(error_messages)
+            mutation.safe_mark_as_failed(error)
         return "OK"
     except Exception as exc:
         if mutation:
-            mutation.mark_as_failed(str(exc))
-        logger.warning(
-            f"Exception while processing mutation id {mutation_id}", exc_info=True
-        )
+            mutation.safe_mark_as_failed(str(exc))
+        logger.warning(f"Exception while processing mutation id {mutation_id}", exc_info=True)
         raise exc
 
 
