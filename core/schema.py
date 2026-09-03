@@ -39,6 +39,7 @@ from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied, ObjectDoesNotExist
+from core.gql_errors import AuthenticationRequired
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
@@ -663,7 +664,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         request = getattr(info, "context", None)
 
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
 
         _check_csrf_token(request)
 
@@ -1386,7 +1387,7 @@ class Query(graphene.ObjectType):
 
     def resolve_languages(self, info, **kwargs):
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
         return Language.objects.order_by("sort_order").all()
 
 
