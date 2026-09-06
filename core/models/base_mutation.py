@@ -127,6 +127,27 @@ class MutationLog(UUIDModel, ExtendableModel):
         )
         self.refresh_from_db()
 
+    def safe_mark_as_failed(self, error):
+        """
+        Same as mark_as_failed but never raises.
+
+        Recording a failure must not be shadowed by a second error: when it is,
+        the mutation log stays in RECEIVED status and every client polling it
+        (the test suite included) waits for an answer that never comes. This is
+        typically what happens when the mutation broke the current transaction,
+        every subsequent query then raising TransactionManagementError.
+
+        :return True if the failure could be recorded, False otherwise
+        """
+        try:
+            self.mark_as_failed(error)
+            return True
+        except Exception as exc:
+            logger.error(
+                "MutationLog %s could not be marked as failed, it will stay in RECEIVED "
+                "status. Error that could not be recorded: %s", self.id, error, exc_info=exc)
+            return False
+
 
 class ObjectMutation:
     """
