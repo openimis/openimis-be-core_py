@@ -281,3 +281,24 @@ class ValidationMessageGQLType(graphene.ObjectType):
     is_valid = graphene.Boolean()
     error_code = graphene.Int()
     error_message = graphene.String()
+
+
+class RoleChangeEntryGQLType(graphene.ObjectType):
+    """One entry in a role's change history, derived from simple_history records."""
+
+    timestamp = graphene.DateTime()
+    change_type = graphene.String()
+    field = graphene.String()
+    old_value = graphene.String()
+    new_value = graphene.String()
+    # InteractiveUser id, not the history record's UUID user reference
+    audit_user_id = graphene.Int()
+    audit_user_name = graphene.String()
+    change_reason = graphene.String()
+
+
+class RoleChangeLogGQLType(graphene.ObjectType):
+    """A page of a role's change history; total_count covers the whole feed."""
+
+    total_count = graphene.Int()
+    items = graphene.List(RoleChangeEntryGQLType)
