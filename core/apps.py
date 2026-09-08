@@ -24,9 +24,10 @@ DEFAULT_CFG = {
     "iso_raw_date": "False",
     "age_of_majority": "18",
     "async_mutations": (
-        "True"
-        if os.environ.get("ASYNC", os.environ.get("MODE", "PROD")) == "PROD"
-        else "False"
+        "True" if os.environ.get(
+            "ASYNC",
+            os.environ.get("MODE", "PROD")
+            ).lower() == "prod" else "False"
     ),
     "password_reset_template": "password_reset.txt",
     "currency": "$",

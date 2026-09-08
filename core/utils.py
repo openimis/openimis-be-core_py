@@ -10,7 +10,8 @@ import graphene
 import jsonschema
 from django.db import models
 from django.conf import settings
-from django.core.exceptions import PermissionDenied, ValidationError, FieldDoesNotExist
+from django.core.exceptions import ValidationError, FieldDoesNotExist
+from core.gql_errors import AuthenticationRequired
 from django.core.files.storage import default_storage
 from django.db.models import Q, ForeignKey
 from django.http import FileResponse
@@ -671,7 +672,7 @@ class RandomUUID(Func):
 
 
 class CachedModelMixin:
-    USE_CACHE = settings.CACHE_OBJECT_DEFAULT
+    USE_CACHE = getattr(settings, "CACHE_OBJECT_DEFAULT", False)
     UNIQUE_FIELDS = {"id", "uuid", "pk"}
 
     @classmethod
@@ -684,7 +685,7 @@ class CachedModelMixin:
         if not cls.USE_CACHE or not objs:
             return
 
-        now = settings.CACHE_OBJECT_TTL  # or None for no timeout
+        now = getattr(settings, "CACHE_OBJECT_TTL", 3600)  # default 1 hour (3600s)
 
         # Get unique fields once
         unique_fields = getattr(cls, "UNIQUE_FIELDS")
@@ -722,10 +723,11 @@ class CachedModelMixin:
         Updates the cache for this object after saving.
         """
         if self.USE_CACHE:
+            ttl = getattr(settings, "CACHE_OBJECT_TTL", 3600)  # default 1 hour (3600s)
             cache.set(
                 get_cache_key(self.__class__, self.pk),
                 clean_fk(self),
-                timeout=settings.CACHE_OBJECT_TTL,
+                timeout=ttl,
             )
             unique_fields = getattr(
                 self, "UNIQUE_FIELDS", {"id", "uuid", "pk"}
@@ -736,7 +738,7 @@ class CachedModelMixin:
                     cache.set(
                         get_cache_key(self.__class__, getattr(self, f)),
                         self.pk,
-                        timeout=settings.CACHE_OBJECT_TTL,
+                        timeout=ttl,
                     )
             logger.debug("Saved and cached instance: %s", self)
 
@@ -768,12 +770,12 @@ class ExtendedConnection(graphene.Connection):
 
     def resolve_total_count(self, info, **kwargs):
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
         return self.length
 
     def resolve_edge_count(self, info, **kwargs):
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
         return len(self.edges)
 
 

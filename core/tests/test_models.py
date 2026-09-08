@@ -1,3 +1,4 @@
+from secrets import token_hex
 from unittest.mock import MagicMock
 
 from django.core.cache import cache, caches
@@ -9,6 +10,11 @@ from core.models.history_model import HistoryModel
 from core.models.user import Language
 from core.utils import get_cache_key, clear_current_user, clear_history_context
 from core.test_helpers import create_test_interactive_user, create_test_role
+
+
+def _test_password():
+    """Generated, so no password-shaped literal ends up in the repository."""
+    return token_hex(16) + "Aa1!"
 
 
 class UserTestCase(TestCase):
@@ -172,6 +178,33 @@ class UserTestCase(TestCase):
             ),
         )
         self.assertFalse(not_active_anymore.is_active)
+
+    def test_set_password_generates_a_distinct_salt_per_call(self):
+        # The salt used to be a default argument, evaluated once at import, so
+        # every user whose password was set in one process shared it - and with
+        # it the per-user JWT signing key.
+        raw = _test_password()
+        first = InteractiveUser(login_name="salt_first")
+        second = InteractiveUser(login_name="salt_second")
+
+        first.set_password(raw)
+        second.set_password(raw)
+
+        self.assertNotEqual(first.private_key, second.private_key)
+        self.assertNotEqual(first.password, second.password)
+        self.assertTrue(first.check_password(raw))
+        self.assertTrue(second.check_password(raw))
+
+    def test_set_password_honours_an_explicit_salt(self):
+        # create_test_interactive_user passes the salt to keep it stable.
+        raw = _test_password()
+        salt = token_hex(16)
+        user = InteractiveUser(login_name="salt_explicit")
+
+        user.set_password(raw, private_key=salt)
+
+        self.assertEqual(user.private_key, salt)
+        self.assertTrue(user.check_password(raw))
 
 
 class SaveNoOpTestCase(TestCase):

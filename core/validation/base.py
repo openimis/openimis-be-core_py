@@ -94,7 +94,7 @@ def validator(sender, instance, **kwargs):
             instance.full_clean(validate_unique=False)
         except Exception as e:
             msg = f"Object {instance.__class__.__name__} is not respecting the mandatory fields: {e}"
-            if settings.IS_TESTING:
+            if getattr(settings, "IS_TESTING", False):
                 logger.error(msg)
             else:
                 raise ValidationError(msg)

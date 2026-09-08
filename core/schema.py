@@ -39,6 +39,7 @@ from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied, ObjectDoesNotExist
+from core.gql_errors import AuthenticationRequired
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count
@@ -211,7 +212,9 @@ class ParsedJSONString(graphene.JSONString):
 
 def _check_csrf_token(request):
     user_agent = request.headers.get("User-Agent", "")
-    if not (settings.MODE == 'dev' or settings.IS_TESTING or any(
+    mode = getattr(settings, "MODE", "")
+    is_testing = getattr(settings, "IS_TESTING", False)
+    if not (mode == 'dev' or is_testing or any(
         bypass in user_agent
         for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])
     )):
@@ -449,14 +452,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
                     )  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                    messages = cls.async_mutate(
-                        (
-                            info.context.user
-                            if info.context and info.context.user
-                            else None
-                        ),
-                        **mutation_data,
-                    )
+                                        # run the mutation inside a savepoint: should it leave the
+                    # transaction broken (a database error, raised or caught by
+                    # the service itself), exiting this block rolls the savepoint
+                    # back and resets connection.needs_rollback, so the
+                    # mark_as_failed/mark_as_successful below can still be
+                    # written. Without it they raise TransactionManagementError
+                    # and the mutation log stays in "received" state for ever.
+                    with transaction.atomic():
+                        messages = cls.async_mutate(
+                            info.context.user if info.context and info.context.user else None,
+                            **mutation_data
+                        )
                     # TODO this code is necessary for autogenerate functionality to work
                     # TODO General mutation code should be reworked
                     if mutation_data.get("autogenerate", False) and isinstance(
@@ -491,16 +498,16 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                 exc_info=exc,
                             )
                         mutation_log.mark_as_failed(errors_json)
-                except BaseException as exc:
-                    error_messages = exc
-                    logger.error(
-                        "async_mutate threw an exception. It should have gotten this far.",
-                        exc_info=exc,
-                    )
+                except Exception as exc:
+                    logger.error("async_mutate threw an exception. It should have gotten this far.", exc_info=exc)
+                    # the after_mutating receivers expect a list of messages,
+                    # not the exception itself
+                    error_messages = [
+                        {"message": f"The mutation threw a {type(exc).__name__}"}
+                    ]
                     # Record the failure of the mutation but don't include details for security reasons
-                    mutation_log.mark_as_failed(
-                        f"The mutation threw a {type(exc)}, check logs for details"
-                    )
+                    mutation_log.safe_mark_as_failed(
+                        f"The mutation threw a {type(exc)}, check logs for details")
                 logger.debug(
                     "[OpenIMISMutation %s] send post mutation signal", mutation_log.id
                 )
@@ -516,9 +523,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         except Exception as exc:
             logger.error(
                 f"Exception while processing mutation id {mutation_log.id}",
-                exc_info=exc,
+                exc_info=exc
             )
-            mutation_log.mark_as_failed(exc)
+            mutation_log.safe_mark_as_failed(str(exc))
 
         return cls(internal_id=mutation_log.id)
 
@@ -661,7 +668,7 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         request = getattr(info, "context", None)
 
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
 
         _check_csrf_token(request)
 
@@ -1384,7 +1391,7 @@ class Query(graphene.ObjectType):
 
     def resolve_languages(self, info, **kwargs):
         if not info.context.user.is_authenticated:
-            raise PermissionDenied(_("unauthorized"))
+            raise AuthenticationRequired()
         return Language.objects.order_by("sort_order").all()
 
 

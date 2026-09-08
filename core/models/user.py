@@ -247,7 +247,7 @@ class RoleRight(VersionedModel):
 
 class InteractiveUser(OpenIMISMigrationModel):
     UNIQUE_FIELDS = {"pk", "uuid", "id", "login_name"}
-    USE_CACHE = not settings.IS_TESTING
+    USE_CACHE = not getattr(settings, "IS_TESTING", False)
     # id = models.AutoField(db_column="UserID", primary_key=True)
     # uuid = models.CharField(
     #     db_column="UserUUID", max_length=36, default=uuid.uuid4, unique=True
@@ -417,9 +417,9 @@ class InteractiveUser(OpenIMISMigrationModel):
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
-    def set_password(self, raw_password, private_key=token_hex(128)):
+    def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
-        self.private_key = private_key
+        self.private_key = private_key or token_hex(128)
         pwd_hash = sha256()
         pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
         self.password = (
@@ -707,7 +707,7 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
-    USE_CACHE = not settings.IS_TESTING
+    USE_CACHE = not getattr(settings, "IS_TESTING", False)
     objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
     t_user = models.ForeignKey(
