@@ -17,9 +17,9 @@ from core.apps import CoreConfig
 from core.user_types import UserTypeEnum, get_user_types
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
-from graphene.types.generic import GenericScalar
-from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints
+from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints  # noqa: F401  (re-exported)
 from .utils import prefix_filterset
+
 
 class OfficerGQLType(DjangoObjectType):
     """
@@ -148,7 +148,7 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_roles(self, info, **kwargs):
-        if not info.context.user.is_authenticated:
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         if self.user_roles:
             return Role.objects.filter(validity_to__isnull=True).filter(
@@ -157,8 +157,22 @@ class InteractiveUserGQLType(DjangoObjectType):
         else:
             return None
 
+    def resolve_user_roles(self, info, **kwargs):
+        # Same data as `roles`, exposed through the user_roles reverse relation;
+        # gate it the same way so it can't be used to bypass resolve_roles.
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return self.user_roles
+
+    def resolve_role_id(self, info, **kwargs):
+        # Legacy role_id column is auto-exposed as roleId — a role assignment;
+        # gate it like the other role fields.
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return self.role_id
+
     def resolve_userdistrict_set(self, info, **kwargs):
-        if not info.context.user.is_authenticated:
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         if self.userdistrict_set:
             return self.userdistrict_set.filter(*UserDistrict.filter_validity())
