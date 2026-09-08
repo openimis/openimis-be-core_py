@@ -248,8 +248,17 @@ class CoreConfig(AppConfig):
         ]
         CoreConfig.secondary_calendar = cfg["secondary_calendar"]
 
+    def _register_management_commands(self):
+        # core loads after django.contrib.auth; get_commands() walks INSTALLED_APPS
+        # in reverse and then earlier apps overwrite, so auth would win without this.
+        from django.core.management import get_commands
+        get_commands.cache_clear()
+        get_commands()["createsuperuser"] = MODULE_NAME
+
     def ready(self):
         from .models import ModuleConfiguration
+
+        self._register_management_commands()
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)
         self._configure_user_config(cfg)

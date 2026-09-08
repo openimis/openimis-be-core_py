@@ -125,8 +125,9 @@ class UserSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "is_superuser",
+            # is_superuser is the stored flag, is_imis_admin also covers the users that
+            # get full access through the IMIS Administrator role
+            "is_imis_admin",
             "i_user",
             "t_user",
-            "claim_admin",
-            "officer",
         )

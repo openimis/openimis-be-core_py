@@ -454,6 +454,44 @@ class UserServicesTest(TestCase):
         self.assertEqual(claim_admin.phone, "+12345678")
         self.assertEqual(claim_admin.email_id, "imis@foo.be")
 
+    def test_user_update_adding_officer_village_only(self):
+        """Adding a village to an EO leaves the interactive user untouched."""
+        from core.schema import update_or_create_user
+        from core.user_types import UT_INTERACTIVE, UT_OFFICER
+
+        username = "tstsvevil"
+        roles = [create_test_role(name="TestRoleEoVillage").id]
+        data = dict(
+            username=username,
+            last_name="LN",
+            other_names="ON",
+            email=f"{username}@illuminati.int",
+            phone="+123456789",
+            language="fr",
+            roles=roles,
+            user_types=[UT_INTERACTIVE, UT_OFFICER],
+            location_id=self.test_village1.parent.parent_id,
+            village_ids=[self.test_village1.id],
+        )
+        core_user = update_or_create_user(data.copy(), self.user)
+        self.assertIsNotNone(core_user.officer)
+
+        # Only the officer villages change: nothing is dirty on the interactive user
+        data["uuid"] = core_user.id
+        data["village_ids"] = [self.test_village1.id, self.test_village2.id]
+        core_user = update_or_create_user(data, self.user)
+
+        self.assertEqual(
+            list(
+                OfficerVillage.objects.filter(
+                    validity_to__isnull=True, officer=core_user.officer
+                )
+                .order_by("location_id")
+                .values_list("location_id", flat=True)
+            ),
+            sorted([self.test_village1.id, self.test_village2.id]),
+        )
+
     def test_user_reset_password(self):
         from django.core import mail
 

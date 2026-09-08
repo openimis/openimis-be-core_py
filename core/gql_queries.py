@@ -117,6 +117,10 @@ class InteractiveUserGQLType(DjangoObjectType):
         description="Same as userRoles but a straight list, without the M-N relation",
     )
     default_rows_per_page = graphene.Int()
+    is_superuser = graphene.Boolean(
+        description="True if the user has full access, either through the core User flag "
+        "or by holding the IMIS Administrator role. Not a database column, it is derived."
+    )
 
     class Meta:
         model = InteractiveUser
@@ -134,6 +138,11 @@ class InteractiveUserGQLType(DjangoObjectType):
             "language_id": ["exact"],
         }
         connection_class = ExtendedConnection
+
+    def resolve_is_superuser(self, info, **kwargs):
+        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+            raise PermissionDenied(_("unauthorized"))
+        return self.is_superuser
 
     def resolve_health_facility(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
