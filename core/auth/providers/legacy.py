@@ -49,18 +49,20 @@ class LegacyUserKeyProvider(IdentityProvider):
     def _key_for(username):
         if not username:
             return _deployment_wide_key()
-        # values_list, not only("i_user__private_key"): the latter returns a User
-        # with deferred fields, and User.__getattr__ -> _u -> self.officer
-        # re-enters refresh_from_db without end whenever i_user is NULL - which
-        # is every technical and every federated user. Reading the column
-        # directly never builds the instance, and is one query either way.
+        # Neither .only() nor .values_list() here. Both clone the queryset and
+        # drop the result cache CachedManager.filter() populates for a username
+        # lookup (`UNIQUE_FIELDS`, `CACHED_FK = {"i_user"}`), forcing a round
+        # trip on every authenticated request. Taking the whole instance also
+        # avoids the deferred-field recursion in User.__getattr__ -> _u, which
+        # is what .only("i_user__private_key") used to hit for any user whose
+        # i_user is NULL.
         user_class = apps.get_model("core", "User")
-        private_key = (
-            user_class.objects.filter(username=username, *user_class.filter_validity())
-            .values_list("i_user__private_key", flat=True)
-            .first()
-        )
-        return private_key or _deployment_wide_key()
+        db_user = user_class.objects.filter(
+            username=username, *user_class.filter_validity()
+        ).first()
+        if db_user and db_user.i_user and db_user.i_user.private_key:
+            return db_user.i_user.private_key
+        return _deployment_wide_key()
 
 
 def _deployment_wide_key():
