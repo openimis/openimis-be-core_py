@@ -3,12 +3,12 @@ from calendar import timegm
 import jwt
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.signals import token_issued
-from django.apps import apps
 from django.utils import timezone
 from django.dispatch import receiver
 import logging
 import uuid
 from datetime import datetime
+from core.auth import decode as auth_decode
 from core.models import InteractiveUser
 
 logger = logging.getLogger(__file__)
@@ -38,47 +38,11 @@ def jwt_encode_user_key(payload, context=None):
 
 
 def jwt_decode_user_key(token, context=None):
-    # First decode the token without validating it, so we can extract the username
-    not_validated = jwt.decode(
-        token,
-        get_jwt_key(encode=False, context=context),
-        options={
-            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
-            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
-            "verify_signature": False,
-        },
-        leeway=jwt_settings.JWT_LEEWAY,
-        audience=jwt_settings.JWT_AUDIENCE,
-        issuer=jwt_settings.JWT_ISSUER,
-        algorithms=[jwt_settings.JWT_ALGORITHM],
-    )
-    if not_validated and not_validated.get("username"):
-        user_class = apps.get_model("core", "User")
-        # no .only() here: it clones the queryset and drops the result cache
-        # that CachedManager.filter() just populated, forcing a round trip
-        db_user = user_class.objects.filter(
-            username=not_validated.get("username"),
-            *user_class.filter_validity()
-        ).first()
-        if db_user and db_user.i_user and db_user.i_user.private_key:
-            key = db_user.i_user.private_key
-        else:
-            key = get_jwt_key(encode=False)
-    else:
-        key = get_jwt_key(encode=False)
-    return jwt.decode(
-        token,
-        key,
-        options={
-            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
-            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
-            "verify_signature": jwt_settings.JWT_VERIFY,
-        },
-        leeway=jwt_settings.JWT_LEEWAY,
-        audience=jwt_settings.JWT_AUDIENCE,
-        issuer=jwt_settings.JWT_ISSUER,
-        algorithms=[jwt_settings.JWT_ALGORITHM],
-    )
+    # Kept as the configured JWT_DECODE_HANDLER so a core release stays
+    # decode-compatible with an assembly that has not been updated. The
+    # per-user-key path now lives in core.auth.providers.legacy, alongside the
+    # deployment-key one it will eventually be replaced by.
+    return auth_decode(token, context)
 
 
 def get_jwt_key(encode=True, context=None, payload=None):
