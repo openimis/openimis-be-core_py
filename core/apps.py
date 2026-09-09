@@ -5,6 +5,12 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 
+from core.bootstrap import (
+    database_expected,
+    optional_database,
+    unavailability_reason,
+)
+
 logger = logging.getLogger(__name__)
 
 MODULE_NAME = "core"
@@ -149,28 +155,35 @@ class CoreConfig(AppConfig):
         this.currency = str(cfg["currency"])
 
     def _configure_auto_provisioning(self, cfg):
-        if bool(os.environ.get("NO_DATABASE", False)):
-            logger.info(
-                "env NO_DATABASE set to True: no user auto provisioning possible!"
-            )
-            return
         group = cfg["auto_provisioning_user_group"]
         this.auto_provisioning_user_group = group
-        try:
+        if not database_expected():
+            logger.info(
+                "No user auto provisioning: %s", unavailability_reason()
+            )
+            return
+
+        with optional_database("create the %s auto provisioning group" % group, logger):
             from .models import Group
 
-            Group.objects.get(name=group)
-        except Group.DoesNotExist:
-            g = Group(name=group)
-            g.save()
-        try:
-            from django.contrib.auth.models import Permission
+            g, _ = Group.objects.get_or_create(name=group)
+            with optional_database(
+                "adding the view_user permission to %s" % group, logger
+            ):
+                from django.contrib.auth.models import Permission
 
-            p = Permission.objects.get(codename="view_user")
-            g.permissions.add(p)
-            g.save()
-        except Exception as e:
-            logger.warning("Failed set auto_provisioning_user_group " + str(e))
+                # a row in auth_group_permissions, not a database GRANT.
+                # auth's own post_migrate handler creates the Permission, so it
+                # can still be missing the first time this runs on a fresh
+                # database
+                permission = Permission.objects.filter(codename="view_user").first()
+                if permission:
+                    g.permissions.add(permission)
+                else:
+                    logger.info(
+                        "Permission view_user does not exist yet: %s left without it",
+                        group,
+                    )
 
     def _configure_graphql(self, cfg):
         this.async_mutations = (

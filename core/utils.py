@@ -538,9 +538,12 @@ def get_cached_foreign_key(instance, fk_field_name):
         The cached related object or None if not in cache or invalid.
     """
 
+    # log the pk, never the instance: User.__str__ reads i_user, which is the
+    # very query this function exists to avoid
     logger.debug(
-        "get_cached_foreign_key called: instance=%s, fk_field_name=%s",
-        instance,
+        "get_cached_foreign_key called: instance=%s(pk=%s), fk_field_name=%s",
+        type(instance).__name__,
+        instance.pk,
         fk_field_name,
     )
     # do nothing if exists already
@@ -573,6 +576,26 @@ def get_cached_foreign_key(instance, fk_field_name):
     if fk_value is None:
         logger.debug("ForeignKey value for %s is None", fk_field_name)
         return None
+
+    related_model = field.related_model
+    if not getattr(related_model, "USE_CACHE", False):
+        logger.debug("Related model %s is not cached", related_model.__name__)
+        return None
+
+    try:
+        # goes through the related model's CachedManager: a hit costs nothing,
+        # and a miss populates the cache for the next lookup
+        related = related_model.objects.get(pk=fk_value)
+    except related_model.DoesNotExist:
+        logger.debug(
+            "No %s with pk %s for %s", related_model.__name__, fk_value, fk_field_name
+        )
+        return None
+
+    # populate Django's own relation cache, so reading instance.<fk_field_name>
+    # later does not go back to the database
+    setattr(instance, field.name, related)
+    return related
 
 
 def clean_fk(instance):
