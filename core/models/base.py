@@ -119,6 +119,11 @@ class ModuleConfiguration(UUIDModel):
         validate_module_configuration(self)
 
     def save(self, *args, **kwargs):
+        # `_cfg` is a cached_property, so it keeps parsing the config string it
+        # saw first. Reassigning `config` on an instance that has already been
+        # validated or saved would otherwise validate - and reload the module
+        # with - the *previous* configuration.
+        self.__dict__.pop("_cfg", None)
         self.clean()
         super().save(*args, **kwargs)
         transaction.on_commit(lambda: reload_module_configuration(self))
