@@ -9,7 +9,7 @@ from graphql_jwt.settings import jwt_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode
-from core.models import TechnicalUser, User
+from core.models import InteractiveUser, TechnicalUser, User
 from core.test_helpers import create_test_interactive_user
 
 DEPLOYMENT_KID = "deployment-2026-09"
@@ -76,6 +76,16 @@ class LegacyTokenDecodeTest(TestCase):
         token = _sign(jwt_settings.JWT_SECRET_KEY, username="authTech")
 
         self.assertEqual(decode(token)["username"], "authTech")
+
+    def test_user_without_a_salt_is_verified_with_the_deployment_wide_secret(self):
+        # A user created without a password keeps private_key NULL, so their
+        # token is signed with the global secret while password users get a
+        # per-user one. Both regimes already exist; the key split unifies them.
+        user = create_test_interactive_user(username="authNoSalt", password=_password())
+        InteractiveUser.objects.filter(pk=user.i_user.pk).update(private_key=None)
+        token = _sign(jwt_settings.JWT_SECRET_KEY, username="authNoSalt")
+
+        self.assertEqual(decode(token)["username"], "authNoSalt")
 
     def test_unsigned_token_is_rejected(self):
         token = _sign(token_hex(32), username="authLegacy")

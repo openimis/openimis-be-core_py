@@ -36,13 +36,18 @@ class StubProvider(IdentityProvider):
     provision = "first_login"
     verify_calls = 0
 
+    def __init__(self, issuer=STUB_ISSUER, key=STUB_KEY, provider_id="stub"):
+        self.issuer = issuer
+        self.key = key
+        self.id = provider_id
+
     def accepts(self, header, unverified):
-        return unverified.get("iss") == STUB_ISSUER
+        return unverified.get("iss") == self.issuer
 
     def verify(self, token):
         type(self).verify_calls += 1
         payload = pyjwt.decode(
-            token, STUB_KEY, algorithms=["HS256"], issuer=STUB_ISSUER
+            token, self.key, algorithms=["HS256"], issuer=self.issuer
         )
         return Claims(
             raw=payload,
@@ -112,3 +117,31 @@ class ProviderRoutingTest(TestCase):
 
         with self.assertRaises(pyjwt.InvalidIssuerError):
             resolve(_stub_token())
+
+    def test_provider_registered_with_constructor_arguments(self):
+        # The mapping form is the one a configured provider needs: an external
+        # identity provider is an issuer, a key and a claim mapping, not a
+        # subclass. Without it the extension point can only register providers
+        # that take no arguments - which is to say, only test doubles.
+        issuer = "https://other.example.test/realms/openimis"
+        key = token_hex(32)
+        registration = [
+            {
+                "provider": "core.tests.test_auth_registry.StubProvider",
+                "issuer": issuer,
+                "key": key,
+                "provider_id": "configured",
+            }
+        ]
+        token = pyjwt.encode(
+            {"iss": issuer, "sub": "configuredUser", "exp": _exp()},
+            key,
+            algorithm="HS256",
+        )
+
+        with override_settings(AUTH_TOKEN_PROVIDERS=registration):
+            self.assertEqual(resolve(token).id, "configured")
+            self.assertEqual(decode(token)["sub"], "configuredUser")
+            # The arguments took effect rather than falling back to defaults.
+            with self.assertRaises(pyjwt.InvalidIssuerError):
+                resolve(_stub_token())
