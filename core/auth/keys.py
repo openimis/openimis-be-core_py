@@ -12,28 +12,10 @@ import jwt
 from django.conf import settings
 from graphql_jwt.settings import jwt_settings
 
-PER_USER = "per_user"
-DEPLOYMENT = "deployment"
-
-
-def mode():
-    """`per_user` (the default) or `deployment`.
-
-    Only encoding consults this. Decoding accepts both shapes for the whole
-    migration window - a mode-gated decode would invalidate every outstanding
-    token the moment a deployment flipped the switch.
-    """
-    return getattr(settings, "JWT_KEY_MODE", PER_USER)
-
 
 def deployment_keys():
     """`{kid: verification key}`. Empty until a deployment provisions one."""
     return getattr(settings, "JWT_DEPLOYMENT_KEYS", None) or {}
-
-
-def active_kid():
-    """The `kid` encoding will stamp once it moves to the deployment key."""
-    return getattr(settings, "JWT_ACTIVE_KID", None)
 
 
 def algorithm():
