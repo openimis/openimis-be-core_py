@@ -251,6 +251,38 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
             return False
         return True
 
+    def assert_mutation_error(
+        self, mutation_uuid, token, expected_error, internal=True
+    ):
+        """
+        Asserts the mutation failed and that `expected_error` appears in its error.
+
+        Relies on get_mutation_result(allow_exceptions=False), which waits for the
+        mutation to leave the pending state and then returns the log instead of
+        raising -- do not reimplement the polling in a module test case.
+        """
+        node = self._get_mutation_log_node(mutation_uuid, token, internal=internal)
+        error = node["error"]
+        self.assertIsNotNone(
+            error, f"no error found when this was expected {expected_error}"
+        )
+        self.assertIn(expected_error, error, error)
+
+    def assert_mutation_success(self, mutation_uuid, token, internal=True):
+        """Asserts the mutation completed successfully."""
+        from core.models.base_mutation import MutationLog
+
+        node = self._get_mutation_log_node(mutation_uuid, token, internal=internal)
+        self.assertEqual(node["status"], MutationLog.SUCCESS, node["error"])
+
+    def _get_mutation_log_node(self, mutation_uuid, token, internal=True):
+        content = self.get_mutation_result(
+            mutation_uuid, token, internal=internal, allow_exceptions=False
+        )
+        edges = content["data"]["mutationLogs"]["edges"]
+        self.assertTrue(edges, f"no mutation log found for {mutation_uuid}")
+        return edges[0]["node"]
+
     def send_mutation_raw(self, mutation_raw, token, variables_param=None, follow=True):
         params = {"headers": {"HTTP_AUTHORIZATION": f"Bearer {token}"}}
         if variables_param:

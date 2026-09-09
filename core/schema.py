@@ -38,7 +38,7 @@ from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import ValidationError, PermissionDenied, ObjectDoesNotExist
+from django.core.exceptions import ValidationError, PermissionDenied
 from core.gql_errors import AuthenticationRequired
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
@@ -452,7 +452,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
                     )  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                                        # run the mutation inside a savepoint: should it leave the
+                    # run the mutation inside a savepoint: should it leave the
                     # transaction broken (a database error, raised or caught by
                     # the service itself), exiting this block rolls the savepoint
                     # back and resets connection.needs_rollback, so the

@@ -235,7 +235,7 @@ class RoleRight(VersionedModel):
     def _get_by_uuid(cls, uuid_value):
         """Custom method to look up Role by UUID, which will be used when importing the fixture."""
         try:
-            return Role.objects.get(*Role.filter_validity(),uuid=uuid_value)
+            return Role.objects.get(*Role.filter_validity(), uuid=uuid_value)
         except ObjectDoesNotExist:
             raise ValueError(f"Role with UUID {uuid_value} does not exist")
 
@@ -323,15 +323,21 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
-        if self.user and self.user.is_superuser:
+        # bind once: `user` is a query, and this used to run it twice per call
+        user = self.user
+        if user and user.is_superuser:
             return True
         return self.is_imis_admin
 
     @is_superuser.setter
     def is_superuser(self, value):
-        if self.user:
-            self.user.is_superuser = value
-            self.user.save()
+        # likewise, and here it was also a correctness bug: each `self.user`
+        # returned a *different* instance, so the flag was set on one object
+        # and a second, unmodified one was saved
+        user = self.user
+        if user:
+            user.is_superuser = value
+            user.save()
         else:
             raise AttributeError("Cannot set is_superuser: no associated User found")
 
@@ -707,8 +713,13 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
+    # update_cache() reads UNIQUE_FIELDS off the *instance* to write the alias
+    # entries that let a lookup by username resolve to the cached object. It
+    # lives on UserManager too, but that copy is invisible from here, so without
+    # this the username alias was never written and every authentication missed
+    # the cache. InteractiveUser declares its own for the same reason.
+    UNIQUE_FIELDS = {"pk", "uuid", "id", "username"}
     USE_CACHE = not getattr(settings, "IS_TESTING", False)
-    objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True

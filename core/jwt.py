@@ -54,13 +54,12 @@ def jwt_decode_user_key(token, context=None):
     )
     if not_validated and not_validated.get("username"):
         user_class = apps.get_model("core", "User")
-        db_user = (
-            user_class.objects.filter(
-                username=not_validated.get("username"),
-                *user_class.filter_validity()
-            ).only("i_user__private_key")
-            .first()
-        )
+        # no .only() here: it clones the queryset and drops the result cache
+        # that CachedManager.filter() just populated, forcing a round trip
+        db_user = user_class.objects.filter(
+            username=not_validated.get("username"),
+            *user_class.filter_validity()
+        ).first()
         if db_user and db_user.i_user and db_user.i_user.private_key:
             key = db_user.i_user.private_key
         else:

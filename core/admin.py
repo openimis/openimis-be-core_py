@@ -5,14 +5,13 @@ from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
-
+from core.models import UserBusinessAccess
 from core.cache_control import (
     UnknownCacheAliasError,
     flush_caches,
     list_cache_info,
     resolve_cache_aliases,
 )
-from .models import FieldControl, ModuleConfiguration, TechnicalUser, UserBusinessAccess
 from .forms import TechnicalUserAdmin, GroupAdmin
 
 admin.site.unregister(Group)

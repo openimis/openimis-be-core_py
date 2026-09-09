@@ -1,8 +1,6 @@
 import copy
 import json
-import os
 import logging
-import sys
 import uuid
 
 from datetime import datetime as py_datetime
@@ -12,6 +10,11 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q, JSONField
 
+from core.bootstrap import (
+    database_expected,
+    optional_database,
+    unavailability_reason,
+)
 from core.module_config_registry import validate_module_configuration, reload_module_configuration
 
 # from core.datetimes.ad_datetime import datetime as py_datetime
@@ -72,13 +75,21 @@ class ModuleConfiguration(UUIDModel):
     @classmethod
     def get_or_default(cls, module, default, layer="be"):
         defaults = copy.deepcopy(default)
-        if bool(os.environ.get("NO_DATABASE", False)):
+        if not database_expected():
             logger.info(
-                "env NO_DATABASE set to True: ModuleConfiguration not loaded from db!"
+                "Not loading the %s configuration from the database: %s",
+                module,
+                unavailability_reason(),
             )
             return defaults
 
-        try:
+        configuration = defaults
+        # runs from every AppConfig.ready(), so the table may not exist yet
+        with optional_database(
+            "loading the %s configuration, using defaults" % module,
+            logger,
+            tolerate_all=True,
+        ):
             now = py_datetime.now()  # can't use core config here...
             qs = cls.objects.filter(
                 Q(is_disabled_until=None) | Q(is_disabled_until__lt=now),
@@ -86,17 +97,10 @@ class ModuleConfiguration(UUIDModel):
                 module=module,
             ).first()
             if qs:
-                db_configuration = qs._cfg
-                return {**defaults, **db_configuration}
+                configuration = {**defaults, **qs._cfg}
             else:
                 logger.info("No %s configuration, using default!" % module)
-                return defaults
-        except Exception:
-            logger.error(
-                "Failed to load %s configuration, using default!\n%s: %s"
-                % (module, sys.exc_info()[0].__name__, sys.exc_info()[1])
-            )
-            return defaults
+        return configuration
 
     @cached_property
     def _cfg(self):

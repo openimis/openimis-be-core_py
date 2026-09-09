@@ -130,4 +130,6 @@ class UserSerializer(serializers.ModelSerializer):
             "is_imis_admin",
             "i_user",
             "t_user",
+            "claim_admin",
+            "officer",
         )
