@@ -30,13 +30,8 @@ class IdentitySpec:
 
 
 def issued_at_from(payload):
-    """openIMIS tokens carry no `iat`.
-
-    graphql_jwt writes `origIat` only when refresh is enabled, and core's
-    encoder writes `nbf`; neither writes `iat`. Once encoding moves to the
-    deployment key it will emit a real one, and this fallback will only serve
-    tokens issued inside the migration window.
-    """
+    # openIMIS tokens carry no iat: graphql_jwt writes origIat only when refresh
+    # is enabled, and core's encoder writes nbf.
     for claim in ("iat", "origIat", "nbf"):
         value = payload.get(claim)
         if value is not None:
@@ -45,12 +40,9 @@ def issued_at_from(payload):
 
 
 def claims_from_payload(payload):
-    """Build Claims from an openIMIS-issued payload.
-
-    A missing username has to surface as an InvalidTokenError, not a KeyError:
-    graphql_jwt.utils.get_payload translates only InvalidTokenError, DecodeError
-    and ExpiredSignatureError, so anything else reaches the client as a 500.
-    """
+    # A missing claim must raise an InvalidTokenError, not a KeyError:
+    # graphql_jwt.utils.get_payload translates nothing else, so it would reach
+    # the client as a 500 instead of an authentication failure.
     for claim in ("username", "exp"):
         if not payload.get(claim):
             raise jwt.MissingRequiredClaimError(claim)

@@ -5,11 +5,8 @@ from core.auth.claims import Claims, IdentitySpec
 
 
 class IdentityProvider(abc.ABC):
-    """Three methods are the whole contract.
-
-    `verify` is database-free for every provider but the legacy one, which is
-    why that one is separate: an external provider verifies from a cached key
-    set, so authenticating a request costs no query.
+    """Three methods are the whole contract. `verify` does no database access,
+    which is why the legacy per-user-key path is a provider of its own.
     """
 
     id: str

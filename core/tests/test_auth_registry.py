@@ -25,11 +25,8 @@ class DummyContext:
 
 
 class StubProvider(IdentityProvider):
-    """A second provider, registered by dotted path from the test settings.
-
-    It shares no key material and no code with the local path - which is the
-    point: if this routes and verifies, an OpenID Connect provider can be added
-    later without touching local tokens.
+    """A second provider, registered from the test settings. It shares no key
+    material and no code with the local path - which is the point.
     """
 
     id = "stub"
@@ -110,8 +107,7 @@ class ProviderRoutingTest(TestCase):
         self.assertEqual(StubProvider.verify_calls, 0)
 
     def test_provider_registration_follows_the_settings(self):
-        # The registry caches its provider list; the cache key has to include
-        # the registration setting or override_settings would be defeated.
+        # The cache key has to include the registration setting.
         with with_stub_provider:
             self.assertEqual(resolve(_stub_token()).id, "stub")
 
@@ -119,10 +115,8 @@ class ProviderRoutingTest(TestCase):
             resolve(_stub_token())
 
     def test_provider_registered_with_constructor_arguments(self):
-        # The mapping form is the one a configured provider needs: an external
-        # identity provider is an issuer, a key and a claim mapping, not a
-        # subclass. Without it the extension point can only register providers
-        # that take no arguments - which is to say, only test doubles.
+        # The mapping form is what a configured provider needs; without it the
+        # extension point can only register providers that take no arguments.
         issuer = "https://other.example.test/realms/openimis"
         key = token_hex(32)
         registration = [

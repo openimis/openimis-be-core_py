@@ -38,10 +38,8 @@ def jwt_encode_user_key(payload, context=None):
 
 
 def jwt_decode_user_key(token, context=None):
-    # Kept as the configured JWT_DECODE_HANDLER so a core release stays
-    # decode-compatible with an assembly that has not been updated. The
-    # per-user-key path now lives in core.auth.providers.legacy, alongside the
-    # deployment-key one it will eventually be replaced by.
+    # Kept as the configured JWT_DECODE_HANDLER so this module stays
+    # decode-compatible with an assembly that has not been updated.
     return auth_decode(token, context)
 
 

@@ -1,12 +1,4 @@
-"""Deployment key material.
-
-Every value is read inside a function: reading settings at import time is what
-makes a module impossible to reconfigure in tests and in a worker process.
-
-Provisioning the keypair, deriving its `kid` and publishing a JWKS document
-belong to the ticket that switches encoding over; this module only resolves what
-a deployment has already been given.
-"""
+"""Deployment key material. Read inside functions, never at import time."""
 
 import jwt
 from django.conf import settings
@@ -19,11 +11,8 @@ def deployment_keys():
 
 
 def algorithm():
-    """One algorithm, deliberately.
-
-    Accepting a list next to a set of public keys is what makes algorithm
-    confusion possible - an attacker signs HS256 with a key everyone can read.
-    """
+    # One algorithm, not a list: accepting several alongside public keys is what
+    # makes algorithm confusion possible.
     return getattr(settings, "JWT_DEPLOYMENT_ALGORITHM", "RS256")
 
 

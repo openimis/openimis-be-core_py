@@ -9,12 +9,9 @@ from core.auth.providers.base import IdentityProvider
 class LocalProvider(IdentityProvider):
     """openIMIS-issued tokens signed with the deployment keypair.
 
-    No database access: the key is selected by the `kid` header out of a fixed,
-    trusted key set. Reading that header before verification resembles what
-    `providers/legacy.py` does, and is not the same thing: an attacker-chosen
-    `kid` selects a key that then fails verification, whereas there the key is
-    selected by an attacker-chosen *identity*. That is why the legacy provider
-    is a separate file with an end date, rather than a branch in here.
+    Trusting the unverified `kid` is safe because it only picks from a fixed key
+    set: a forged one selects a key that then fails verification. Contrast
+    providers/legacy.py, where the key is chosen by an unverified *identity*.
     """
 
     id = "local"

@@ -48,8 +48,8 @@ def _sign(key, kid=None, algorithm="HS256", **claims):
 
 
 class LegacyTokenDecodeTest(TestCase):
-    """Tokens signed with the per-user password salt - every token in
-    circulation on every deployment today. They carry no kid.
+    """Tokens signed with the per-user salt - what every deployment issues
+    today. They carry no kid.
     """
 
     def setUp(self):
@@ -63,8 +63,8 @@ class LegacyTokenDecodeTest(TestCase):
         self.assertEqual(decode(self.token)["username"], self.user.username)
 
     def test_legacy_token_is_verified_against_the_user_salt(self):
-        # Rotating the salt must still invalidate the token: that side effect is
-        # what revocation relies on until the not-before check replaces it.
+        # Rotating the salt is what revocation relies on until the not-before
+        # check replaces it.
         self.user.i_user.set_password(self.password)
         self.user.i_user.save()
 
@@ -72,18 +72,16 @@ class LegacyTokenDecodeTest(TestCase):
             decode(self.token)
 
     def test_technical_user_token_decodes(self):
-        # A technical user has no InteractiveUser row and so no salt; its token
-        # is signed with the deployment-wide secret. Issuing one still raises
-        # upstream - that is fixed when the legacy path goes away, not here.
+        # No InteractiveUser row means no salt, so the deployment-wide secret
+        # signs it. Issuing one still raises upstream; not fixed here.
         create_test_technical_user(username="authTech")
         token = _sign(jwt_settings.JWT_SECRET_KEY, username="authTech")
 
         self.assertEqual(decode(token)["username"], "authTech")
 
     def test_user_without_a_salt_is_verified_with_the_deployment_wide_secret(self):
-        # A user created without a password keeps private_key NULL, so their
-        # token is signed with the global secret while password users get a
-        # per-user one. Both regimes already exist; the key split unifies them.
+        # private_key NULL means the global secret signs it - the second of the
+        # two regimes that already coexist.
         user = create_test_interactive_user(username="authNoSalt", password=_password())
         InteractiveUser.objects.filter(pk=user.i_user.pk).update(private_key=None)
         token = _sign(jwt_settings.JWT_SECRET_KEY, username="authNoSalt")
@@ -101,10 +99,8 @@ class LegacyTokenDecodeTest(TestCase):
 class DeploymentKeyDecodeTest(TestCase):
     """Tokens signed with the deployment keypair, selected by the kid header.
 
-    Every assertion here is also an assertion about the error type: only
-    InvalidTokenError, DecodeError and ExpiredSignatureError are translated by
-    graphql_jwt.utils.get_payload, so any other exception type reaches the
-    client as a 500 instead of an authentication failure.
+    The exception type matters as much as the rejection: anything that is not an
+    InvalidTokenError reaches the client as a 500, not an auth failure.
     """
 
     def test_deployment_token_decodes_without_touching_the_database(self):
@@ -144,9 +140,7 @@ class DeploymentKeyDecodeTest(TestCase):
 
 
 class NoDeploymentKeyConfiguredTest(TestCase):
-    """The default state: no keypair provisioned, so no kid resolves. A
-    deployment upgrading without provisioning a key is unaffected.
-    """
+    """The default state: no keypair provisioned, so no kid resolves."""
 
     def test_kid_token_is_rejected_when_no_key_is_provisioned(self):
         token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
