@@ -23,8 +23,11 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
+    now = timegm(datetime.utcnow().utctimetuple())
     payload["jti"] = str(uuid.uuid4())
-    payload["nbf"] = timegm(datetime.utcnow().utctimetuple())
+    payload["nbf"] = now
+    # Here too, so claims.issued_at_from stops falling back to origIat.
+    payload["iat"] = now
 
     token = jwt.encode(
         payload,
