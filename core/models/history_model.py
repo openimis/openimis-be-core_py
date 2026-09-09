@@ -284,6 +284,12 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
                     replaced_entity.replacement_uuid = None
                     replaced_entity.save(user=user)
             result = super().save(*args, **kwargs)
+            # This is a soft delete: the row survives with is_deleted=True, so the
+            # cache must be refreshed like save() does. Without this, the manager
+            # keeps serving the pre-delete instance and an undo_delete() reloading
+            # it sees is_deleted=False, finds nothing dirty and silently writes
+            # nothing.
+            self.update_cache()
             return result
         else:
             raise ValidationError(
