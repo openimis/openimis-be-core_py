@@ -9,8 +9,11 @@ from graphql_jwt.settings import jwt_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode
-from core.models import InteractiveUser, TechnicalUser, User
-from core.test_helpers import create_test_interactive_user
+from core.models import InteractiveUser, User
+from core.test_helpers import (
+    create_test_interactive_user,
+    create_test_technical_user,
+)
 
 DEPLOYMENT_KID = "deployment-2026-09"
 DEPLOYMENT_KEY = token_hex(32)
@@ -72,7 +75,7 @@ class LegacyTokenDecodeTest(TestCase):
         # A technical user has no InteractiveUser row and so no salt; its token
         # is signed with the deployment-wide secret. Issuing one still raises
         # upstream - that is fixed when the legacy path goes away, not here.
-        TechnicalUser(username="authTech", email="authTech@example.test").save()
+        create_test_technical_user(username="authTech")
         token = _sign(jwt_settings.JWT_SECRET_KEY, username="authTech")
 
         self.assertEqual(decode(token)["username"], "authTech")
