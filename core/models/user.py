@@ -235,7 +235,7 @@ class RoleRight(VersionedModel):
     def _get_by_uuid(cls, uuid_value):
         """Custom method to look up Role by UUID, which will be used when importing the fixture."""
         try:
-            return Role.objects.get(*Role.filter_validity(),uuid=uuid_value)
+            return Role.objects.get(*Role.filter_validity(), uuid=uuid_value)
         except ObjectDoesNotExist:
             raise ValueError(f"Role with UUID {uuid_value} does not exist")
 

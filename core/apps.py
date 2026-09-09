@@ -27,7 +27,7 @@ DEFAULT_CFG = {
         "True" if os.environ.get(
             "ASYNC",
             os.environ.get("MODE", "PROD")
-            ).lower() == "prod" else "False"
+        ).lower() == "prod" else "False"
     ),
     "password_reset_template": "password_reset.txt",
     "currency": "$",
