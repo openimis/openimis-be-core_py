@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 import jwt
@@ -8,23 +9,43 @@ from core.auth.providers.legacy import LegacyUserKeyProvider
 from core.auth.providers.local import LocalProvider
 
 
+def _registration():
+    """`AUTH_TOKEN_PROVIDERS`: what a deployment adds to the built-in two.
+
+    An entry is either a dotted path, or a mapping carrying one under
+    `provider` whose remaining keys become constructor arguments. The second
+    form is what a configured provider needs - an external identity provider is
+    an issuer, an audience and a claim mapping, not a subclass - so the
+    extension point does not have to change to accept one.
+    """
+    return getattr(settings, "AUTH_TOKEN_PROVIDERS", None) or ()
+
+
+def _instantiate(entry):
+    if isinstance(entry, str):
+        return import_string(entry)()
+    config = dict(entry)
+    return import_string(config.pop("provider"))(**config)
+
+
 @lru_cache(maxsize=8)
-def _build(registration):
+def _build(_fingerprint):
     """Built once per distinct registration.
 
-    The cache key is the registration itself rather than a module-level
-    singleton, so a settings override takes effect instead of being defeated by
-    a list built during the first request.
+    Keyed on a fingerprint of the setting rather than held in a module-level
+    singleton, so an override takes effect instead of being defeated by a list
+    built during the first request. Providers are cached because a configured
+    one owns a key-set client whose cache is the point of it.
     """
     return (
         LocalProvider(),
         LegacyUserKeyProvider(),
-        *(import_string(path)() for path in registration),
+        *(_instantiate(entry) for entry in _registration()),
     )
 
 
 def providers():
-    return _build(tuple(getattr(settings, "AUTH_TOKEN_PROVIDERS", None) or ()))
+    return _build(json.dumps(_registration(), sort_keys=True, default=str))
 
 
 def resolve(token):
