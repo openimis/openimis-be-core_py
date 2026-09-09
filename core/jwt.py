@@ -9,6 +9,8 @@ import logging
 import uuid
 from datetime import datetime
 from core.auth import decode as auth_decode
+from core.auth import keys
+from core.auth.encode import encode as auth_encode
 from core.models import InteractiveUser
 
 logger = logging.getLogger(__file__)
@@ -23,6 +25,9 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
+    if keys.mode() == keys.DEPLOYMENT:
+        return auth_encode(payload, context)
+
     now = timegm(datetime.utcnow().utctimetuple())
     payload["jti"] = str(uuid.uuid4())
     payload["nbf"] = now
