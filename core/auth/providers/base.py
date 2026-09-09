@@ -8,9 +8,8 @@ class IdentityProvider(abc.ABC):
     """Three methods are the whole contract.
 
     `verify` is database-free for every provider but the legacy one, which is
-    why that one is separate: it is what keeps an external identity provider off
-    the request hot loop, and the dashboards authorization check a single rights
-    lookup.
+    why that one is separate: an external provider verifies from a cached key
+    set, so authenticating a request costs no query.
     """
 
     id: str

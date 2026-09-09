@@ -33,9 +33,9 @@ def issued_at_from(payload):
     """openIMIS tokens carry no `iat`.
 
     graphql_jwt writes `origIat` only when refresh is enabled, and core's
-    encoder writes `nbf`; neither writes `iat`. The deployment-key encoder emits
-    a real one, after which the fallback only serves tokens issued inside the
-    migration window.
+    encoder writes `nbf`; neither writes `iat`. Once encoding moves to the
+    deployment key it will emit a real one, and this fallback will only serve
+    tokens issued inside the migration window.
     """
     for claim in ("iat", "origIat", "nbf"):
         value = payload.get(claim)

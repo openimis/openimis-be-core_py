@@ -10,10 +10,11 @@ class LocalProvider(IdentityProvider):
     """openIMIS-issued tokens signed with the deployment keypair.
 
     No database access: the key is selected by the `kid` header out of a fixed,
-    trusted key set. Reading that header before verification looks like the
-    pattern being removed, and is not: an attacker-chosen `kid` selects a key
-    that then fails verification. The old code is unsafe-shaped because the key
-    is selected by an attacker-chosen *identity*.
+    trusted key set. Reading that header before verification resembles what
+    `providers/legacy.py` does, and is not the same thing: an attacker-chosen
+    `kid` selects a key that then fails verification, whereas there the key is
+    selected by an attacker-chosen *identity*. That is why the legacy provider
+    is a separate file with an end date, rather than a branch in here.
     """
 
     id = "local"

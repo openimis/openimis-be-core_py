@@ -34,8 +34,9 @@ def _build(_fingerprint):
 
     Keyed on a fingerprint of the setting rather than held in a module-level
     singleton, so an override takes effect instead of being defeated by a list
-    built during the first request. Providers are cached because a configured
-    one owns a key-set client whose cache is the point of it.
+    built during the first request. Instances are reused rather than rebuilt per
+    call because a configured provider will own a key-set client, and caching
+    those keys is the point of it.
     """
     return (
         LocalProvider(),
