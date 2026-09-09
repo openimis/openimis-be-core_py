@@ -401,8 +401,7 @@ class CachedManager(models.Manager):
                             "default"  # Optional: Set DB alias if needed
                         )
 
-                    for fk in self.CACHED_FK:
-                        get_cached_foreign_key(cached_instance, fk)
+                    get_cached_foreign_keys([cached_instance], self.CACHED_FK)
                     logger.debug("Cache hit for key: %s", cache_key)
                     return self._instances_to_queryset([cached_instance], True)
                 elif isinstance(cached_data, (uuid.UUID, str)):
@@ -429,8 +428,6 @@ class CachedManager(models.Manager):
                         instance._state.adding = False
                         if hasattr(instance, "_state"):
                             instance._state.db = "default"
-                        for fk in self.CACHED_FK:
-                            get_cached_foreign_key(instance, fk)
                         cached_instances.append(instance)
                         logger.debug("Cache hit for key: %s", ck)
                     elif isinstance(data, (uuid.UUID, str)):
@@ -447,6 +444,9 @@ class CachedManager(models.Manager):
                         uncached_values.append(v)
                 else:
                     uncached_values.append(v)
+
+            # one batch for the whole page: resolving per row is an N+1
+            get_cached_foreign_keys(cached_instances, self.CACHED_FK)
 
             qs = self.get_queryset().none()
             if cached_instances:
@@ -528,16 +528,100 @@ class CachedManager(models.Manager):
         return cached_qs
 
 
+def get_cached_foreign_keys(instances, fk_field_names):
+    """
+    Attach ForeignKey-related objects to several instances at once.
+
+    Resolving them one instance at a time is an N+1: reconstructing a page of
+    cached objects would issue one query per row. This reads the related
+    objects from the cache in a single round trip and fetches whatever is left
+    with a single query, then caches those for next time.
+
+    Args:
+        instances: model instances of the same model (e.g. a page of Users).
+        fk_field_names: names of the ForeignKey fields to attach (e.g. {'i_user'}).
+    """
+    instances = [i for i in instances if i is not None]
+    if not instances or not fk_field_names:
+        return
+
+    model = type(instances[0])
+    for fk_field_name in fk_field_names:
+        try:
+            field = model._meta.get_field(fk_field_name)
+        except FieldDoesNotExist:
+            logger.error(
+                "Field %s does not exist on model %s",
+                fk_field_name,
+                model._meta.model_name,
+            )
+            continue
+
+        if not isinstance(field, ForeignKey):
+            logger.error(
+                "Field %s on model %s is not a ForeignKey",
+                fk_field_name,
+                model._meta.model_name,
+            )
+            continue
+
+        related_model = field.related_model
+        if not getattr(related_model, "USE_CACHE", False):
+            logger.debug("Related model %s is not cached", related_model.__name__)
+            continue
+
+        # group the instances by the value of the FK column (attname, e.g. i_user_id)
+        wanted = {}
+        for instance in instances:
+            fk_value = getattr(instance, field.attname, None)
+            if fk_value is not None:
+                wanted.setdefault(fk_value, []).append(instance)
+        if not wanted:
+            continue
+
+        resolved, missing = _related_from_cache(related_model, wanted)
+        if missing:
+            # one query for every miss, and cache them so the next page is free
+            for related in related_model.objects.filter(pk__in=missing):
+                related.update_cache()
+                resolved[related.pk] = related
+
+        for fk_value, holders in wanted.items():
+            related = resolved.get(fk_value)
+            if related is None:
+                continue
+            for instance in holders:
+                # populates Django's relation cache, so reading
+                # instance.<fk_field_name> does not go back to the database
+                setattr(instance, field.name, related)
+
+
+def _related_from_cache(related_model, fk_values):
+    """Read related objects from the cache; return (by pk, list of misses)."""
+    keys = {value: get_cache_key(related_model, value) for value in fk_values}
+    cached = cache.get_many(list(keys.values()))
+
+    resolved = {}
+    missing = []
+    for fk_value, key in keys.items():
+        data = cached.get(key)
+        if isinstance(data, dict):
+            related = related_model(**data)
+            related._state.adding = False
+            related._state.db = "default"
+            resolved[fk_value] = related
+        else:
+            missing.append(fk_value)
+    return resolved, missing
+
+
 def get_cached_foreign_key(instance, fk_field_name):
     """
-    Retrieves a ForeignKey-related object from cache for a given model instance, without querying the database.
-    Args:
-        instance: The model instance (e.g., User instance).
-        fk_field_name: The name of the ForeignKey field (e.g., 'i_user').
-    Returns:
-        The cached related object or None if not in cache or invalid.
-    """
+    Attach one ForeignKey-related object to a single instance.
 
+    Thin wrapper over :func:`get_cached_foreign_keys`; prefer that one whenever
+    more than a single instance is involved.
+    """
     # log the pk, never the instance: User.__str__ reads i_user, which is the
     # very query this function exists to avoid
     logger.debug(
@@ -546,56 +630,8 @@ def get_cached_foreign_key(instance, fk_field_name):
         instance.pk,
         fk_field_name,
     )
-    # do nothing if exists already
-    # if getattr(instance, fk_field_name, None) is not None:
-    #     return None
-    # Get the model field
-    try:
-        field = instance._meta.get_field(fk_field_name)
-    except FieldDoesNotExist:
-        logger.error(
-            "Field %s does not exist on model %s",
-            fk_field_name,
-            instance._meta.model_name,
-        )
-        return None
-
-    # Verify it's a ForeignKey
-    if not isinstance(field, ForeignKey):
-        logger.error(
-            "Field %s on model %s is not a ForeignKey",
-            fk_field_name,
-            instance._meta.model_name,
-        )
-        return None
-
-    # Get the ForeignKey value (e.g., i_user_id)
-    fk_value = getattr(
-        instance, field.attname
-    )  # attname is the column name (e.g., i_user_id)
-    if fk_value is None:
-        logger.debug("ForeignKey value for %s is None", fk_field_name)
-        return None
-
-    related_model = field.related_model
-    if not getattr(related_model, "USE_CACHE", False):
-        logger.debug("Related model %s is not cached", related_model.__name__)
-        return None
-
-    try:
-        # goes through the related model's CachedManager: a hit costs nothing,
-        # and a miss populates the cache for the next lookup
-        related = related_model.objects.get(pk=fk_value)
-    except related_model.DoesNotExist:
-        logger.debug(
-            "No %s with pk %s for %s", related_model.__name__, fk_value, fk_field_name
-        )
-        return None
-
-    # populate Django's own relation cache, so reading instance.<fk_field_name>
-    # later does not go back to the database
-    setattr(instance, field.name, related)
-    return related
+    get_cached_foreign_keys([instance], [fk_field_name])
+    return getattr(instance, fk_field_name, None)
 
 
 def clean_fk(instance):

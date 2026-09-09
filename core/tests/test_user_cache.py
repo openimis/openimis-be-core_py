@@ -111,3 +111,60 @@ class UserCacheTestCase(openIMISGraphQLTestCase):
         warm, _ = self._get_current_user(token)
         self.assertEqual(warm.status_code, 200)
         self.assertEqual(warm.json()["username"], self.user.username)
+
+
+class CachedForeignKeyBatchTestCase(openIMISGraphQLTestCase):
+    """A page of cached objects must not resolve its FKs one row at a time."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.users = [
+            create_test_interactive_user(username=f"fkbatch{i}") for i in range(6)
+        ]
+
+    def setUp(self):
+        super().setUp()
+        User.USE_CACHE = True
+        InteractiveUser.USE_CACHE = True
+        cache.clear()
+        self.addCleanup(self._restore)
+
+    @staticmethod
+    def _restore():
+        User.USE_CACHE = False
+        InteractiveUser.USE_CACHE = False
+        cache.clear()
+
+    def _fetch(self, ids):
+        """Load the users and touch i_user on each, as a serializer would."""
+        seen = []
+
+        def tracer(execute, sql, params, many, context):
+            match = re.search(r'FROM "([^"]+)"', sql)
+            if match and match.group(1) in USER_TABLES:
+                seen.append(match.group(1))
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(tracer):
+            users = list(User.objects.filter(id__in=ids))
+            names = [u.i_user.login_name if u.i_user else None for u in users]
+        return names, len(seen)
+
+    def test_a_page_of_cached_users_costs_at_most_one_query(self):
+        ids = [u.id for u in self.users]
+
+        cold_names, _ = self._fetch(ids)
+        self._fetch(ids)  # let both caches settle
+        warm_names, warm_queries = self._fetch(ids)
+
+        self.assertLessEqual(
+            warm_queries,
+            1,
+            "resolving the i_user of %d cached users took %d queries -- the "
+            "foreign keys are being fetched one row at a time"
+            % (len(ids), warm_queries),
+        )
+        self.assertEqual(set(cold_names), set(warm_names))
+        self.assertEqual(len(warm_names), len(ids))
+        self.assertNotIn(None, warm_names)
