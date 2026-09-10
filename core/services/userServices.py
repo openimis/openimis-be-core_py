@@ -337,6 +337,33 @@ def _try_auto_provision(username, password):
     return None
 
 
+def open_admin_session(request, user):
+    """Open a Django session for a staff user, for the routed admin site.
+
+    Deliberately not called from `user_authentication`: that function verifies a
+    password, and a session opened there exists before any second factor has been
+    presented - and a session authenticates the API on its own. The caller that
+    completes the login flow opens it instead, so the ordering is a property of
+    the flow rather than something each call site must remember.
+
+    Staff-only, as before: `/admin/` is the only thing that needs it, and
+    `is_staff` resolves to superuser-or-IMIS-administrator for an interactive
+    user. Returns True when a session was opened, so a caller can log it.
+    """
+    if not (getattr(user, "is_staff", False) and hasattr(request, "session")):
+        return False
+    backend = next(
+        (
+            b
+            for b in settings.AUTHENTICATION_BACKENDS
+            if b.endswith("ModelBackend")
+        ),
+        settings.AUTHENTICATION_BACKENDS[-1],
+    )
+    login(request, user, backend=backend)
+    return True
+
+
 def user_authentication(request, username, password):
     if not username or not password:
         raise ParseError(_("Missing username or password"))
@@ -351,17 +378,6 @@ def user_authentication(request, username, password):
         logger.debug(f"Authentication failed for username: {username}")
         raise AuthenticationFailed("INCORRECT_CREDENTIALS")
 
-    if getattr(user, "is_staff", False) and hasattr(request, "session"):
-        from django.conf import settings
-        backend = next(
-            (
-                b
-                for b in settings.AUTHENTICATION_BACKENDS
-                if b.endswith("ModelBackend")
-            ),
-            settings.AUTHENTICATION_BACKENDS[-1],
-        )
-        login(request, user, backend=backend)
     return user
 
 

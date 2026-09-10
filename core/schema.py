@@ -30,6 +30,7 @@ from core.services import (
     reset_user_password,
     set_user_password,
     sign_out_everywhere,
+    open_admin_session,
     user_authentication,
     wait_for_mutation,
 )
@@ -2236,7 +2237,11 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
 
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)
-        return super().mutate(cls, info, **kwargs)
+        result = super().mutate(cls, info, **kwargs)
+        # After the token, not before it: everything the login flow requires has
+        # passed by here. A second factor is inserted ahead of this line.
+        open_admin_session(request, info.context.user)
+        return result
 
 
 class GetCsrfTokenMutation(graphene.Mutation):
