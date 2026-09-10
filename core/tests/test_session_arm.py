@@ -2,18 +2,23 @@ from calendar import timegm
 from datetime import datetime
 from secrets import token_hex
 
-from django.contrib.auth import SESSION_KEY
+from django.contrib.auth import SESSION_KEY, get_user
 from django.contrib.sessions.middleware import SessionMiddleware
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
+from django.urls import reverse
 
 from core.auth import revocation
-from core.models import InteractiveUser
+from core.models import InteractiveUser, User, UserRole
 from core.models.openimis_graphql_test_case import (
     BaseTestContext,
     openIMISGraphQLTestCase,
 )
-from core.services import open_admin_session, user_authentication
-from core.test_helpers import create_test_interactive_user
+from core.services import open_admin_session, sign_out_everywhere, user_authentication
+from core.test_helpers import (
+    create_test_interactive_user,
+    create_test_role,
+    create_test_technical_user,
+)
 
 # force_login otherwise picks the first backend exposing get_user, which here is
 # not the one login() uses - AxesStandaloneBackend has none.
@@ -120,3 +125,100 @@ class SessionDoesNotAuthenticateGraphQL(openIMISGraphQLTestCase):
         )
 
         self.assertResponseNoErrors(response)
+
+
+class SessionAuthHashTest(TestCase):
+    """`django.contrib.auth.get_user` compares this hash on every
+    session-authenticated request and flushes the session when it differs, so it
+    is the one point where a revocation can reach the session arm.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.user = create_test_interactive_user(
+            username="sessionArmHash", password=cls.password
+        )
+
+    def test_a_password_change_changes_the_hash(self):
+        before = self.user.get_session_auth_hash()
+
+        self.user.i_user.set_password(_password())
+        self.user.i_user.save()
+
+        self.assertNotEqual(before, self.user.get_session_auth_hash())
+
+    def test_signing_out_everywhere_changes_the_hash(self):
+        # Backdated first: the not-before is epoch seconds and creating the user
+        # already stamped one, so a sign-out inside that same second writes the
+        # identical value and would prove nothing either way.
+        _set_not_before(self.user, _now() - 60)
+        user = User.objects.get(username=self.user.username)
+        before = user.get_session_auth_hash()
+
+        sign_out_everywhere(user)
+
+        self.assertNotEqual(before, user.get_session_auth_hash())
+
+    def test_a_role_change_leaves_the_hash_alone(self):
+        before = self.user.get_session_auth_hash()
+
+        UserRole.objects.create(
+            user=self.user.i_user, role=create_test_role(), audit_user_id=-1
+        )
+
+        self.assertEqual(before, self.user.get_session_auth_hash())
+
+    def test_a_technical_user_gets_a_hash_from_its_password(self):
+        # Returns the core User bound to the new TechnicalUser, not the
+        # TechnicalUser itself.
+        technical = create_test_technical_user(
+            username="sessionArmTech", password=_password(), staff=True
+        )
+
+        self.assertTrue(technical.get_session_auth_hash())
+
+
+class RevokedSessionStopsAuthenticating(TestCase):
+    """The request path, not just the hash value. `get_user` is what every
+    session-authenticated request goes through, and it consults
+    `get_session_auth_fallback_hash` on a mismatch - a state that was
+    unreachable while the hash came from the username, and so untested.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.user = create_test_interactive_user(
+            username="sessionArmRevoked", password=cls.password
+        )
+
+    def test_a_session_authenticates_until_the_user_is_revoked(self):
+        request = _request()
+        self.assertTrue(open_admin_session(request, self.user))
+        self.assertEqual(get_user(request).username, self.user.username)
+
+        _set_not_before(self.user, _now() + 60)
+
+        self.assertTrue(get_user(request).is_anonymous)
+
+    # Rendering an admin page needs collected staticfiles under whitenoise's
+    # manifest storage; nothing here is about static assets.
+    @override_settings(
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {
+                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+            },
+        }
+    )
+    def test_the_admin_site_refuses_a_revoked_session(self):
+        self.client.force_login(self.user, backend=MODEL_BACKEND)
+        admin_index = reverse("admin:index")
+        self.assertEqual(self.client.get(admin_index).status_code, 200)
+
+        _set_not_before(self.user, _now() + 60)
+
+        response = self.client.get(admin_index)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response["Location"])
