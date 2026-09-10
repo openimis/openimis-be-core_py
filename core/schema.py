@@ -35,6 +35,7 @@ from core.services import (
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
+from core.auth import revocation
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -2014,7 +2015,15 @@ def check_email_validity(email):
 def set_user_deleted(user):
     try:
         if user.i_user:
+            # Disabling an account has to end its sessions; nothing else here
+            # does, now that the signing key is no longer per-user.
+            revocation.bump(user.i_user)
             user.i_user.delete_history()
+            # delete_history() writes nothing for an interactive user
+            # (OpenIMISHistoryMixin.delete_history is `pass`), so this is what
+            # persists the revocation point. silent, because a bump inside the
+            # same second changes no field and save() rejects a no-op update.
+            user.i_user.save(silent=True)
         if user.t_user:
             user.t_user.delete_history()
         if user.officer:
