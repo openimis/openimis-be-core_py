@@ -2,7 +2,8 @@ from calendar import timegm
 from datetime import datetime
 from secrets import token_hex
 
-from django.contrib.auth import SESSION_KEY, get_user
+from django.conf import settings
+from django.contrib.auth import HASH_SESSION_KEY, SESSION_KEY, get_user
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
@@ -50,7 +51,7 @@ def _request():
     return request
 
 
-class SessionIsNotOpenedByPasswordVerification(TestCase):
+class OpenAdminSessionTest(TestCase):
     """`user_authentication` verifies a password. A session opened there exists
     before any second factor has been presented, and a session authenticates the
     API on its own - so the two steps have to be separable.
@@ -82,7 +83,7 @@ class SessionIsNotOpenedByPasswordVerification(TestCase):
         self.assertEqual(str(request.session[SESSION_KEY]), str(user.id))
 
 
-class SessionDoesNotAuthenticateGraphQL(openIMISGraphQLTestCase):
+class GraphQLSessionArmTest(openIMISGraphQLTestCase):
     """OP-3128 finding 9's table, in reverse. `languages` is the probe because
     resolve_languages raises AuthenticationRequired, which the view maps to 401.
     """
@@ -106,6 +107,10 @@ class SessionDoesNotAuthenticateGraphQL(openIMISGraphQLTestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_a_revoked_token_is_refused_even_next_to_a_session(self):
+        # The row from the ticket's table, end to end. It does not isolate this
+        # middleware: moving the not-before also invalidates the session hash, so
+        # it passes with the middleware reverted. The garbage-token test below is
+        # the one that pins the middleware.
         token = BaseTestContext(user=self.user).get_jwt()
         # 60s ahead, not now: assert_not_revoked rejects on issued_at < not_before,
         # and the token's iat is the current second.
@@ -114,6 +119,17 @@ class SessionDoesNotAuthenticateGraphQL(openIMISGraphQLTestCase):
         response = self.query(
             self.PROBE, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
         )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_an_unusable_token_is_refused_rather_than_ignored(self):
+        # Isolates the middleware from the session hash: the token is rejected
+        # for a reason unrelated to any revocation, so the session stays valid.
+        # Without the middleware the session out-ranks the token and this is a
+        # 200; with it, the token is decoded and refused.
+        self.client.cookies["JWT"] = "not-a-token"
+
+        response = self.query(self.PROBE)
 
         self.assertEqual(response.status_code, 401)
 
@@ -169,17 +185,23 @@ class SessionAuthHashTest(TestCase):
 
         self.assertEqual(before, self.user.get_session_auth_hash())
 
-    def test_a_technical_user_gets_a_hash_from_its_password(self):
+    def test_a_technical_user_hash_follows_its_password(self):
         # Returns the core User bound to the new TechnicalUser, not the
-        # TechnicalUser itself.
+        # TechnicalUser itself. A technical user has no i_user, so the password
+        # is the only component of its hash that can move.
         technical = create_test_technical_user(
             username="sessionArmTech", password=_password(), staff=True
         )
+        before = technical.get_session_auth_hash()
 
-        self.assertTrue(technical.get_session_auth_hash())
+        technical.t_user.set_password(_password())
+        technical.t_user.save()
+
+        self.assertNotEqual(before, User.objects.get(
+            username="sessionArmTech").get_session_auth_hash())
 
 
-class RevokedSessionStopsAuthenticating(TestCase):
+class RevokedSessionTest(TestCase):
     """The request path, not just the hash value. `get_user` is what every
     session-authenticated request goes through, and it consults
     `get_session_auth_fallback_hash` on a mismatch - a state that was
@@ -222,3 +244,41 @@ class RevokedSessionStopsAuthenticating(TestCase):
         response = self.client.get(admin_index)
         self.assertEqual(response.status_code, 302)
         self.assertIn("login", response["Location"])
+
+
+class SessionAuthFallbackHashTest(TestCase):
+    """`SECRET_KEY_FALLBACKS` is empty in this deployment, so without these two
+    the generator could be `return iter(())` and the suite would not notice.
+    `get_user` reads it on every mismatch, which is why it has to exist at all.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = create_test_interactive_user(
+            username="sessionArmFallback", password=_password()
+        )
+
+    def _session_request(self):
+        request = _request()
+        open_admin_session(request, self.user)
+        return request
+
+    def test_a_session_minted_under_a_rotated_key_is_still_accepted(self):
+        request = self._session_request()
+        retired_key = settings.SECRET_KEY
+
+        with override_settings(
+            SECRET_KEY="op3146-rotated", SECRET_KEY_FALLBACKS=[retired_key]
+        ):
+            self.assertEqual(get_user(request).username, self.user.username)
+            # Re-stamped under the current key, so the next request verifies
+            # without the fallback.
+            self.assertEqual(
+                request.session[HASH_SESSION_KEY], self.user.get_session_auth_hash()
+            )
+
+    def test_the_same_session_is_refused_when_the_old_key_is_not_a_fallback(self):
+        request = self._session_request()
+
+        with override_settings(SECRET_KEY="op3146-rotated", SECRET_KEY_FALLBACKS=[]):
+            self.assertTrue(get_user(request).is_anonymous)
