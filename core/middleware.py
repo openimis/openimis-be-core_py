@@ -93,28 +93,18 @@ class AdminLogoutMiddleware:
 class CustomJSONWebTokenMiddleware(JSONWebTokenMiddleware):
     """Make the token the only credential on the GraphQL endpoint.
 
-    Upstream's `_authenticate` is `is_anonymous and <a token was sent>`, so a
-    session-authenticated `request.user` - set by AuthenticationMiddleware - stops
-    the token being decoded at all. `core.auth.decode`, and with it the revocation
-    check, is then never reached: a revoked token presented next to a session
-    answers 200. Replacing the session-derived user before the first resolver runs
-    inverts that, and also stops a session alone authenticating a query.
-
-    Once per request, and unconditionally: at the first `resolve` call
-    `context.user` can only be what the session put there, since no resolver has
-    run yet - `tokenAuth` included, which sets `context.user` itself and mints the
-    token from it. Everything set afterwards is left alone, so upstream still
-    authenticates the token once at the root field rather than per nested field.
-
-    The lazy user is replaced without being evaluated, so no session row is read
-    here. The session itself is untouched; only who this request is treated as.
-    The admin site does not route through graphene.
+    Upstream authenticates only when `request.user` is anonymous, so a session
+    suppresses token decoding entirely - and with it the revocation check, which
+    is why a revoked token presented next to a session used to answer 200.
     """
 
     _CLEARED = "_openimis_session_user_cleared"
 
     def resolve(self, next, root, info, **kwargs):
         context = info.context
+        # Once per request, before any resolver: only the session can have set
+        # this user yet, so nothing a resolver assigns later is disturbed -
+        # `tokenAuth` mints its token from a user it sets itself.
         if not getattr(context, self._CLEARED, False):
             context.user = AnonymousUser()
             setattr(context, self._CLEARED, True)
