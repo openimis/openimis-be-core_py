@@ -912,11 +912,15 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
         `user_not_before` reads through an uncached queryset by design - the
         object cache is per-process, and a cached read would keep a flushed
-        session alive on every worker except the one that ended it. One indexed
-        select per evaluation of a session user: every admin-site request, and
-        any API request that both carries a session cookie and reaches a code
-        path that evaluates the lazy `request.user`. A request without a session
-        cookie never gets here.
+        session alive on every worker except the one that ended it.
+
+        Cost: one indexed select here, plus an `i_user` fetch when the instance
+        arrived without it (`ModelBackend.get_user` does a bare `get(pk=...)`),
+        and the same again per `SECRET_KEY_FALLBACKS` entry on a mismatch. Paid
+        once per evaluation of a session-derived user, which in practice means
+        an admin-site request: on `/api/graphql` the session user is replaced
+        before any resolver can evaluate it (`CustomJSONWebTokenMiddleware`), and
+        a request carrying no session cookie never gets here at all.
         """
         return self._get_session_auth_hash()
 
@@ -936,8 +940,22 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         key_salt = "core.User.get_session_auth_hash"
         stored_password = getattr(self._u, "password", "") or ""
         not_before = revocation.user_not_before(self.username)
-        payload = f"{self.username}${stored_password}${not_before or ''}"
-        return salted_hmac(key_salt, payload, secret=secret).hexdigest()
+        # Length-prefixed, not joined on a separator: a login name and a legacy
+        # password hash can both contain any given character, and a plain join
+        # lets two different triples serialise to one payload - so two accounts
+        # could share a session hash. `is None`, not falsiness: a not-before of
+        # 0 is a real revocation point and must not read as "never revoked".
+        parts = (
+            self.username,
+            stored_password,
+            "" if not_before is None else str(not_before),
+        )
+        payload = "".join(f"{len(part)}:{part}" for part in parts)
+        # sha256, as Django pins for this same hash (AbstractBaseUser
+        # ._get_session_auth_hash); salted_hmac still defaults to sha1.
+        return salted_hmac(
+            key_salt, payload, secret=secret, algorithm="sha256"
+        ).hexdigest()
 
     def get_health_facility(self):
         if self.claim_admin:

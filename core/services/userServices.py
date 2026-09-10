@@ -348,7 +348,7 @@ def open_admin_session(request, user):
 
     Staff-only, as before: `/admin/` is the only thing that needs it, and
     `is_staff` resolves to superuser-or-IMIS-administrator for an interactive
-    user. Returns True when a session was opened, so a caller can log it.
+    user. Returns whether a session was opened.
     """
     if not (getattr(user, "is_staff", False) and hasattr(request, "session")):
         return False
