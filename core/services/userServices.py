@@ -340,15 +340,10 @@ def _try_auto_provision(username, password):
 def open_admin_session(request, user):
     """Open a Django session for a staff user, for the routed admin site.
 
-    Deliberately not called from `user_authentication`: that function verifies a
-    password, and a session opened there exists before any second factor has been
-    presented - and a session authenticates the API on its own. The caller that
-    completes the login flow opens it instead, so the ordering is a property of
-    the flow rather than something each call site must remember.
-
-    Staff-only, as before: `/admin/` is the only thing that needs it, and
-    `is_staff` resolves to superuser-or-IMIS-administrator for an interactive
-    user. Returns whether a session was opened.
+    Deliberately not called from `user_authentication`: a session opened at
+    password-verification time exists before any second factor has been
+    presented. The caller that completes the login flow opens it instead, so the
+    ordering is a property of the flow rather than of each call site.
     """
     if not (getattr(user, "is_staff", False) and hasattr(request, "session")):
         return False

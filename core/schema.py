@@ -2238,8 +2238,7 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         check_lockout(request)
         info.context.user = user_authentication(request, username, password)
         result = super().mutate(cls, info, **kwargs)
-        # After the token, not before it: everything the login flow requires has
-        # passed by here. A second factor is inserted ahead of this line.
+        # After the token: a second factor goes ahead of this line, never behind.
         open_admin_session(request, info.context.user)
         return result
 

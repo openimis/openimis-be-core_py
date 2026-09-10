@@ -897,62 +897,36 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def get_session_auth_hash(self):
         """An HMAC over the credentials whose change has to end the session.
 
-        `django.contrib.auth.get_user` compares this on every
-        session-authenticated request and flushes the session when it differs, so
-        this is the one place a revocation can reach the session arm. It used to
-        hash the username, which never changes - which is why neither a password
-        change nor `sign_out_everywhere` ever ended a session, and why Django's
-        own password-change safeguard did not work here either.
-
-        `password` is the stored hash on both user models that can be staff
-        (`InteractiveUser.password`, `TechnicalUser.password`), so a password
-        change moves the hash for both. The not-before adds the revocations that
-        do not touch the password: `sign_out_everywhere` and account disable. A
-        role change moves neither, which is deliberate.
-
-        `user_not_before` reads through an uncached queryset by design - the
-        object cache is per-process, and a cached read would keep a flushed
-        session alive on every worker except the one that ended it.
-
-        Cost: one indexed select here, plus an `i_user` fetch when the instance
-        arrived without it (`ModelBackend.get_user` does a bare `get(pk=...)`),
-        and the same again per `SECRET_KEY_FALLBACKS` entry on a mismatch. Paid
-        once per evaluation of a session-derived user, which in practice means
-        an admin-site request: on `/api/graphql` the session user is replaced
-        before any resolver can evaluate it (`CustomJSONWebTokenMiddleware`), and
-        a request carrying no session cookie never gets here at all.
+        `get_user` compares this on every session-authenticated request and
+        flushes on a mismatch, so it is the only point where a revocation reaches
+        the session arm. It used to hash the username, which never changes -
+        hence neither a password change nor `sign_out_everywhere` ever ended a
+        session. A role change moves nothing here, which is deliberate.
         """
         return self._get_session_auth_hash()
 
     def get_session_auth_fallback_hash(self):
-        """Required by `get_user`, which calls it on every hash *mismatch*.
-
-        Not optional and not only about key rotation: the branch that reads it
-        runs whenever the session's stored hash does not verify, which is now a
-        reachable state. While this hash was derived from the username it could
-        never differ, so a missing method here raised nothing and the gap stayed
-        latent.
-        """
+        # `get_user` calls this on every mismatch, a state only reachable since
+        # the hash above started tracking credentials.
         for fallback_secret in settings.SECRET_KEY_FALLBACKS:
             yield self._get_session_auth_hash(secret=fallback_secret)
 
     def _get_session_auth_hash(self, secret=None):
         key_salt = "core.User.get_session_auth_hash"
+        # `password` is the stored hash on both user models that can be staff;
+        # the not-before adds the revocations that leave it alone. Read uncached,
+        # or a flushed session survives on every worker but the one that ended it.
         stored_password = getattr(self._u, "password", "") or ""
         not_before = revocation.user_not_before(self.username)
-        # Length-prefixed, not joined on a separator: a login name and a legacy
-        # password hash can both contain any given character, and a plain join
-        # lets two different triples serialise to one payload - so two accounts
-        # could share a session hash. `is None`, not falsiness: a not-before of
-        # 0 is a real revocation point and must not read as "never revoked".
+        # Length-prefixed: either component can contain any separator, and a
+        # plain join would let two different triples share one hash.
         parts = (
             self.username,
             stored_password,
             "" if not_before is None else str(not_before),
         )
         payload = "".join(f"{len(part)}:{part}" for part in parts)
-        # sha256, as Django pins for this same hash (AbstractBaseUser
-        # ._get_session_auth_hash); salted_hmac still defaults to sha1.
+        # sha256 as Django pins for this same hash; salted_hmac defaults to sha1.
         return salted_hmac(
             key_salt, payload, secret=secret, algorithm="sha256"
         ).hexdigest()
