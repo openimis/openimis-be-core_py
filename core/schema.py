@@ -41,7 +41,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from core.gql_errors import AuthenticationRequired
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, transaction, models
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -84,6 +84,7 @@ from core.utils import (  # noqa: 401
     collect_all_gql_permissions,
     filter_validity
 )
+from core.cache_control import invalidate_role_rights
 from core.models import (
     ModuleConfiguration,
     FieldControl,
@@ -268,6 +269,12 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         abstract = True
 
     internal_id = graphene.Field(graphene.String)
+    client_mutation_id = graphene.Field(graphene.String)
+    status = graphene.Field(graphene.Int)
+    success = graphene.Field(graphene.Boolean)
+    error = graphene.Field(graphene.String)
+    message = graphene.Field(graphene.String)
+    metadata = GenericScalar(description="Metadata dictionary containing the mutated entity details or input parameters.")
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -424,7 +431,15 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
-                return cls(internal_id=mutation_log.id)
+                return cls(
+                    internal_id=mutation_log.id,
+                    client_mutation_id=mutation_log.client_mutation_id,
+                    status=mutation_log.status,
+                    success=False,
+                    error=mutation_log.error,
+                    message=mutation_log.client_mutation_label or mutation_log.error,
+                    metadata=data if data else None,
+                )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls,
@@ -527,7 +542,56 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             mutation_log.safe_mark_as_failed(str(exc))
 
-        return cls(internal_id=mutation_log.id)
+        metadata = {}
+        try:
+            if mutation_log.json_content:
+                metadata = json.loads(mutation_log.json_content)
+            elif data:
+                metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+            if isinstance(messages, dict):
+                metadata.update(messages)
+            elif isinstance(messages, models.Model):
+                if hasattr(messages, "uuid"):
+                    metadata["uuid"] = str(messages.uuid)
+                if hasattr(messages, "id") and not metadata.get("id"):
+                    metadata["id"] = messages.id
+
+            if isinstance(metadata, dict):
+                if not metadata.get("uuid"):
+                    if data.get("uuid"):
+                        metadata["uuid"] = str(data.get("uuid"))
+                    elif isinstance(messages, dict) and messages.get("uuid"):
+                        metadata["uuid"] = str(messages.get("uuid"))
+                    else:
+                        for rel in mutation_log._meta.related_objects:
+                            rel_name = rel.get_accessor_name()
+                            if hasattr(mutation_log, rel_name):
+                                rel_mgr = getattr(mutation_log, rel_name)
+                                first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                                if first_link:
+                                    for f in first_link._meta.fields:
+                                        if f.is_relation and f.name != "mutation":
+                                            linked_obj = getattr(first_link, f.name, None)
+                                            if linked_obj and hasattr(linked_obj, "uuid"):
+                                                metadata["uuid"] = str(linked_obj.uuid)
+                                                break
+                                    if metadata.get("uuid"):
+                                        break
+                if metadata:
+                    mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
+                    MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
+        except Exception:
+            pass
+
+        return cls(
+            internal_id=mutation_log.id,
+            client_mutation_id=mutation_log.client_mutation_id,
+            status=mutation_log.status,
+            success=(mutation_log.status == MutationLog.SUCCESS),
+            error=mutation_log.error,
+            message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
+            metadata=metadata if metadata else None,
+        )
 
 
 class FieldControlGQLType(DjangoObjectType):
@@ -715,6 +779,10 @@ class MutationLogGQLType(DjangoObjectType):
             [f"{pair[0]}: {pair[1]}" for pair in MutationLog.STATUS_CHOICES]
         ),
     )
+    success = graphene.Field(graphene.Boolean)
+
+    def resolve_success(self, info):
+        return self.status == MutationLog.SUCCESS
 
     @classmethod
     def get_queryset(cls, queryset, info):
@@ -1449,6 +1517,9 @@ def update_or_create_role(data, user):
                     )
                     role_right.validity_to = None
                     role_right.save()
+            # the rights above were expired with a queryset update, which fires
+            # no signal: invalidate once the new set is in place
+            invalidate_role_rights(role.id)
     else:
         role = Role.objects.create(**data)
         # create role rights for that role if they were passed to mutation

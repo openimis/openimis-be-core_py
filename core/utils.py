@@ -19,7 +19,14 @@ from django.utils.translation import gettext as _
 from password_validator import PasswordValidator
 from zxcvbn import zxcvbn
 import datetime
-from django.core.cache import caches
+from core.cache_control import (
+    cache_delete,
+    cache_delete_many,
+    cache_get,
+    cache_get_many,
+    cache_set,
+    cache_set_many,
+)
 from functools import lru_cache
 # utils/request_local.py
 import threading
@@ -36,9 +43,6 @@ except Exception:
 _request_local = threading.local()
 
 logger = logging.getLogger(__file__)
-
-
-cache = caches["default"]
 
 __all__ = [
     "TimeUtils",
@@ -388,7 +392,7 @@ class CachedManager(models.Manager):
         """Handle cache lookup for exact or in queries."""
         if lookup == "exact":
             cache_key = get_cache_key(self.model, self._normalize_value(value))
-            cached_data = cache.get(cache_key)
+            cached_data = cache_get(cache_key)
             if cached_data:
                 if isinstance(cached_data, dict):
                     # Instantiate from dict to ensure proper __init__ and dirtyfields state
@@ -416,7 +420,7 @@ class CachedManager(models.Manager):
                 return None
             values = [self._normalize_value(v) for v in value]
             cache_keys = [get_cache_key(self.model, v) for v in values]
-            cached_results = cache.get_many(cache_keys)
+            cached_results = cache_get_many(cache_keys)
             cached_instances = []
             uncached_values = []
 
@@ -599,7 +603,7 @@ def get_cached_foreign_keys(instances, fk_field_names):
 def _related_from_cache(related_model, fk_values):
     """Read related objects from the cache; return (by pk, list of misses)."""
     keys = {value: get_cache_key(related_model, value) for value in fk_values}
-    cached = cache.get_many(list(keys.values()))
+    cached = cache_get_many(list(keys.values()))
 
     resolved = {}
     missing = []
@@ -756,7 +760,7 @@ class CachedModelMixin:
                 primary_data[get_cache_key(cls, obj.pk)] = clean_fk(obj)
 
         if primary_data:
-            cache.set_many(primary_data, timeout=now)
+            cache_set_many(primary_data, timeout=now)
 
         # Secondary caches: key(field_value) -> pk  (only if value != pk)
         secondary_data = {}
@@ -773,7 +777,7 @@ class CachedModelMixin:
                     secondary_data[key] = obj.pk
 
         if secondary_data:
-            cache.set_many(secondary_data, timeout=now)
+            cache_set_many(secondary_data, timeout=now)
 
         logger.debug("Bulk cached %d instances of %s", len(objs), cls.__name__)
 
@@ -783,32 +787,41 @@ class CachedModelMixin:
         """
         if self.USE_CACHE:
             ttl = getattr(settings, "CACHE_OBJECT_TTL", 3600)  # default 1 hour (3600s)
-            cache.set(
+            cache_set(
                 get_cache_key(self.__class__, self.pk),
                 clean_fk(self),
                 timeout=ttl,
             )
-            unique_fields = getattr(
-                self, "UNIQUE_FIELDS", {"id", "uuid", "pk"}
-            )
-            for f in unique_fields:
-                # get_field raised an error on property raise
-                if self.pk != getattr(self, f, self.pk):
-                    cache.set(
-                        get_cache_key(self.__class__, getattr(self, f)),
-                        self.pk,
-                        timeout=ttl,
-                    )
+            for key in self._alias_cache_keys():
+                cache_set(key, self.pk, timeout=ttl)
             logger.debug("Saved and cached instance: %s", self)
+
+    def _alias_cache_keys(self):
+        """
+        Cache keys of the alias entries (unique field value -> pk).
+
+        They are what lets a lookup by uuid or username resolve to the cached
+        object, so they are written and dropped together with the primary one.
+        """
+        unique_fields = getattr(self, "UNIQUE_FIELDS", {"id", "uuid", "pk"})
+        keys = []
+        for f in unique_fields:
+            # getattr with a default: UNIQUE_FIELDS may name a property
+            value = getattr(self, f, self.pk)
+            if self.pk != value:
+                keys.append(get_cache_key(self.__class__, value))
+        return keys
 
     def delete_cache(self):
         """
-        Deletes the cache entry for this object.
+        Deletes the cache entries for this object.
         """
         if self.USE_CACHE:
-            cache_key = f"{self.__class__.__name__}:{self.pk}"
-            cache.delete(cache_key)
-            logger.debug(f"Removed instance from cache: {cache_key}")
+            # get_cache_key is the only key builder: the primary entry is
+            # written under it, and a hand built key silently deleted nothing
+            keys = [get_cache_key(self.__class__, self.pk)] + self._alias_cache_keys()
+            cache_delete_many(keys)
+            logger.debug("Removed instance from cache: %s", keys)
 
     class Meta:
         abstract = True
@@ -1100,7 +1113,7 @@ class ConfigUtilMixin:
 
 
 def clear_cache(instance):
-    cache.delete(get_cache_key(instance.__class__, instance.pk))
+    cache_delete(get_cache_key(instance.__class__, instance.pk))
 
 
 def get_cache_key(model, id):
