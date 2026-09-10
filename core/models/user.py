@@ -28,6 +28,9 @@ from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , Op
 from core.utils import to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from core.access import evaluate_access_requirements, has_role_perms
+# Safe at module level: core.auth.revocation reaches models through
+# apps.get_model, so importing it here is not a cycle.
+from core.auth import revocation
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +434,10 @@ class InteractiveUser(OpenIMISMigrationModel):
         self.password = (
             pwd_hash.hexdigest().upper()
         )  # Legacy requires this to be uppercase
+        # Rotating private_key ends outstanding sessions only for as long as
+        # that value is also the token signing key. The not-before is what ends
+        # them once a deployment-wide key signs instead.
+        revocation.bump(self)
 
     def check_password(self, raw_password):
         from hashlib import sha256
