@@ -69,7 +69,9 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
         json_ext["default_rows_per_page"] = default_rows_per_page
         i_user.json_ext = json_ext
 
-    i_user.save()
+    # silent: roles, districts and officer villages live in other tables, so a
+    # mutation that only changes those leaves the interactive user untouched
+    i_user.save(silent=True)
     create_or_update_user_roles(i_user, data.get("roles", []), user_maker.id_for_audit)
     if "districts" in data:
         create_or_update_user_districts(
@@ -220,7 +222,8 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
 
 
 def create_or_update_core_user(
-    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None, silent=False
+    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None, silent=False,
+    is_superuser=None
 ):
     if user_uuid:
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
@@ -246,7 +249,14 @@ def create_or_update_core_user(
         user.officer = officer
     if claim_admin:
         user.claim_admin = claim_admin
+    if is_superuser is not None:
+        user.is_superuser = is_superuser
     user.save(silent=silent)
+    if is_superuser is not None and user.i_user_id:
+        # is_superuser feeds InteractiveUser.rights, which is cached per user
+        cache.delete("rights_" + str(user.i_user_id))
+        cache.delete("is_admin_" + str(user.i_user_id))
+        cache.delete("cs_InteractiveUserSerializer_" + str(user.i_user_id))
     return user, created
 
 

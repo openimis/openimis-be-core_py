@@ -38,7 +38,7 @@ from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import ValidationError, PermissionDenied, ObjectDoesNotExist
+from django.core.exceptions import ValidationError, PermissionDenied
 from core.gql_errors import AuthenticationRequired
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
@@ -452,7 +452,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
                     )  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                                        # run the mutation inside a savepoint: should it leave the
+                    # run the mutation inside a savepoint: should it leave the
                     # transaction broken (a database error, raised or caught by
                     # the service itself), exiting this block rolls the savepoint
                     # back and resets connection.needs_rollback, so the
@@ -1419,7 +1419,7 @@ def update_or_create_role(data, user):
     role_uuid = data.pop("uuid") if "uuid" in data else None
     rights_id = data.pop("rights_id") if "rights_id" in data else None
     if role_uuid:
-        role = Role.objects.get(uuid=role_uuid)
+        role = Role.objects.get(*Role.filter_validity(), uuid=role_uuid)
         role.save_history()
         [setattr(role, k, v) for k, v in data.items()]
         role.save()
@@ -1484,7 +1484,7 @@ def duplicate_role(data, user):
     role_uuid = data.pop("uuid") if "uuid" in data else None
     rights_id = data.pop("rights_id") if "rights_id" in data else None
     # get the current Role object to be duplicated
-    role = Role.objects.get(uuid=role_uuid)
+    role = Role.objects.get(*Role.filter_validity(), uuid=role_uuid)
     # copy Role to be dupliacated
     import datetime
 
@@ -1714,6 +1714,11 @@ class UserBase:
         description="List of role_ids, required for interactive users",
     )
     default_rows_per_page = graphene.Int(required=False)
+    is_superuser = graphene.Boolean(
+        required=False,
+        description="Grants full access, bypassing rights checks. Only a superuser may "
+        "set or clear this flag. Omit to leave it unchanged.",
+    )
 
     # Enrolment Officer / Feedback / Claim Admin specific
     birth_date = graphene.Date(required=False)
@@ -1886,20 +1891,25 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    try:
-        imis_administrator_system = Role.objects.filter(is_system=64, *Role.filter_validity()).get().id
-    except ObjectDoesNotExist:
-        imis_administrator_system = -1
+    admin_role_ids = Role.get_system_role_ids(Role.IMIS_ADMINISTRATOR)
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
     incoming_email = data.get("email")
+    is_superuser = data.pop("is_superuser", None)
+    # is_imis_admin covers both the stored superuser flag and the IMIS Administrator role,
+    # which already grants every right, hence the ability to escalate any other user
+    if is_superuser is not None and not user.is_imis_admin:
+        raise PermissionDenied(_("mutation.user_is_superuser_not_grantable"))
     if user_uuid:
-
+        incoming_roles = data.get("roles") or []
+        is_self = uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
+        if is_self and is_superuser is False:
+            raise ValidationError(_("mutation.user_cannot_demote_self"))
         if (
-            uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
+            is_self
             and user.is_superuser
-            and imis_administrator_system not in data.get("roles", [])
+            and not set(admin_role_ids).intersection(incoming_roles)
         ):
             raise ValidationError("Administrator cannot deprovision himself.")
         current_user = InteractiveUser.objects.filter(user__id=user_uuid).first()
@@ -1973,7 +1983,8 @@ def update_or_create_user(data, user):
         officer=officer,
         claim_admin=claim_admin,
         user=user,
-        silent=True
+        silent=True,
+        is_superuser=is_superuser,
     )
 
     if client_mutation_id:
@@ -2238,7 +2249,7 @@ def on_role_mutation(sender, **kwargs):
         "Role" in str(sender._mutation_class)
         and sender._mutation_class != "DuplicateRoleMutation"
     ):
-        impacted = Role.objects.get(uuid=uuid)
+        impacted = Role.objects.get(*Role.filter_validity(), uuid=uuid)
         RoleMutation.objects.create(
             role=impacted, mutation_id=kwargs["mutation_log_id"]
         )

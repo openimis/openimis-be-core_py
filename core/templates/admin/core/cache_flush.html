@@ -1,0 +1,73 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .cache-flush-table { width: 100%; }
+  .cache-flush-table th, .cache-flush-table td { padding: 8px; }
+  .cache-flush-help { margin: 0 0 16px; }
+  .cache-flush-actions { margin-top: 16px; }
+  .cache-flush-actions button { margin-right: 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p class="cache-flush-help">
+  {% trans "Flush one or more Django caches. This immediately drops cached objects, rights, location data, and anything else stored in the selected backends." %}
+</p>
+<form method="post">
+  {% csrf_token %}
+  <div class="results">
+    <table class="cache-flush-table" id="result_list">
+      <thead>
+        <tr>
+          <th scope="col" class="action-checkbox-column">
+            <input type="checkbox" id="action-toggle" title="{% trans 'Select all' %}">
+          </th>
+          <th scope="col">{% trans "Alias" %}</th>
+          <th scope="col">{% trans "Backend" %}</th>
+          <th scope="col">{% trans "Key prefix" %}</th>
+          <th scope="col">{% trans "Location" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cache in caches %}
+        <tr class="{% cycle 'row1' 'row2' %}">
+          <td class="action-checkbox">
+            <input type="checkbox" name="aliases" value="{{ cache.alias }}" class="action-select">
+          </td>
+          <th scope="row">{{ cache.alias }}</th>
+          <td>{{ cache.backend_short }}</td>
+          <td>{{ cache.key_prefix|default:"—" }}</td>
+          <td>{{ cache.location|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">{% trans "No caches are configured." %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="submit-row cache-flush-actions">
+    <button type="submit" name="action" value="flush_selected" class="default">
+      {% trans "Flush selected" %}
+    </button>
+    <button type="submit" name="action" value="flush_all">
+      {% trans "Flush all" %}
+    </button>
+  </div>
+</form>
+<script>
+  (function () {
+    var toggle = document.getElementById("action-toggle");
+    if (!toggle) return;
+    toggle.addEventListener("change", function () {
+      document.querySelectorAll("input.action-select").forEach(function (box) {
+        box.checked = toggle.checked;
+      });
+    });
+  })();
+</script>
+{% endblock %}

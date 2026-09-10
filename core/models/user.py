@@ -64,7 +64,9 @@ class UserManager(BaseUserManager, CachedManager):
             extra_fields = {"language": Language.objects.filter(code=extra_fields["language__code"]).first()}
             del extra_fields["language__code"]
         iuser = InteractiveUser(login_name=username, email=email, **extra_fields)
-        iuser.set_password(password)
+        # Django --noinput without DJANGO_SUPERUSER_PASSWORD creates an unusable password.
+        if password is not None:
+            iuser.set_password(password)
         iuser.save()
         return iuser
 
@@ -78,6 +80,8 @@ class UserManager(BaseUserManager, CachedManager):
     def create_superuser(self, username, password=None, email=None, **kwargs):
         if password is None:
             password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
+        kwargs.setdefault("last_name", "Admin")
+        kwargs.setdefault("other_names", "Super")
         iuser = self._create_interactive_user(username, email, password, **kwargs)
         user, success = self.auto_provision_user(username=username, i_user=iuser, is_superuser=True)
         return user
@@ -154,6 +158,9 @@ class TechnicalUser(AbstractBaseUser):
 
 
 class Role(VersionedModel):
+    # Legacy tblRole.IsSystem value for IMIS Administrator.
+    IMIS_ADMINISTRATOR = 64
+
     id = models.AutoField(db_column="RoleID", primary_key=True)
     uuid = models.CharField(
         db_column="RoleUUID", max_length=36, default=uuid.uuid4, unique=True
@@ -168,6 +175,27 @@ class Role(VersionedModel):
 
     def natural_key(self):
         return (self.uuid,)
+
+    @classmethod
+    def get_system_role_ids(cls, system_code):
+        """
+        Return ids of currently valid roles with the given IsSystem value.
+
+        System roles are supposed to be unique, but legacy data can contain
+        duplicates. Callers must not use QuerySet.get() on this lookup.
+        """
+        ids = list(
+            cls.objects.filter(is_system=system_code, *cls.filter_validity())
+            .order_by("id")
+            .values_list("id", flat=True)
+        )
+        if len(ids) > 1:
+            logger.warning(
+                "Multiple valid Role rows have is_system=%s (ids=%s)",
+                system_code,
+                ids,
+            )
+        return ids
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -207,7 +235,7 @@ class RoleRight(VersionedModel):
     def _get_by_uuid(cls, uuid_value):
         """Custom method to look up Role by UUID, which will be used when importing the fixture."""
         try:
-            return Role.objects.get(uuid=uuid_value)
+            return Role.objects.get(*Role.filter_validity(), uuid=uuid_value)
         except ObjectDoesNotExist:
             raise ValueError(f"Role with UUID {uuid_value} does not exist")
 
@@ -295,15 +323,21 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
-        if self.user and self.user.is_superuser:
+        # bind once: `user` is a query, and this used to run it twice per call
+        user = self.user
+        if user and user.is_superuser:
             return True
         return self.is_imis_admin
 
     @is_superuser.setter
     def is_superuser(self, value):
-        if self.user:
-            self.user.is_superuser = value
-            self.user.save()
+        # likewise, and here it was also a correctness bug: each `self.user`
+        # returned a *different* instance, so the flag was set on one object
+        # and a second, unmodified one was saved
+        user = self.user
+        if user:
+            user.is_superuser = value
+            user.save()
         else:
             raise AttributeError("Cannot set is_superuser: no associated User found")
 
@@ -383,7 +417,7 @@ class InteractiveUser(OpenIMISMigrationModel):
             is_admin = Role.objects.filter(
                 *Role.filter_validity(),
                 *UserRole.filter_validity(prefix="user_roles__"),
-                is_system=64,
+                is_system=Role.IMIS_ADMINISTRATOR,
                 user_roles__user=self,
             ).exists()
             cache.set("is_admin_" + str(self.id), is_admin, 600)
@@ -679,8 +713,13 @@ class UserRole(VersionedModel):
 
 class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
+    # update_cache() reads UNIQUE_FIELDS off the *instance* to write the alias
+    # entries that let a lookup by username resolve to the cached object. It
+    # lives on UserManager too, but that copy is invisible from here, so without
+    # this the username alias was never written and every authentication missed
+    # the cache. InteractiveUser declares its own for the same reason.
+    UNIQUE_FIELDS = {"pk", "uuid", "id", "username"}
     USE_CACHE = not getattr(settings, "IS_TESTING", False)
-    objects = CachedManager()
     username = models.CharField(unique=True, max_length=50)
     t_user = models.ForeignKey(
         TechnicalUser, on_delete=models.CASCADE, blank=True, null=True
@@ -802,7 +841,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def is_imis_admin(self):
         if self.is_superuser:
             return True
-        # 64 is system number for IMIS Administrator
+        # Role.IMIS_ADMINISTRATOR (IsSystem=64)
         user = self._u
         if user and isinstance(user, InteractiveUser):
             return user.is_imis_admin

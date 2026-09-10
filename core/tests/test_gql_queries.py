@@ -114,7 +114,10 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
 
     @staticmethod
     def _is_unauthorized(content):
-        return any(e.get("message") == "unauthorized" for e in content.get("errors", []))
+        # the resolvers raise PermissionDenied(_("unauthorized")), which reaches
+        # the client translated ("User not authorized for this operation")
+        message = gettext("unauthorized")
+        return any(e.get("message") == message for e in content.get("errors", []))
 
     @staticmethod
     def _node_field(content, field):
