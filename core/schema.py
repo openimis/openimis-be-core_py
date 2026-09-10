@@ -84,6 +84,7 @@ from core.utils import (  # noqa: 401
     collect_all_gql_permissions,
     filter_validity
 )
+from core.cache_control import invalidate_role_rights
 from core.models import (
     ModuleConfiguration,
     FieldControl,
@@ -1516,6 +1517,9 @@ def update_or_create_role(data, user):
                     )
                     role_right.validity_to = None
                     role_right.save()
+            # the rights above were expired with a queryset update, which fires
+            # no signal: invalidate once the new set is in place
+            invalidate_role_rights(role.id)
     else:
         role = Role.objects.create(**data)
         # create role rights for that role if they were passed to mutation
