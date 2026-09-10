@@ -31,9 +31,7 @@ def _now():
 
 
 def _set_not_before(user, value):
-    """A plain UPDATE, so the object cache cannot serve a stale row to the next
-    request. Same shape as test_auth_revocation._set_not_before.
-    """
+    # A plain UPDATE: the object cache must not serve a stale row to the next read.
     json_ext = dict(user.i_user.json_ext or {})
     json_ext[revocation.NOT_BEFORE_KEY] = value
     InteractiveUser.objects.all().filter(pk=user.i_user.pk).update(json_ext=json_ext)
@@ -52,9 +50,8 @@ def _request():
 
 
 class OpenAdminSessionTest(TestCase):
-    """`user_authentication` verifies a password. A session opened there exists
-    before any second factor has been presented, and a session authenticates the
-    API on its own - so the two steps have to be separable.
+    """Password verification and session creation have to be separable, so a
+    second factor can sit between them.
     """
 
     @classmethod
@@ -69,8 +66,7 @@ class OpenAdminSessionTest(TestCase):
 
         user = user_authentication(request, self.user.username, self.password)
 
-        # Asserted, not assumed: the session arm is gated on is_staff, so a
-        # non-staff user would make this test pass for the wrong reason.
+        # Or a non-staff user would pass this for the wrong reason.
         self.assertTrue(user.is_staff)
         self.assertNotIn(SESSION_KEY, request.session)
 
@@ -85,7 +81,7 @@ class OpenAdminSessionTest(TestCase):
 
 class GraphQLSessionArmTest(openIMISGraphQLTestCase):
     """OP-3128 finding 9's table, in reverse. `languages` is the probe because
-    resolve_languages raises AuthenticationRequired, which the view maps to 401.
+    its resolver raises AuthenticationRequired, which the view maps to 401.
     """
 
     PROBE = "query { languages { name } }"
@@ -107,13 +103,12 @@ class GraphQLSessionArmTest(openIMISGraphQLTestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_a_revoked_token_is_refused_even_next_to_a_session(self):
-        # The row from the ticket's table, end to end. It does not isolate this
-        # middleware: moving the not-before also invalidates the session hash, so
-        # it passes with the middleware reverted. The garbage-token test below is
-        # the one that pins the middleware.
+        # Does not isolate the middleware - the not-before also invalidates the
+        # session hash, so this passes with the middleware reverted. The test
+        # below is the one that pins it.
         token = BaseTestContext(user=self.user).get_jwt()
-        # 60s ahead, not now: assert_not_revoked rejects on issued_at < not_before,
-        # and the token's iat is the current second.
+        # 60s ahead, not now: the comparison is strict and the token's iat is
+        # this second.
         _set_not_before(self.user, _now() + 60)
 
         response = self.query(
@@ -123,10 +118,8 @@ class GraphQLSessionArmTest(openIMISGraphQLTestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_an_unusable_token_is_refused_rather_than_ignored(self):
-        # Isolates the middleware from the session hash: the token is rejected
-        # for a reason unrelated to any revocation, so the session stays valid.
-        # Without the middleware the session out-ranks the token and this is a
-        # 200; with it, the token is decoded and refused.
+        # Rejected for a reason no revocation touches, so the session stays
+        # valid and only the middleware can produce this 401.
         self.client.cookies["JWT"] = "not-a-token"
 
         response = self.query(self.PROBE)
@@ -144,10 +137,7 @@ class GraphQLSessionArmTest(openIMISGraphQLTestCase):
 
 
 class SessionAuthHashTest(TestCase):
-    """`django.contrib.auth.get_user` compares this hash on every
-    session-authenticated request and flushes the session when it differs, so it
-    is the one point where a revocation can reach the session arm.
-    """
+    """What moves the hash, and what must not."""
 
     @classmethod
     def setUpTestData(cls):
@@ -165,9 +155,8 @@ class SessionAuthHashTest(TestCase):
         self.assertNotEqual(before, self.user.get_session_auth_hash())
 
     def test_signing_out_everywhere_changes_the_hash(self):
-        # Backdated first: the not-before is epoch seconds and creating the user
-        # already stamped one, so a sign-out inside that same second writes the
-        # identical value and would prove nothing either way.
+        # Backdated first: creating the user already stamped a not-before this
+        # same second, and a sign-out would rewrite the identical value.
         _set_not_before(self.user, _now() - 60)
         user = User.objects.get(username=self.user.username)
         before = user.get_session_auth_hash()
@@ -186,9 +175,7 @@ class SessionAuthHashTest(TestCase):
         self.assertEqual(before, self.user.get_session_auth_hash())
 
     def test_a_technical_user_hash_follows_its_password(self):
-        # Returns the core User bound to the new TechnicalUser, not the
-        # TechnicalUser itself. A technical user has no i_user, so the password
-        # is the only component of its hash that can move.
+        # No i_user, so the password is the only component that can move here.
         technical = create_test_technical_user(
             username="sessionArmTech", password=_password(), staff=True
         )
@@ -202,10 +189,9 @@ class SessionAuthHashTest(TestCase):
 
 
 class RevokedSessionTest(TestCase):
-    """The request path, not just the hash value. `get_user` is what every
-    session-authenticated request goes through, and it consults
-    `get_session_auth_fallback_hash` on a mismatch - a state that was
-    unreachable while the hash came from the username, and so untested.
+    """The request path, not the hash value: `get_user` reads
+    `get_session_auth_fallback_hash` on a mismatch, and a value-level test
+    cannot see that at all.
     """
 
     @classmethod
@@ -225,7 +211,7 @@ class RevokedSessionTest(TestCase):
         self.assertTrue(get_user(request).is_anonymous)
 
     # Rendering an admin page needs collected staticfiles under whitenoise's
-    # manifest storage; nothing here is about static assets.
+    # manifest storage.
     @override_settings(
         STORAGES={
             "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -249,7 +235,6 @@ class RevokedSessionTest(TestCase):
 class SessionAuthFallbackHashTest(TestCase):
     """`SECRET_KEY_FALLBACKS` is empty in this deployment, so without these two
     the generator could be `return iter(())` and the suite would not notice.
-    `get_user` reads it on every mismatch, which is why it has to exist at all.
     """
 
     @classmethod
@@ -271,8 +256,7 @@ class SessionAuthFallbackHashTest(TestCase):
             SECRET_KEY="op3146-rotated", SECRET_KEY_FALLBACKS=[retired_key]
         ):
             self.assertEqual(get_user(request).username, self.user.username)
-            # Re-stamped under the current key, so the next request verifies
-            # without the fallback.
+            # Re-stamped, so the next request verifies without the fallback.
             self.assertEqual(
                 request.session[HASH_SESSION_KEY], self.user.get_session_auth_hash()
             )
