@@ -29,6 +29,7 @@ from core.services import (
     change_user_password,
     reset_user_password,
     set_user_password,
+    sign_out_everywhere,
     user_authentication,
     wait_for_mutation,
 )
@@ -2124,6 +2125,37 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class SignOutEverywhereMutation(graphene.relay.ClientIDMutation):
+    """End every outstanding session for a user. Either the user does it to
+    themselves, or someone with the rights to update users does it for anyone.
+    """
+
+    class Input:
+        username = graphene.String(
+            required=False,
+            description="By default this operation works on the logged user; "
+            "only administrators can run it on any user",
+        )
+
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username=None, **input):
+        try:
+            user = info.context.user
+            if type(user) is AnonymousUser or not user.id:
+                raise PermissionDenied(_("mutation.authentication_required"))
+            sign_out_everywhere(user, username_to_sign_out=username)
+            return SignOutEverywhereMutation(success=True)
+        except Exception as exc:
+            logger.exception(exc)
+            return SignOutEverywhereMutation(
+                success=False,
+                error=gettext_lazy("Failed to sign the user out everywhere"),
+            )
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2237,6 +2269,7 @@ class Mutation(graphene.ObjectType):
     change_password = ChangePasswordMutation.Field()
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
+    sign_out_everywhere = SignOutEverywhereMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
