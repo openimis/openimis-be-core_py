@@ -895,8 +895,49 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             refresh.revoke()
 
     def get_session_auth_hash(self):
+        """An HMAC over the credentials whose change has to end the session.
+
+        `django.contrib.auth.get_user` compares this on every
+        session-authenticated request and flushes the session when it differs, so
+        this is the one place a revocation can reach the session arm. It used to
+        hash the username, which never changes - which is why neither a password
+        change nor `sign_out_everywhere` ever ended a session, and why Django's
+        own password-change safeguard did not work here either.
+
+        `password` is the stored hash on both user models that can be staff
+        (`InteractiveUser.password`, `TechnicalUser.password`), so a password
+        change moves the hash for both. The not-before adds the revocations that
+        do not touch the password: `sign_out_everywhere` and account disable. A
+        role change moves neither, which is deliberate.
+
+        `user_not_before` reads through an uncached queryset by design - the
+        object cache is per-process, and a cached read would keep a flushed
+        session alive on every worker except the one that ended it. One indexed
+        select per evaluation of a session user: every admin-site request, and
+        any API request that both carries a session cookie and reaches a code
+        path that evaluates the lazy `request.user`. A request without a session
+        cookie never gets here.
+        """
+        return self._get_session_auth_hash()
+
+    def get_session_auth_fallback_hash(self):
+        """Required by `get_user`, which calls it on every hash *mismatch*.
+
+        Not optional and not only about key rotation: the branch that reads it
+        runs whenever the session's stored hash does not verify, which is now a
+        reachable state. While this hash was derived from the username it could
+        never differ, so a missing method here raised nothing and the gap stayed
+        latent.
+        """
+        for fallback_secret in settings.SECRET_KEY_FALLBACKS:
+            yield self._get_session_auth_hash(secret=fallback_secret)
+
+    def _get_session_auth_hash(self, secret=None):
         key_salt = "core.User.get_session_auth_hash"
-        return salted_hmac(key_salt, self.username).hexdigest()
+        stored_password = getattr(self._u, "password", "") or ""
+        not_before = revocation.user_not_before(self.username)
+        payload = f"{self.username}${stored_password}${not_before or ''}"
+        return salted_hmac(key_salt, payload, secret=secret).hexdigest()
 
     def get_health_facility(self):
         if self.claim_admin:
@@ -914,8 +955,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             raise ValueError("wrapper has not been initialised")
         elif name == "__name__":
             return self.username
-        elif name == "get_session_auth_hash":
-            return False
         elif hasattr(self._u, name):
             return getattr(self._u, name)
         elif name in self.__dict__:
