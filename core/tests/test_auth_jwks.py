@@ -76,3 +76,18 @@ class SymmetricKeyTest(TestCase):
         published = response.json()["keys"]
         self.assertEqual([jwk["kid"] for jwk in published], [expected_kid])
         self.assertNotIn(secret, response.content.decode())
+
+
+@with_signing_key
+class UnauthenticatedAccessTest(TestCase):
+    def test_no_authorization_header_is_fine(self):
+        self.assertEqual(APIClient().get(JWKS_URL).status_code, 200)
+
+    def test_a_junk_bearer_token_does_not_make_it_401(self):
+        # The regression this pins: JWTAuthentication is a DRF default, so
+        # dropping authentication_classes([]) would turn a garbage header into a
+        # 401 on an endpoint whose whole point is being reachable by anyone.
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer not-a-token")
+
+        self.assertEqual(client.get(JWKS_URL).status_code, 200)
