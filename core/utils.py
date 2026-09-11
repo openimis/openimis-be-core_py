@@ -222,7 +222,9 @@ def handle_impersonation(request, user):
     try:
         # Only interactive users carry the rights an impersonated session needs.
         target_user = User.objects.get(
-            id=uuid.UUID(str(target_id)), i_user__isnull=False
+            id=uuid.UUID(str(target_id)),
+            i_user__isnull=False,
+            i_user__active=True,
         )
     except (ValueError, TypeError, AttributeError, User.DoesNotExist) as exc:
         logger.warning(
