@@ -2,10 +2,10 @@ from django.http import Http404, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from isodate import strftime
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import User, ExportableQueryModel
 from .scheduler import scheduler
 from .serializers import UserSerializer
@@ -89,3 +89,12 @@ def _serialize_job(job):
 @require_GET
 def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])
+
+
+@api_view(["GET"])
+# Emptied, not just AllowAny: JWTAuthentication is a DRF default, so a malformed
+# Authorization header would otherwise 401 an endpoint that must stay public.
+@authentication_classes([])
+@permission_classes([AllowAny])
+def jwks(request):
+    return Response({"keys": []})
