@@ -71,6 +71,31 @@ class ProvisionedKeyTest(TestCase):
         self.assertEqual(set(jwk), {"kty", "n", "e", "kid", "use", "alg"})
 
 
+class PemVerificationKeyTest(TestCase):
+    """A retiring public half is the documented rotation step, and a settings
+    file naturally holds it as PEM text rather than a key object. PyJWT accepts
+    both when verifying, so JWKS must publish both or a JWKS-only verifier
+    cannot check tokens signed by the outgoing key.
+    """
+
+    def test_publishes_an_rsa_key_given_as_pem_text(self):
+        retiring = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        retiring_pem = retiring.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode()
+
+        with override_settings(
+            JWT_SIGNING_KEY=SIGNING_PEM,
+            JWT_DEPLOYMENT_KEYS={"retiring": retiring_pem},
+        ):
+            response = APIClient().get(JWKS_URL)
+
+        published = {jwk["kid"]: jwk for jwk in response.json()["keys"]}
+        self.assertIn("retiring", published)
+        self.assertEqual(published["retiring"]["kty"], "RSA")
+
+
 class SymmetricKeyTest(TestCase):
     """`JWT_DEPLOYMENT_KEYS` is a plain settings dict and core's own suite puts
     an HMAC secret in it. Publishing one would turn the shared secret this work
