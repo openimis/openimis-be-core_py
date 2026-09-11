@@ -10,7 +10,7 @@ import graphene
 import jsonschema
 from django.db import models
 from django.conf import settings
-from django.core.exceptions import ValidationError, FieldDoesNotExist
+from django.core.exceptions import PermissionDenied, ValidationError, FieldDoesNotExist
 from core.gql_errors import AuthenticationRequired
 from django.core.files.storage import default_storage
 from django.db.models import Q, ForeignKey
@@ -73,6 +73,43 @@ def clear_current_user():
     clear_access_cache()
 
 
+# Request header (in its WSGI META form) carrying the user to impersonate.
+IMPERSONATE_USER_META = "HTTP_X_IMPERSONATE_USER"
+
+# Wording matters: the frontend matches this substring to detect a rejected
+# impersonation and drop its own impersonation state, so every refusal below
+# leads with it.
+INVALID_IMPERSONATION_TARGET = "Invalid impersonation target"
+
+
+class ImpersonationDenied(PermissionDenied):
+    """Raised when a request may not impersonate the user it asked for.
+
+    Subclasses PermissionDenied so existing handlers keep treating it as a
+    permission failure, but it is distinguishable so that the GraphQL layer can
+    surface its message to the client instead of a generic NO_PERMISSION: the
+    frontend needs that message to stop impersonating.
+    """
+
+
+def get_original_user():
+    """The authenticated user behind an impersonation, None when not impersonating.
+
+    Audit trails record this one rather than the impersonated user, so history
+    always attributes a change to whoever actually made it.
+    """
+    return getattr(_request_local, "original_user", None)
+
+
+def set_original_user(user):
+    _request_local.original_user = user
+
+
+def clear_original_user():
+    if hasattr(_request_local, "original_user"):
+        del _request_local.original_user
+
+
 def _get_thread_access_cache(name):
     cache = getattr(_request_local, name, None)
     if cache is None:
@@ -124,6 +161,83 @@ def clear_history_context():
                 del HistoricalRecords.thread.request
         except Exception:
             pass
+
+
+def impersonation_target_id(request):
+    """Read the impersonation header off a request or a GraphQL context."""
+    meta = getattr(request, "META", None)
+    if meta is None:
+        meta = getattr(getattr(request, "request", None), "META", None)
+    return meta.get(IMPERSONATE_USER_META) if meta else None
+
+
+def handle_impersonation(request, user):
+    """Resolve the effective user for a request, honouring X-Impersonate-User.
+
+    Sets the thread-local current user (the effective one) and original user
+    (the authenticated one, and only while impersonating), then returns the
+    effective user. Every authenticated request goes through this so the thread
+    locals get rewritten rather than inherited from whatever ran on the thread
+    before, which is what keeps an impersonation from leaking into the next call.
+
+    Impersonation is a dev/support aid gated by CoreConfig.impersonation_enabled
+    (.env IMPERSONATION_ENABLED -> settings.IMPERSONATION_ENABLED), so on a
+    production instance the header is refused outright.
+    """
+    target_id = impersonation_target_id(request)
+    if not target_id:
+        set_original_user(None)
+        set_current_user(user)
+        return user
+
+    # Lazy import: core.utils is imported from core.models, which loads before
+    # core.apps has finished setting up.
+    from core.apps import CoreConfig
+
+    if not CoreConfig.impersonation_enabled:
+        # Rejected the same way as a bad target so the frontend drops its own
+        # impersonation state; the log line is what tells an operator that the
+        # feature is merely switched off here.
+        logger.warning(
+            "Refused impersonation by %s: impersonation is disabled on this instance",
+            getattr(user, "username", user),
+        )
+        raise ImpersonationDenied(
+            "%s: impersonation is disabled on this instance"
+            % INVALID_IMPERSONATION_TARGET
+        )
+
+    if not getattr(user, "is_superuser", False):
+        logger.warning(
+            "Refused impersonation by non-superuser %s", getattr(user, "username", user)
+        )
+        raise ImpersonationDenied(
+            "%s: impersonation requires superuser privileges"
+            % INVALID_IMPERSONATION_TARGET
+        )
+
+    from django.apps import apps
+
+    User = apps.get_model("core", "User")
+    try:
+        # Only interactive users carry the rights an impersonated session needs.
+        target_user = User.objects.get(
+            id=uuid.UUID(str(target_id)), i_user__isnull=False
+        )
+    except (ValueError, TypeError, AttributeError, User.DoesNotExist) as exc:
+        logger.warning(
+            "Refused impersonation by %s: %r is not a valid target",
+            getattr(user, "username", user),
+            target_id,
+        )
+        raise ImpersonationDenied(INVALID_IMPERSONATION_TARGET) from exc
+
+    set_original_user(user)
+    set_current_user(target_user)
+    logger.info(
+        "Superuser %s is impersonating %s", user.username, target_user.username
+    )
+    return target_user
 
 
 class TimeUtils(object):

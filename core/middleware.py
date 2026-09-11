@@ -1,11 +1,75 @@
 import logging
+from django.contrib.auth import authenticate
 from django.utils.timezone import now
 from django_ratelimit.core import is_ratelimited
 from rest_framework.exceptions import JsonResponse
 from django.conf import settings
+from graphql_jwt.middleware import JSONWebTokenMiddleware
+
+from core.utils import (
+    impersonation_target_id,
+    clear_current_user,
+    clear_history_context,
+    clear_original_user,
+    get_original_user,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+class ClearUserContextMiddleware:
+    """Reset the thread-local user context at the start of every request.
+
+    Gunicorn and the dev server both reuse threads between requests, so without
+    this the current/original user (and the simple-history request) set by the
+    previous request stay visible to the next one -- which is how an
+    impersonation would bleed into a later, unrelated call.
+
+    Must sit early in MIDDLEWARE, after SessionMiddleware.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        clear_current_user()
+        clear_original_user()
+        clear_history_context()
+        return self.get_response(request)
+
+
+class CustomJSONWebTokenMiddleware(JSONWebTokenMiddleware):
+    """graphql_jwt authenticates only while the context has no user yet.
+
+    Once a user is on the context -- cached per path, or resolved from a Django
+    session -- the parent skips authenticate(), and with it the impersonation
+    handling in core.jwt_authentication.JSONWebTokenBackend. So a request
+    carrying X-Impersonate-User authenticates explicitly instead.
+
+    get_original_user() is the "already applied" marker: ClearUserContextMiddleware
+    empties it per request, and handle_impersonation fills it in, so only the
+    first resolved field of a request pays for the extra authenticate() call.
+    The impersonated user is deliberately never written to the parent's
+    per-path cache.
+    """
+
+    def resolve(self, next, root, info, **kwargs):
+        context = info.context
+
+        if (
+            impersonation_target_id(context)
+            and get_original_user() is None
+            and self.authenticate_context(info, **kwargs)
+        ):
+            # Raises (as a GraphQLError) when this instance has impersonation
+            # disabled, the caller is not a superuser, or the target is unknown.
+            user = authenticate(request=context, **kwargs)
+            if user is not None:
+                context.user = user
+            return next(root, info, **kwargs)
+
+        return super().resolve(next, root, info, **kwargs)
 
 
 class DefaultAxesAttributesMiddleware:
