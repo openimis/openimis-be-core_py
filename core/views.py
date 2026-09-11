@@ -1,11 +1,16 @@
+import json
+
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.http import Http404, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from isodate import strftime
+from jwt.algorithms import RSAAlgorithm
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from .auth import keys
 from .models import User, ExportableQueryModel
 from .scheduler import scheduler
 from .serializers import UserSerializer
@@ -91,10 +96,28 @@ def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])
 
 
+def _jwk(kid, public_key):
+    jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
+    # to_jwk emits key_ops, which the RFC 7638 thumbprint is not defined over;
+    # dropped for the same reason keys.derive_kid drops it.
+    jwk.pop("key_ops", None)
+    return {**jwk, "kid": kid, "use": "sig", "alg": keys.algorithm()}
+
+
 @api_view(["GET"])
 # Emptied, not just AllowAny: JWTAuthentication is a DRF default, so a malformed
 # Authorization header would otherwise 401 an endpoint that must stay public.
 @authentication_classes([])
 @permission_classes([AllowAny])
 def jwks(request):
-    return Response({"keys": []})
+    # Only RSA public halves: JWT_DEPLOYMENT_KEYS is a plain settings dict that
+    # may hold a symmetric secret, and publishing one here would disclose it.
+    return Response(
+        {
+            "keys": [
+                _jwk(kid, key)
+                for kid, key in keys.deployment_keys().items()
+                if isinstance(key, rsa.RSAPublicKey)
+            ]
+        }
+    )
