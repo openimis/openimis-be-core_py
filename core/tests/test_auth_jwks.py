@@ -32,9 +32,14 @@ SIGNING_PEM = _pem(SIGNING_KEY)
 with_signing_key = override_settings(JWT_SIGNING_KEY=SIGNING_PEM)
 
 
+@override_settings(JWT_SIGNING_KEY=None, JWT_DEPLOYMENT_KEYS=None)
 class EmptyKeySetTest(TestCase):
     """Nothing provisioned is a true answer, not an error: a consumer polling
     before provisioning must not have to special-case a 404.
+
+    Both settings are overridden rather than assumed absent: JWT_SIGNING_KEY
+    comes from the environment, so without this the test asserts against
+    whatever the machine happens to have provisioned.
     """
 
     def test_serves_an_empty_key_set(self):
