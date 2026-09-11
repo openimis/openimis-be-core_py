@@ -25,7 +25,10 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
-    if keys.mode() == keys.DEPLOYMENT:
+    # Provisioning the key is the switch; there is no mode setting. Material
+    # that will not parse raises here rather than falling through to the
+    # per-user path.
+    if keys.signing_key() is not None:
         return auth_encode(payload, context)
 
     now = timegm(datetime.utcnow().utctimetuple())

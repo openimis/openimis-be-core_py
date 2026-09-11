@@ -11,6 +11,7 @@ from django.test import TestCase, override_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode, keys
+from core.auth.encode import encode as auth_encode
 from core.models import User
 from core.test_helpers import create_test_interactive_user
 
@@ -32,9 +33,7 @@ SIGNING_KEY = _keypair()
 SIGNING_PEM = _pem(SIGNING_KEY)
 OTHER_PEM = _pem(_keypair())
 
-in_deployment_mode = override_settings(
-    JWT_KEY_MODE="deployment", JWT_SIGNING_KEY=SIGNING_PEM
-)
+with_signing_key = override_settings(JWT_SIGNING_KEY=SIGNING_PEM)
 
 
 @dataclass
@@ -62,9 +61,9 @@ def _issue(user):
     return get_token(user, DummyContext(user=user))
 
 
-class DefaultModeTest(TestCase):
-    """No mode configured: every deployment today, and every deployment that
-    upgrades without opting in.
+class NoKeyProvisionedTest(TestCase):
+    """Nothing provisioned: every deployment today, and every deployment that
+    upgrades without provisioning a key.
     """
 
     def test_tokens_carry_no_kid_and_are_signed_hs256(self):
@@ -78,9 +77,6 @@ class DefaultModeTest(TestCase):
 
         self.assertEqual(decode(_issue(user))["username"], user.username)
 
-    def test_mode_defaults_to_per_user(self):
-        self.assertEqual(keys.mode(), "per_user")
-
     def test_iat_is_emitted(self):
         # On this path too, not only in deployment mode: OP-3128's revocation
         # reference compares against it.
@@ -89,8 +85,8 @@ class DefaultModeTest(TestCase):
         self.assertIsInstance(payload["iat"], int)
 
 
-@in_deployment_mode
-class DeploymentModeTest(TestCase):
+@with_signing_key
+class ProvisionedKeyTest(TestCase):
     def test_tokens_carry_the_derived_kid_and_are_signed_rs256(self):
         header = pyjwt.get_unverified_header(_issue(_user("signDeployment")))
 
@@ -129,31 +125,40 @@ class DeploymentModeTest(TestCase):
 
 
 class MigrationWindowTest(TestCase):
-    """The acceptance criterion the whole dual-mode design exists for: flipping
-    the switch must not log anyone out.
+    """The acceptance criterion the dual-shape decode exists for: provisioning
+    a key must not log anyone out.
     """
 
     def test_a_token_issued_before_the_switch_still_decodes_after_it(self):
         user = _user("signMigration")
         legacy_token = _issue(user)
 
-        with in_deployment_mode:
+        with with_signing_key:
             self.assertEqual(decode(legacy_token)["username"], user.username)
 
-    def test_both_shapes_decode_while_the_switch_is_on(self):
+    def test_both_shapes_decode_while_the_key_is_provisioned(self):
         legacy_user = _user("signMigrationLegacy")
         legacy_token = _issue(legacy_user)
 
-        with in_deployment_mode:
+        with with_signing_key:
             new_token = _issue(_user("signMigrationNew"))
 
             self.assertEqual(decode(legacy_token)["username"], legacy_user.username)
             self.assertEqual(decode(new_token)["username"], "signMigrationNew")
 
-        # And the deployment-key token keeps verifying if the mode is turned
-        # back off, because decode never consults the mode.
-        with override_settings(JWT_SIGNING_KEY=SIGNING_PEM):
-            self.assertEqual(decode(new_token)["username"], "signMigrationNew")
+    def test_backing_the_key_out_needs_its_public_half_kept(self):
+        # Unprovisioning takes the verification key with it, so the public half
+        # has to reach JWT_DEPLOYMENT_KEYS first or outstanding tokens stop
+        # verifying. The mode used to make this a one-setting rollback.
+        with with_signing_key:
+            token = _issue(_user("signRollback"))
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            decode(token)
+
+        kid = keys.derive_kid(SIGNING_KEY.public_key())
+        with override_settings(JWT_DEPLOYMENT_KEYS={kid: SIGNING_KEY.public_key()}):
+            self.assertEqual(decode(token)["username"], "signRollback")
 
 
 class KeyIdDerivationTest(TestCase):
@@ -213,12 +218,10 @@ class KeyLoadingTest(TestCase):
             handle.write(SIGNING_PEM)
             handle.flush()
 
-            with override_settings(
-                JWT_KEY_MODE="deployment", JWT_SIGNING_KEY=handle.name
-            ):
+            with override_settings(JWT_SIGNING_KEY=handle.name):
                 from_file = _issue(user)
 
-        with in_deployment_mode:
+        with with_signing_key:
             from_inline = _issue(user)
 
             # Decoded inside the block: outside it nothing is provisioned and
@@ -255,17 +258,14 @@ class KeyLoadingTest(TestCase):
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
 
-class MisconfiguredDeploymentModeTest(TestCase):
-    """Deployment mode with no key must fail loudly at issue rather than
-    silently keep issuing per-user-key tokens.
+class EncodeWithoutAKeyTest(TestCase):
+    """`jwt_encode_user_key` never reaches this with nothing provisioned, but
+    an assembly can point JWT_ENCODE_HANDLER straight at `encode`.
     """
 
-    @override_settings(JWT_KEY_MODE="deployment")
-    def test_issuing_without_a_key_raises_and_names_the_setting(self):
-        user = _user("signNoKey")
-
+    def test_encoding_without_a_key_raises_and_names_the_setting(self):
         with self.assertRaises(ValueError) as caught:
-            _issue(user)
+            auth_encode({"username": "signNoKey", "exp": _now() + 3600})
 
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
@@ -277,7 +277,7 @@ class CorruptSigningKeyTest(TestCase):
     This is the deliberate exception to OP-3126 decision 6 - decode raising
     anything but an InvalidTokenError reaches the client as a 500. A 401 here
     would tell the client its token was bad when the deployment's key is, and
-    would hide the outage. Legacy tokens are untouched: no kid, no key load.
+    would hide the outage.
     """
 
     @override_settings(JWT_SIGNING_KEY="-----BEGIN PRIVATE KEY-----\nnope\n")
@@ -296,7 +296,12 @@ class CorruptSigningKeyTest(TestCase):
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
     @override_settings(JWT_SIGNING_KEY="-----BEGIN PRIVATE KEY-----\nnope\n")
-    def test_legacy_tokens_are_unaffected(self):
-        user = _user("signCorruptLegacy")
+    def test_issuing_refuses_rather_than_falling_back_to_the_per_user_key(self):
+        # The operator set the variable, so they believe they are on the
+        # deployment key. Issuing per-user tokens instead would hide that.
+        user = _user("signCorruptIssue")
 
-        self.assertEqual(decode(_issue(user))["username"], user.username)
+        with self.assertRaises(ValueError) as caught:
+            _issue(user)
+
+        self.assertIn("JWT_SIGNING_KEY", str(caught.exception))

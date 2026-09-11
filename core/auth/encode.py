@@ -18,9 +18,7 @@ def encode(payload, context=None):
     """
     provisioned = keys.signing_key()
     if provisioned is None:
-        raise ValueError(
-            f"JWT_KEY_MODE is {keys.DEPLOYMENT!r} but JWT_SIGNING_KEY is not set"
-        )
+        raise ValueError("JWT_SIGNING_KEY is not set")
     private_key, kid = provisioned
 
     now = timegm(datetime.utcnow().utctimetuple())
