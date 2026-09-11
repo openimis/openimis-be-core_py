@@ -3,12 +3,14 @@ from calendar import timegm
 import jwt
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.signals import token_issued
-from django.apps import apps
 from django.utils import timezone
 from django.dispatch import receiver
 import logging
 import uuid
 from datetime import datetime
+from core.auth import decode as auth_decode
+from core.auth import keys
+from core.auth.encode import encode as auth_encode
 from core.models import InteractiveUser
 
 logger = logging.getLogger(__file__)
@@ -23,8 +25,17 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
+    # Provisioning the key is the switch; there is no mode setting. Material
+    # that will not parse raises here rather than falling through to the
+    # per-user path.
+    if keys.signing_key() is not None:
+        return auth_encode(payload, context)
+
+    now = timegm(datetime.utcnow().utctimetuple())
     payload["jti"] = str(uuid.uuid4())
-    payload["nbf"] = timegm(datetime.utcnow().utctimetuple())
+    payload["nbf"] = now
+    # Here too, so claims.issued_at_from stops falling back to origIat.
+    payload["iat"] = now
 
     token = jwt.encode(
         payload,
@@ -38,47 +49,9 @@ def jwt_encode_user_key(payload, context=None):
 
 
 def jwt_decode_user_key(token, context=None):
-    # First decode the token without validating it, so we can extract the username
-    not_validated = jwt.decode(
-        token,
-        get_jwt_key(encode=False, context=context),
-        options={
-            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
-            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
-            "verify_signature": False,
-        },
-        leeway=jwt_settings.JWT_LEEWAY,
-        audience=jwt_settings.JWT_AUDIENCE,
-        issuer=jwt_settings.JWT_ISSUER,
-        algorithms=[jwt_settings.JWT_ALGORITHM],
-    )
-    if not_validated and not_validated.get("username"):
-        user_class = apps.get_model("core", "User")
-        # no .only() here: it clones the queryset and drops the result cache
-        # that CachedManager.filter() just populated, forcing a round trip
-        db_user = user_class.objects.filter(
-            username=not_validated.get("username"),
-            *user_class.filter_validity()
-        ).first()
-        if db_user and db_user.i_user and db_user.i_user.private_key:
-            key = db_user.i_user.private_key
-        else:
-            key = get_jwt_key(encode=False)
-    else:
-        key = get_jwt_key(encode=False)
-    return jwt.decode(
-        token,
-        key,
-        options={
-            "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
-            "verify_aud": jwt_settings.JWT_AUDIENCE is not None,
-            "verify_signature": jwt_settings.JWT_VERIFY,
-        },
-        leeway=jwt_settings.JWT_LEEWAY,
-        audience=jwt_settings.JWT_AUDIENCE,
-        issuer=jwt_settings.JWT_ISSUER,
-        algorithms=[jwt_settings.JWT_ALGORITHM],
-    )
+    # Kept as the configured JWT_DECODE_HANDLER so this module stays
+    # decode-compatible with an assembly that has not been updated.
+    return auth_decode(token, context)
 
 
 def get_jwt_key(encode=True, context=None, payload=None):
