@@ -1,7 +1,11 @@
+from secrets import token_hex
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
+
+from core.auth import keys
 
 JWKS_URL = "/api/core/jwks.json"
 
@@ -31,3 +35,44 @@ class EmptyKeySetTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"keys": []})
+
+
+@with_signing_key
+class ProvisionedKeyTest(TestCase):
+    def test_publishes_the_provisioned_key_under_its_kid(self):
+        response = APIClient().get(JWKS_URL)
+        published = response.json()["keys"]
+
+        self.assertEqual(len(published), 1)
+        jwk = published[0]
+        self.assertEqual(jwk["kid"], keys.signing_key()[1])
+        self.assertEqual(jwk["kty"], "RSA")
+        self.assertEqual(jwk["use"], "sig")
+        self.assertEqual(jwk["alg"], keys.algorithm())
+        self.assertTrue(jwk["n"] and jwk["e"])
+
+    def test_never_publishes_the_private_half(self):
+        jwk = APIClient().get(JWKS_URL).json()["keys"][0]
+
+        # Asserted on the parsed members, not the raw body: base64 contains
+        # these letters, so a substring search would pass for the wrong reason.
+        self.assertEqual(set(jwk), {"kty", "n", "e", "kid", "use", "alg"})
+
+
+class SymmetricKeyTest(TestCase):
+    """`JWT_DEPLOYMENT_KEYS` is a plain settings dict and core's own suite puts
+    an HMAC secret in it. Publishing one would turn the shared secret this work
+    exists to remove into a one-request disclosure.
+    """
+
+    def test_a_symmetric_entry_is_not_published(self):
+        secret = token_hex(32)
+        with override_settings(
+            JWT_SIGNING_KEY=SIGNING_PEM, JWT_DEPLOYMENT_KEYS={"legacy": secret}
+        ):
+            response = APIClient().get(JWKS_URL)
+            expected_kid = keys.signing_key()[1]
+
+        published = response.json()["keys"]
+        self.assertEqual([jwk["kid"] for jwk in published], [expected_kid])
+        self.assertNotIn(secret, response.content.decode())
