@@ -12,16 +12,6 @@ from django.conf import settings
 from graphql_jwt.settings import jwt_settings
 from jwt.algorithms import RSAAlgorithm
 
-PER_USER = "per_user"
-DEPLOYMENT = "deployment"
-
-
-def mode():
-    """Read by the encoder only - gating decode on it would log everyone out
-    the moment a deployment flipped the switch.
-    """
-    return getattr(settings, "JWT_KEY_MODE", PER_USER)
-
 
 def derive_kid(public_key):
     """RFC 7638 JWK thumbprint: a pure function of the key, so replicas agree
@@ -81,10 +71,12 @@ def signing_key():
 def deployment_keys():
     """`{kid: verification key}`. Empty until a deployment provisions one.
 
-    The provisioned public half is here whatever the mode is: a token issued in
-    deployment mode has to keep verifying if the mode is turned back off.
-    `JWT_DEPLOYMENT_KEYS` merges over the top, which is what keeps a retired
-    public key verifiable through a rotation.
+    The provisioned public half is always here, so a process can verify what it
+    signs. `JWT_DEPLOYMENT_KEYS` merges over the top, and is how a key stays
+    verifiable once it stops signing: put the retiring public half there
+    *before* changing `JWT_SIGNING_KEY`, or every token it signed stops
+    verifying at once. That applies to a rotation and to backing the deployment
+    key out again - unprovisioning alone takes the verification key with it.
     """
     configured = getattr(settings, "JWT_DEPLOYMENT_KEYS", None) or {}
     provisioned = signing_key()
