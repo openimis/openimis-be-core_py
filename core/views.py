@@ -96,6 +96,24 @@ def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])
 
 
+def _public_key(key):
+    """A verification key reaches the mapping either as a key object or as PEM
+    text, and PyJWT accepts both. A symmetric secret is neither, and publishing
+    one here would disclose it.
+    """
+    if isinstance(key, rsa.RSAPublicKey):
+        return key
+    if not isinstance(key, (str, bytes)):
+        return None
+    try:
+        prepared = RSAAlgorithm(RSAAlgorithm.SHA256).prepare_key(key)
+    except (ValueError, TypeError):
+        return None
+    # A private key here is a misconfiguration; drop it rather than publish its
+    # public half from a mapping that should only ever hold verification keys.
+    return prepared if isinstance(prepared, rsa.RSAPublicKey) else None
+
+
 def _jwk(kid, public_key):
     jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
     # to_jwk emits key_ops, which the RFC 7638 thumbprint is not defined over;
@@ -110,14 +128,9 @@ def _jwk(kid, public_key):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def jwks(request):
-    # Only RSA public halves: JWT_DEPLOYMENT_KEYS is a plain settings dict that
-    # may hold a symmetric secret, and publishing one here would disclose it.
-    return Response(
-        {
-            "keys": [
-                _jwk(kid, key)
-                for kid, key in keys.deployment_keys().items()
-                if isinstance(key, rsa.RSAPublicKey)
-            ]
-        }
-    )
+    published = []
+    for kid, key in keys.deployment_keys().items():
+        public_key = _public_key(key)
+        if public_key is not None:
+            published.append(_jwk(kid, public_key))
+    return Response({"keys": published})
