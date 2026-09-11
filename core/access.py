@@ -14,20 +14,30 @@ from core.utils import (
     set_authentication_checked,
 )
 from core.models.user_business_access import UserBusinessAccess
+from core.gql_errors import FORBIDDEN, UNAUTHENTICATED
+from core.service_errors import ServiceError
 
 logger = logging.getLogger(__name__)
 
-SERVICE_AUTH_ERROR = {
-    "success": False,
-    "message": "Authentication required",
-    "detail": "PermissionDenied",
-}
+# Typed originals. The dicts below are rendered from these, so the payload and
+# its code can never drift apart; see core.service_errors.
+SERVICE_AUTH_ERROR_MODEL = ServiceError(
+    code=UNAUTHENTICATED,
+    message="Authentication required",
+    detail="PermissionDenied",
+    include_data=False,  # this payload has never carried a "data" key
+)
 
-SERVICE_PERMISSION_ERROR = {
-    "success": False,
-    "message": "Permissions required",
-    "detail": "PermissionDenied",
-}
+SERVICE_PERMISSION_ERROR_MODEL = ServiceError(
+    code=FORBIDDEN,
+    message="Permissions required",
+    detail="PermissionDenied",
+    include_data=False,
+)
+
+# Kept for anything importing the payload directly.
+SERVICE_AUTH_ERROR = SERVICE_AUTH_ERROR_MODEL.as_dict()
+SERVICE_PERMISSION_ERROR = SERVICE_PERMISSION_ERROR_MODEL.as_dict()
 
 # Shared format for business access checks:
 #   [content_type_label, object_id]
@@ -259,13 +269,15 @@ def user_has_permissions(
 def authentication_error(for_view=False):
     if for_view:
         return JsonResponse({"error": "Authentication required"}, status=401)
-    return SERVICE_AUTH_ERROR
+    # A fresh dict each call: the previous shared constant could be mutated by
+    # any caller that received it.
+    return SERVICE_AUTH_ERROR_MODEL.as_dict()
 
 
 def permission_error(for_view=False):
     if for_view:
         return JsonResponse({"error": "Forbidden"}, status=403)
-    return SERVICE_PERMISSION_ERROR
+    return SERVICE_PERMISSION_ERROR_MODEL.as_dict()
 
 
 def guard_user_access(

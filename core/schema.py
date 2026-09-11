@@ -39,7 +39,13 @@ from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
-from core.gql_errors import AuthenticationRequired
+from core.gql_errors import (
+    AuthenticationRequired,
+    CodedGraphQLError,
+    CsrfTokenInvalid,
+    LockedOut,
+    safe_error_message,
+)
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction, models
 from django.db.models import Q, Count
@@ -218,10 +224,13 @@ def _check_csrf_token(request):
         bypass in user_agent
         for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])
     )):
-        session_csrf = request.session['csrftoken']
-        request_csrf = request.META['HTTP_X_CSRFTOKEN']
-        if session_csrf != request_csrf:
-            raise PermissionDenied("CSRF token missing or incorrect.")
+        # .get(), not [...]: a missing token is the common case (expired or
+        # fresh session) and used to surface as KeyError('csrftoken'), which
+        # told the client nothing and never matched the message below.
+        session_csrf = (getattr(request, "session", None) or {}).get("csrftoken")
+        request_csrf = request.META.get("HTTP_X_CSRFTOKEN")
+        if not session_csrf or not request_csrf or session_csrf != request_csrf:
+            raise CsrfTokenInvalid("CSRF token missing or incorrect.")
 
 
 class OpenIMISJSONEncoder(DjangoJSONEncoder):
@@ -539,7 +548,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 f"Exception while processing mutation id {mutation_log.id}",
                 exc_info=exc
             )
-            mutation_log.safe_mark_as_failed(str(exc))
+            # mutation_log.error is returned to the client, so an unexpected
+            # exception must not carry its text out of here -- the inner
+            # handler above already withholds details for the same reason.
+            # The full exception is in the log line just above.
+            mutation_log.safe_mark_as_failed(safe_error_message(exc))
 
         metadata = {}
         try:
@@ -579,8 +592,15 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 if metadata:
                     mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
                     MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Metadata is best-effort: the mutation itself already succeeded or
+            # failed above, so don't fail the response over it -- but don't
+            # discard the reason silently either.
+            logger.warning(
+                "[OpenIMISMutation %s] could not assemble metadata",
+                mutation_log.id,
+                exc_info=exc,
+            )
 
         return cls(
             internal_id=mutation_log.id,
@@ -2273,7 +2293,7 @@ class GetCsrfTokenMutation(graphene.Mutation):
     def mutate(cls, root, info):
         csrf_token = get_token(info.context)
         if not csrf_token:
-            raise GraphQLError("CSRF token could not be generated")
+            raise CodedGraphQLError("CSRF token could not be generated")
         if info.context and hasattr(info.context, 'session'):
             info.context.session['csrftoken'] = csrf_token
             info.context.session.save()
@@ -2396,7 +2416,7 @@ def check_lockout(request):
                     now() - last_attempt_time
                 )
                 remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
-                raise GraphQLError(
+                raise LockedOut(
                     f"Too many failed attempts."
                     f"Try again in {remaining_minutes} minutes."
                 )
