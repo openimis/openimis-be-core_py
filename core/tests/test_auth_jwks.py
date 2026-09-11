@@ -1,11 +1,18 @@
+import json
+from dataclasses import dataclass
 from secrets import token_hex
 
+import jwt as pyjwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
+from graphql_jwt.shortcuts import get_token
+from jwt.algorithms import RSAAlgorithm
 from rest_framework.test import APIClient
 
 from core.auth import keys
+from core.models import User
+from core.test_helpers import create_test_interactive_user
 
 JWKS_URL = "/api/core/jwks.json"
 
@@ -91,3 +98,35 @@ class UnauthenticatedAccessTest(TestCase):
         client.credentials(HTTP_AUTHORIZATION="Bearer not-a-token")
 
         self.assertEqual(client.get(JWKS_URL).status_code, 200)
+
+
+@dataclass
+class DummyContext:
+    """graphql_jwt hands the encode handler a context; only .user is read."""
+
+    user: User
+
+
+@with_signing_key
+class VerifyUsingOnlyTheEndpointTest(TestCase):
+    """The ticket's done-when. Nothing below the fetch may touch settings or
+    core.auth - reaching back into them would prove nothing about a third party
+    holding no shared secret.
+    """
+
+    def test_a_token_openimis_issued_verifies_from_the_published_key(self):
+        user = create_test_interactive_user(username="jwksVerifier")
+        token = get_token(user, DummyContext(user=user))
+
+        document = APIClient().get(JWKS_URL).json()
+
+        kid = pyjwt.get_unverified_header(token)["kid"]
+        jwk = next(k for k in document["keys"] if k["kid"] == kid)
+        payload = pyjwt.decode(
+            token,
+            RSAAlgorithm.from_jwk(json.dumps(jwk)),
+            algorithms=[jwk["alg"]],
+            options={"verify_aud": False},
+        )
+
+        self.assertEqual(payload["username"], user.username)
