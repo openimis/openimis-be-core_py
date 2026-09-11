@@ -160,3 +160,14 @@ class VerifyUsingOnlyTheEndpointTest(TestCase):
         )
 
         self.assertEqual(payload["username"], user.username)
+
+
+@with_signing_key
+class RendererTest(TestCase):
+    def test_never_renders_the_browsable_html_page(self):
+        # Without renderer_classes the DRF default set includes the browsable
+        # API, so a browser Accept header turns a machine-readable endpoint into
+        # an HTML page.
+        response = APIClient().get(JWKS_URL, HTTP_ACCEPT="text/html")
+
+        self.assertNotIn("text/html", response.headers.get("Content-Type", ""))

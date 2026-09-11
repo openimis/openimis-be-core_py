@@ -6,10 +6,17 @@ from django.views.decorators.http import require_GET
 from isodate import strftime
 from jwt.algorithms import RSAAlgorithm
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    action,
+    api_view,
+    authentication_classes,
+    permission_classes,
+    renderer_classes,
+)
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from .auth import keys
 from .models import User, ExportableQueryModel
 from .scheduler import scheduler
@@ -127,6 +134,9 @@ def _jwk(kid, public_key):
 # Authorization header would otherwise 401 an endpoint that must stay public.
 @authentication_classes([])
 @permission_classes([AllowAny])
+# JSON only: the DRF default set includes the browsable API, which would answer
+# a browser Accept header with an HTML page from a machine-readable endpoint.
+@renderer_classes([JSONRenderer])
 def jwks(request):
     published = []
     for kid, key in keys.deployment_keys().items():
