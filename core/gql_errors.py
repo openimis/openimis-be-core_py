@@ -128,10 +128,13 @@ def classify(error):
 
     declared = (getattr(root, "extensions", None) or {}).get("code")
     if declared:
-        # Choosing a coded error class is an opt-in that the message is meant
-        # for the client, so default to disclosing it. An error that carries a
-        # code but wraps something internal says so with `client_safe = False`
-        # (see core.service_errors.ServiceErrorException).
+        # INTERNAL_ERROR never discloses, however it was raised: one invariant
+        # rather than a per-class opt-in, so a code and its disclosure can
+        # never disagree. An internal failure's detail belongs in the log (and
+        # in Sentry), not in the response. Any other declared code is a
+        # deliberate, client-facing failure unless it says otherwise.
+        if declared == INTERNAL_ERROR:
+            return declared, False
         return declared, bool(getattr(root, "client_safe", True))
 
     if isinstance(root, JSONWebTokenError):

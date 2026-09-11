@@ -284,12 +284,11 @@ class ServiceErrorException(Exception):
     boundary and been rebuilt with ``from_dict``.
 
     It declares ``extensions`` so the GraphQL formatter picks up the code with
-    no special-casing, and ``client_safe`` so an INTERNAL_ERROR payload does not
-    have its message disclosed just because the code was declared explicitly.
+    no special-casing. Whether the message is disclosed follows from the code:
+    ``core.gql_errors.classify`` withholds INTERNAL_ERROR unconditionally.
     """
 
     def __init__(self, error):
         super().__init__(error.message)
         self.error = error
         self.extensions = {CODE_KEY: error.code}
-        self.client_safe = error.code != INTERNAL_ERROR
