@@ -5,8 +5,9 @@ from core.auth.identity import IdentityClaims, IdentitySpec
 
 
 class IdentityProvider(abc.ABC):
-    """Three methods are the whole contract. `verify` does no database access,
-    which is why the legacy per-user-key path is a provider of its own.
+    """Three methods are the whole contract. `verify` does no database access:
+    a provider resolves its keys from configuration, never from the identity the
+    token claims.
     """
 
     id: str

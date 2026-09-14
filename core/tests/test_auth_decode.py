@@ -1,5 +1,4 @@
 from calendar import timegm
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from secrets import token_hex
 
@@ -9,7 +8,6 @@ from django.test import TestCase, override_settings
 from graphql_jwt.settings import jwt_settings
 
 from core.auth import decode
-from core.models import User
 from core.test_helpers import create_test_interactive_user
 
 DEPLOYMENT_KID = "deployment-2026-09"
@@ -19,13 +17,6 @@ with_deployment_key = override_settings(
     JWT_DEPLOYMENT_KEYS={DEPLOYMENT_KID: DEPLOYMENT_KEY},
     JWT_DEPLOYMENT_ALGORITHM="HS256",
 )
-
-
-@dataclass
-class DummyContext:
-    """graphql_jwt hands the encode handler a context; only .user is read."""
-
-    user: User
 
 
 def _password():

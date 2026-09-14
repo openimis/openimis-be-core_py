@@ -208,9 +208,13 @@ def create_test_technical_user(
     password="S\\/pe®Pąßw0rd" "",
     staff=False,
     super_user=False,
-    custom_tech_user_props={},
-    custom_core_user_props={},
+    custom_tech_user_props=None,
+    custom_core_user_props=None,
 ):
+    # Not `={}`: these were mutated in place, so one caller's password leaked
+    # into the next call's lookup through the shared default.
+    custom_tech_user_props = custom_tech_user_props or {}
+    custom_core_user_props = custom_core_user_props or {}
     t_user, t_user_created = TechnicalUser.objects.get_or_create(
         **{
             "username": username,
