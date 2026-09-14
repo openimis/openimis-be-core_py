@@ -10,8 +10,9 @@ class LocalProvider(IdentityProvider):
     """openIMIS-issued tokens signed with the deployment keypair.
 
     Trusting the unverified `kid` is safe because it only picks from a fixed key
-    set: a forged one selects a key that then fails verification. Contrast
-    providers/legacy.py, where the key is chosen by an unverified *identity*.
+    set: a forged one selects a key that then fails verification. Selecting on
+    anything the token asserts about *who* it belongs to would not be - that is
+    what the deleted per-user-key path did, and why it read the database first.
     """
 
     id = "local"
