@@ -137,7 +137,7 @@ class TechnicalUserRevocationBoundaryTest(TestCase):
 
 class TechnicalUserRightsTest(TestCase):
     """Pre-existing behaviour, pinned because this ticket is what first lets a
-    technical user hold a token to exercise it. See OP-1353.
+    technical user hold a token to exercise it.
     """
 
     def test_a_technical_user_holds_no_rights(self):
@@ -162,7 +162,7 @@ class TechnicalUserRightsTest(TestCase):
     def test_the_core_user_superuser_flag_does(self):
         # The escalation is real but needs a deliberate write to core_User,
         # which no openIMIS code path performs for a technical user. Pinned so
-        # the boundary is on record rather than assumed - see OP-1353.
+        # the boundary is on record rather than assumed.
         user = _technical_user("techSuperCore")
         user.is_superuser = True
         user.save()
