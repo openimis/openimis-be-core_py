@@ -19,8 +19,10 @@ class LocalProvider(IdentityProvider):
     def accepts(self, header, unverified):
         if header.get("kid") is None:
             return False
-        issuer = unverified.get("iss")
-        return issuer is None or issuer == keys.issuer()
+        # A token is ours when its issuer is the one we issue under, which with
+        # JWT_ISSUER unset means carrying no iss at all. The claim is unverified
+        # here, so this only routes; the signature still has to hold.
+        return unverified.get("iss") == keys.issuer()
 
     def verify(self, token):
         kid = jwt.get_unverified_header(token).get("kid")
