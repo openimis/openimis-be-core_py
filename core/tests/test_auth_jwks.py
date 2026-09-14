@@ -139,9 +139,9 @@ class DummyContext:
 
 @with_signing_key
 class VerifyUsingOnlyTheEndpointTest(TestCase):
-    """The ticket's done-when. Nothing below the fetch may touch settings or
-    core.auth - reaching back into them would prove nothing about a third party
-    holding no shared secret.
+    """Nothing below the fetch may touch settings or core.auth: reaching back
+    into them would prove nothing about a third party that holds no shared
+    secret.
     """
 
     def test_a_token_openimis_issued_verifies_from_the_published_key(self):
