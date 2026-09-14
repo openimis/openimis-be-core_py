@@ -32,7 +32,7 @@ class LocalProvider(IdentityProvider):
             issuer=keys.issuer(),
             leeway=jwt_settings.JWT_LEEWAY,
             options={
-                "require": ["exp", "username"],
+                "require": ["exp", "username", "iat"],
                 "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
                 "verify_aud": keys.audience() is not None,
                 "verify_signature": jwt_settings.JWT_VERIFY,

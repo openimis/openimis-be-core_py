@@ -44,7 +44,10 @@ def _exp(days=1):
 
 
 def _sign(key, kid=None, algorithm="HS256", **claims):
-    payload = {"exp": _exp(), **claims}
+    # iat by default: the encoder always emits one, so a fixture without it is
+    # testing a token shape that no longer exists. Pass iat=None for that case.
+    payload = {"exp": _exp(), "iat": _exp(days=0), **claims}
+    payload = {k: v for k, v in payload.items() if v is not None}
     return pyjwt.encode(
         payload, key, algorithm=algorithm, headers={"kid": kid} if kid else None
     )
@@ -176,6 +179,17 @@ class DeploymentKeyDecodeTest(TestCase):
         )
 
         with self.assertRaises(pyjwt.ExpiredSignatureError):
+            decode(token)
+
+    def test_token_without_an_issue_time_is_rejected(self):
+        # Every token the encoder emits carries iat (core/auth/encode.py), and
+        # the legacy tokens that did not are rejected outright now. Requiring it
+        # is what makes the fail-closed branch in assert_not_revoked unreachable.
+        token = _sign(
+            DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser", iat=None
+        )
+
+        with self.assertRaises(pyjwt.MissingRequiredClaimError):
             decode(token)
 
     def test_token_without_username_is_rejected(self):
