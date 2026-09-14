@@ -23,8 +23,9 @@ def signing_key_is_provisioned(app_configs, **kwargs):
     if provisioned is None:
         return [
             Error(
-                "JWT_SIGNING_KEY is not set. openIMIS signs tokens only with the "
-                "provisioned deployment keypair; see OP-3132.",
+                "JWT_SIGNING_KEY is not set. openIMIS signs tokens only with "
+                "the deployment keypair, so one has to be provisioned and this "
+                "setting pointed at it - an RSA private key, inline or as a path.",
                 id="core.auth.E001",
             )
         ]
