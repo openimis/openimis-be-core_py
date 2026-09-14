@@ -10,7 +10,7 @@ from graphql_jwt.shortcuts import get_token
 from core.auth import decode
 from core.auth.claims import Claims
 from core.auth.providers.base import IdentityProvider
-from core.auth.providers.legacy import LegacyUserKeyProvider
+from core.auth.providers.local import LocalProvider
 from core.auth.registry import resolve
 from core.models import User
 from core.test_helpers import create_test_interactive_user
@@ -90,8 +90,8 @@ class ProviderRoutingTest(TestCase):
         with self.assertRaises(pyjwt.InvalidIssuerError):
             resolve(token)
 
-    def test_local_token_routes_to_the_legacy_provider(self):
-        self.assertIsInstance(resolve(self.local_token), LegacyUserKeyProvider)
+    def test_local_token_routes_to_the_local_provider(self):
+        self.assertIsInstance(resolve(self.local_token), LocalProvider)
 
     @with_stub_provider
     def test_registered_provider_handles_its_own_issuer(self):
