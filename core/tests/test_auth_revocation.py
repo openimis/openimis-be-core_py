@@ -12,7 +12,7 @@ from graphql_jwt.settings import jwt_settings
 from core.apps import CoreConfig
 from core.auth import decode
 from core.auth import revocation
-from core.auth.claims import issued_at_from
+from core.auth.claims import claims_from_payload, issued_at_from
 from core.models import InteractiveUser, User
 from core.models.openimis_graphql_test_case import (
     BaseTestContext,
@@ -83,6 +83,52 @@ def _set_not_before(user, value):
     InteractiveUser.objects.all().filter(pk=user.i_user.pk).update(json_ext=json_ext)
 
 
+class IssueTimeContractTest(TestCase):
+    """`assert_not_revoked` takes Claims, not a token, so these paths belong to
+    any provider that builds one. LocalProvider requires iat and can no longer
+    reach them, which is why they are exercised directly - through decode they
+    would be answered by the require list and assert nothing.
+    """
+
+    def setUp(self):
+        self.user = create_test_interactive_user(
+            username="revokeClaims", password=_password()
+        )
+
+    def _claims(self, **payload):
+        return claims_from_payload(
+            {"username": "revokeClaims", "exp": _exp(), **payload}
+        )
+
+    def test_nbf_is_used_when_there_is_no_iat(self):
+        _set_not_before(self.user, _now())
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            revocation.assert_not_revoked(self._claims(nbf=_now() - 60))
+
+    def test_orig_iat_is_used_when_there_is_neither_iat_nor_nbf(self):
+        # graphql_jwt writes origIat whenever refresh is enabled, and a
+        # refreshed token carries the original login time there.
+        _set_not_before(self.user, _now())
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            revocation.assert_not_revoked(self._claims(origIat=_now() - 60))
+
+    def test_a_non_numeric_issue_time_fails_closed(self):
+        # origIat is a graphql_jwt claim PyJWT does not validate, so a
+        # non-numeric one arrives intact. It must fail as an invalid token, not
+        # as the TypeError a bare comparison would raise.
+        _set_not_before(self.user, _now())
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            revocation.assert_not_revoked(self._claims(origIat="not-a-number"))
+
+    def test_an_issue_time_after_the_not_before_passes(self):
+        _set_not_before(self.user, _now() - 60)
+
+        revocation.assert_not_revoked(self._claims(iat=_now()))
+
+
 @with_deployment_key
 class NotBeforeCheckTest(TestCase):
     """The check itself. Deployment-key tokens, so the per-user salt plays no
@@ -113,43 +159,15 @@ class NotBeforeCheckTest(TestCase):
 
         self.assertEqual(decode(token)["username"], "revokeCheck")
 
-    def test_token_without_an_issue_time_is_rejected_when_a_not_before_is_set(self):
-        # Nothing in the token places it after the revocation point, so it
-        # cannot be trusted. Fail closed.
+    def test_a_local_token_without_an_issue_time_never_reaches_the_check(self):
+        # LocalProvider requires iat, so this shape is refused while the token
+        # is still being verified. Asserted as that exact exception rather than
+        # InvalidTokenError, which would also pass if the revocation check were
+        # what rejected it - it is not, and cannot be.
         _set_not_before(self.user, _now())
         token = _sign("revokeCheck")
 
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(token)
-
-    def test_nbf_is_used_when_there_is_no_iat(self):
-        # What the encoder emits today: nbf and no iat. Claims.issued_at falls
-        # back to it, so the check has a reference for tokens already issued.
-        _set_not_before(self.user, _now())
-        token = _sign("revokeCheck", nbf=_now() - 60)
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(token)
-
-    def test_orig_iat_is_used_when_there_is_neither_iat_nor_nbf(self):
-        # graphql_jwt writes origIat whenever refresh is enabled, and
-        # Claims.issued_at reads it last. A refreshed token carries the original
-        # login time there, so it has to count as an issue time.
-        _set_not_before(self.user, _now())
-        token = _sign("revokeCheck", origIat=_now() - 60)
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(token)
-
-    def test_token_with_a_non_numeric_issue_time_is_rejected(self):
-        # origIat is a graphql_jwt claim that PyJWT does not validate, so a
-        # non-numeric one arrives intact. It must fail as an invalid token, not
-        # as the TypeError a bare comparison would raise - that would reach the
-        # client as a 500 instead of an authentication failure.
-        _set_not_before(self.user, _now())
-        token = _sign("revokeCheck", origIat="not-a-number")
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
+        with self.assertRaises(pyjwt.MissingRequiredClaimError):
             decode(token)
 
     def test_an_unusable_stored_not_before_is_read_as_absent(self):
