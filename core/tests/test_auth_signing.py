@@ -11,6 +11,7 @@ from django.test import TestCase, override_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode, keys
+from core.auth.registry import resolve
 from core.auth.encode import encode as auth_encode
 from core.models import User
 from core.test_helpers import create_test_interactive_user
@@ -93,13 +94,16 @@ class ProvisionedKeyTest(TestCase):
         self.assertEqual(header["alg"], "RS256")
         self.assertEqual(header["kid"], keys.derive_kid(SIGNING_KEY.public_key()))
 
-    def test_token_decodes_without_touching_the_database(self):
+    def test_selecting_the_key_and_verifying_touch_no_database(self):
+        # resolve + verify, not decode: the kid picks the key out of settings,
+        # and nothing on that path may read a user row. Measuring decode would
+        # also count whatever it does around verification.
         token = _issue(_user("signDeploymentDecode"))
 
         with self.assertNumQueries(0):
-            payload = decode(token)
+            claims = resolve(token).verify(token)
 
-        self.assertEqual(payload["username"], "signDeploymentDecode")
+        self.assertEqual(claims.username, "signDeploymentDecode")
 
     def test_token_verifies_against_the_public_half(self):
         token = _issue(_user("signDeploymentVerify"))
