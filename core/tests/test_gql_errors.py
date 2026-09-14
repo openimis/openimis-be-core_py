@@ -154,6 +154,23 @@ class FormatErrorTest(TestCase):
         self.assertEqual("Unauthorized", formatted["message"])
         self.assertEqual(FORBIDDEN, formatted["extensions"]["code"])
 
+    def test_internal_error_never_discloses_however_it_was_raised(self):
+        # One invariant: a code and its disclosure can never disagree. This
+        # holds for a deliberately raised coded error too, not just for an
+        # unexpected exception.
+        raisers = (
+            CodedGraphQLError("CSRF token could not be generated"),
+            RuntimeError("db user=imis password=hunter2"),
+        )
+        for exc in raisers:
+            with self.subTest(type(exc).__name__):
+                formatted = format_error(resolver_error(exc), debug=False)
+
+                self.assertEqual(INTERNAL_ERROR, formatted["extensions"]["code"])
+                self.assertEqual(
+                    str(GENERIC_INTERNAL_MESSAGE), formatted["message"]
+                )
+
     def test_query_validation_errors_stay_readable_in_production(self):
         # These are feedback about the client's own query, not internals.
         formatted = format_error(GraphQLError('Cannot query field "nope"'), debug=False)
