@@ -41,22 +41,29 @@ class SigningKeyCheckTest(TestCase):
 
     @override_settings(JWT_SIGNING_KEY="-----BEGIN PRIVATE KEY-----\nnope\n")
     def test_unparseable_material_is_reported_not_raised(self):
-        # keys.signing_key() raises ValueError, and Django does not catch
-        # exceptions from checks - without the catch the operator gets a
-        # traceback instead of the check that explains it.
+        # Django does not catch exceptions from checks, so without the catch the
+        # operator gets a traceback instead of the check that explains it. E002,
+        # not E001: silencing "not provisioned" must not also silence this.
         errors = checks.signing_key_is_provisioned(None)
 
-        self.assertEqual([error.id for error in errors], ["core.auth.E001"])
+        self.assertEqual([error.id for error in errors], ["core.auth.E002"])
         self.assertIn("JWT_SIGNING_KEY", errors[0].msg)
 
     @override_settings(JWT_SIGNING_KEY="/nonexistent/jwt_signing_key.pem")
     def test_an_unreadable_path_is_reported_not_raised(self):
         errors = checks.signing_key_is_provisioned(None)
 
-        self.assertEqual([error.id for error in errors], ["core.auth.E001"])
+        self.assertEqual([error.id for error in errors], ["core.auth.E002"])
+
+    @override_settings(JWT_SIGNING_KEY=b"-----BEGIN PRIVATE KEY-----\nnope\n")
+    def test_material_that_is_not_a_string_is_reported_not_raised(self):
+        # keys._load tests "-----BEGIN" in material, which raises TypeError
+        # rather than ValueError for bytes or a Path.
+        errors = checks.signing_key_is_provisioned(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E002"])
 
 
-@override_settings(JWT_SIGNING_KEY=SIGNING_PEM)
 class DeploymentKeysCheckTest(TestCase):
     """`core.auth.W001` - the JWKS view skips what it cannot publish, silently
     and on every request. Saying so once at startup is where it belongs.
@@ -81,3 +88,11 @@ class DeploymentKeysCheckTest(TestCase):
     def test_nothing_configured_passes(self):
         with override_settings(JWT_DEPLOYMENT_KEYS=None):
             self.assertEqual(checks.deployment_keys_are_publishable(None), [])
+
+    def test_a_setting_that_is_not_a_mapping_is_reported_not_raised(self):
+        # A list reaches .items() and would otherwise raise AttributeError
+        # inside the check, which is the traceback this module exists to avoid.
+        with override_settings(JWT_DEPLOYMENT_KEYS=["kid1", "kid2"]):
+            errors = checks.deployment_keys_are_publishable(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E003"])
