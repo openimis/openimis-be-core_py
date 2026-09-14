@@ -1,11 +1,24 @@
 """Per-user not-before, the explicit replacement for rotating the password salt.
 
-`InteractiveUser.set_password` mints a fresh `private_key`, which is at once the
-password salt and, on the legacy path, the key a token is signed with. Changing
-a password therefore stops every outstanding token verifying - revocation as a
-side effect of the signature, not as a decision anyone recorded. Signing with a
-single deployment-wide key removes that side effect, so the revocation point has
+`InteractiveUser.set_password` mints a fresh `private_key`, which used to be at
+once the password salt and the key a token was signed with. Changing a password
+therefore stopped every outstanding token verifying - revocation as a side
+effect of the signature, not as a decision anyone recorded. The deployment key
+signs everything now, so that side effect is gone and the revocation point has
 to be stored and checked explicitly instead. Nothing else ends a session.
+
+**Technical users have no revocation point, deliberately.** The value lives in
+`InteractiveUser.json_ext`, and an account with no interactive row has nowhere
+to put one - `core_TechnicalUser` has no JSON column, and adding one is a
+migration this accepted rather than made. So changing a technical user's
+password ends nothing: the token stays valid until it expires, and the
+`refreshToken` mutation re-issues from the token itself for as long as `origIat`
+is inside `JWT_REFRESH_EXPIRATION_DELTA` - **30 days** in the assembly. The one
+lever that does work is `validity_to`, which `core.User.is_active` reads and
+`graphql_jwt.utils.get_user_by_payload` enforces on every request. A
+username-keyed revocation table is the answer if that stops being good enough;
+only `user_not_before` would change, since `assert_not_revoked` takes `Claims`.
+Pinned by core/tests/test_technical_user_auth.py.
 """
 
 from calendar import timegm
