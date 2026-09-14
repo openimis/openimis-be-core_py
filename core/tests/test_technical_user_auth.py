@@ -6,7 +6,8 @@ from django.test import TestCase, override_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode
-from core.models import TechnicalUser, User
+from core.models import User
+from core.test_helpers import create_test_technical_user
 
 
 @dataclass
@@ -19,13 +20,20 @@ def _password():
 
 
 def _technical_user(username):
-    """Not create_test_technical_user: until step 8 that helper stores the
-    password unhashed, so its user cannot authenticate.
+    return create_test_technical_user(username=username, password=_password())
+
+
+class TechnicalUserFixtureTest(TestCase):
+    """The shared fixture stored the password unhashed, so every user it built
+    failed check_password - a trap for anything testing this path.
     """
-    t_user = TechnicalUser(username=username, email=f"{username}@openimis.org")
-    t_user.set_password(_password())
-    t_user.save()
-    return User.objects.get(t_user=t_user)
+
+    def test_the_fixture_user_can_authenticate(self):
+        password = _password()
+
+        user = create_test_technical_user(username="techFixture", password=password)
+
+        self.assertTrue(user.check_password(password))
 
 
 class TechnicalUserTokenTest(TestCase):
