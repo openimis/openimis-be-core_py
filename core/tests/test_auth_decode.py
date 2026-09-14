@@ -105,6 +105,40 @@ class LegacyTokenDecodeTest(TestCase):
             decode(token)
 
 
+class LegacyTokenRejectedTest(TestCase):
+    """The migration window is closed: a token signed with the per-user salt
+    carries no kid, and nothing routes it any more.
+    """
+
+    def setUp(self):
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="authLegacyGone", password=self.password
+        )
+
+    def test_a_token_signed_with_the_user_salt_is_rejected(self):
+        token = _sign(self.user.i_user.private_key, username=self.user.username)
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            decode(token)
+
+    def test_a_token_signed_with_the_deployment_wide_secret_is_rejected(self):
+        # The second legacy regime: a user with no salt was signed with
+        # SECRET_KEY, which is what made forging one only as hard as that value.
+        token = _sign(jwt_settings.JWT_SECRET_KEY, username=self.user.username)
+
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            decode(token)
+
+    def test_rejecting_one_reads_no_user_row(self):
+        # The legacy provider resolved its key from the unverified username.
+        token = _sign(jwt_settings.JWT_SECRET_KEY, username=self.user.username)
+
+        with self.assertNumQueries(0):
+            with self.assertRaises(pyjwt.InvalidTokenError):
+                decode(token)
+
+
 @with_deployment_key
 class DeploymentKeyDecodeTest(TestCase):
     """Tokens signed with the deployment keypair, selected by the kid header.
