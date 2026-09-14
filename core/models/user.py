@@ -434,9 +434,9 @@ class InteractiveUser(OpenIMISMigrationModel):
         self.password = (
             pwd_hash.hexdigest().upper()
         )  # Legacy requires this to be uppercase
-        # Rotating private_key ends outstanding sessions only for as long as
-        # that value is also the token signing key. The not-before is what ends
-        # them once a deployment-wide key signs instead.
+        # private_key is only a salt now - rotating it ends nothing on its own,
+        # because the deployment key signs every token. The not-before is what
+        # ends outstanding sessions.
         revocation.bump(self)
 
     def check_password(self, raw_password):
