@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from secrets import token_hex
 
 import jwt as pyjwt
+from django.conf import settings as django_settings
 from django.test import TestCase, override_settings
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.shortcuts import get_token
@@ -192,6 +193,77 @@ class DeploymentKeyDecodeTest(TestCase):
         token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, sub="noSuchUser")
 
         with self.assertRaises(pyjwt.MissingRequiredClaimError):
+            decode(token)
+
+
+def _with_jwt(**overrides):
+    """Override inside GRAPHQL_JWT: graphql_jwt reloads its cached settings on
+    the setting_changed signal, but only for the dict as a whole.
+    """
+    return override_settings(
+        GRAPHQL_JWT={**django_settings.GRAPHQL_JWT, **overrides}
+    )
+
+
+@with_deployment_key
+class IssuerAndAudienceTest(TestCase):
+    """Both are enforced only when the deployment names them. dist_dkr ships
+    JWT_AUDIENCE blank and the assembly leaves both unset, so enforcing either
+    unconditionally would reject every token in most deployments.
+    """
+
+    def test_audience_is_not_required_when_none_is_configured(self):
+        token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
+
+        self.assertEqual(decode(token)["username"], "noSuchUser")
+
+    def test_audience_is_required_once_configured(self):
+        with _with_jwt(JWT_AUDIENCE="openimis"):
+            token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
+
+            with self.assertRaises(pyjwt.MissingRequiredClaimError):
+                decode(token)
+
+    def test_a_matching_audience_decodes(self):
+        with _with_jwt(JWT_AUDIENCE="openimis"):
+            token = _sign(
+                DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser", aud="openimis"
+            )
+
+            self.assertEqual(decode(token)["username"], "noSuchUser")
+
+    def test_issuer_is_not_required_when_none_is_configured(self):
+        token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
+
+        self.assertEqual(decode(token)["username"], "noSuchUser")
+
+    def test_issuer_is_required_once_configured(self):
+        with _with_jwt(JWT_ISSUER="https://ours.example.test"):
+            token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
+
+            with self.assertRaises(pyjwt.InvalidTokenError):
+                decode(token)
+
+    def test_a_matching_issuer_decodes(self):
+        with _with_jwt(JWT_ISSUER="https://ours.example.test"):
+            token = _sign(
+                DEPLOYMENT_KEY,
+                kid=DEPLOYMENT_KID,
+                username="noSuchUser",
+                iss="https://ours.example.test",
+            )
+
+            self.assertEqual(decode(token)["username"], "noSuchUser")
+
+    def test_a_foreign_issuer_is_not_ours(self):
+        token = _sign(
+            DEPLOYMENT_KEY,
+            kid=DEPLOYMENT_KID,
+            username="noSuchUser",
+            iss="https://elsewhere.example.test",
+        )
+
+        with self.assertRaises(pyjwt.InvalidIssuerError):
             decode(token)
 
 
