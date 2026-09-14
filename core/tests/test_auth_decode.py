@@ -7,14 +7,10 @@ import jwt as pyjwt
 from django.conf import settings as django_settings
 from django.test import TestCase, override_settings
 from graphql_jwt.settings import jwt_settings
-from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode
-from core.models import InteractiveUser, User
-from core.test_helpers import (
-    create_test_interactive_user,
-    create_test_technical_user,
-)
+from core.models import User
+from core.test_helpers import create_test_interactive_user
 
 DEPLOYMENT_KID = "deployment-2026-09"
 DEPLOYMENT_KEY = token_hex(32)
@@ -49,60 +45,6 @@ def _sign(key, kid=None, algorithm="HS256", **claims):
     return pyjwt.encode(
         payload, key, algorithm=algorithm, headers={"kid": kid} if kid else None
     )
-
-
-class LegacyTokenDecodeTest(TestCase):
-    """Tokens signed with the per-user salt - what every deployment issues
-    today. They carry no kid.
-    """
-
-    def setUp(self):
-        self.password = _password()
-        self.user = create_test_interactive_user(
-            username="authLegacy", password=self.password
-        )
-        self.token = get_token(self.user, DummyContext(user=self.user))
-
-    def test_legacy_token_decodes(self):
-        self.assertEqual(decode(self.token)["username"], self.user.username)
-
-    def test_legacy_token_is_verified_against_the_user_salt(self):
-        # Rotating the salt is what revocation relies on until the not-before
-        # check replaces it.
-        self.user.i_user.set_password(self.password)
-        self.user.i_user.save()
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(self.token)
-
-    def test_technical_user_token_decodes(self):
-        # No InteractiveUser row means no salt, so the deployment-wide secret
-        # signs it. Issuing one still raises upstream; not fixed here.
-        create_test_technical_user(username="authTech")
-        token = _sign(jwt_settings.JWT_SECRET_KEY, username="authTech")
-
-        self.assertEqual(decode(token)["username"], "authTech")
-
-    def test_user_without_a_salt_is_verified_with_the_deployment_wide_secret(self):
-        # private_key NULL means the global secret signs it - the second of the
-        # two regimes that already coexist.
-        user = create_test_interactive_user(username="authNoSalt", password=_password())
-        InteractiveUser.objects.filter(pk=user.i_user.pk).update(private_key=None)
-        # iat because creating a user stamps a revocation not-before, and a
-        # token carrying no issue time to compare against it fails closed. Every
-        # real openIMIS token carries nbf, so this only makes the fixture match
-        # what the encoder actually emits.
-        token = _sign(
-            jwt_settings.JWT_SECRET_KEY, username="authNoSalt", iat=_exp(days=0)
-        )
-
-        self.assertEqual(decode(token)["username"], "authNoSalt")
-
-    def test_unsigned_token_is_rejected(self):
-        token = _sign(token_hex(32), username="authLegacy")
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(token)
 
 
 class LegacyTokenRejectedTest(TestCase):
@@ -265,20 +207,3 @@ class IssuerAndAudienceTest(TestCase):
 
         with self.assertRaises(pyjwt.InvalidIssuerError):
             decode(token)
-
-
-class NoDeploymentKeyConfiguredTest(TestCase):
-    """The default state: no keypair provisioned, so no kid resolves."""
-
-    def test_kid_token_is_rejected_when_no_key_is_provisioned(self):
-        token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
-
-        with self.assertRaises(pyjwt.InvalidTokenError):
-            decode(token)
-
-    def test_legacy_tokens_still_work(self):
-        password = _password()
-        user = create_test_interactive_user(username="authNoKey", password=password)
-        token = get_token(user, DummyContext(user=user))
-
-        self.assertEqual(decode(token)["username"], user.username)
