@@ -78,8 +78,8 @@ class NoKeyProvisionedTest(TestCase):
         self.assertEqual(decode(_issue(user))["username"], user.username)
 
     def test_iat_is_emitted(self):
-        # On this path too, not only in deployment mode: OP-3128's revocation
-        # reference compares against it.
+        # On this path too, not only in deployment mode: the per-user
+        # revocation reference compares against it.
         payload = decode(_issue(_user("signDefaultIat")))
 
         self.assertIsInstance(payload["iat"], int)
@@ -191,8 +191,8 @@ class KeyIdDerivationTest(TestCase):
 
 
 class KeyLoadingTest(TestCase):
-    """Provisioned as a mounted file or as an inline PEM - one setting, because
-    OP-3131 has one environment variable to map onto it.
+    """Provisioned as a mounted file or as an inline PEM - one setting, so a
+    deployment has a single environment variable to map onto it.
     """
 
     def test_an_inline_pem_loads(self):
@@ -274,8 +274,8 @@ class CorruptSigningKeyTest(TestCase):
     """A signing key that will not parse is a server misconfiguration, so it
     surfaces as one.
 
-    This is the deliberate exception to OP-3126 decision 6 - decode raising
-    anything but an InvalidTokenError reaches the client as a 500. A 401 here
+    This is the deliberate exception to the rule that decode raises only
+    InvalidTokenError - anything else reaches the client as a 500. A 401 here
     would tell the client its token was bad when the deployment's key is, and
     would hide the outage.
     """
