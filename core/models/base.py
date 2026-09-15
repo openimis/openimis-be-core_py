@@ -15,6 +15,7 @@ from core.bootstrap import (
     unavailability_reason,
 )
 from core.module_config_registry import validate_module_configuration, reload_module_configuration
+from core.models.row_security import RowSecurityMixin
 
 # from core.datetimes.ad_datetime import datetime as py_datetime
 
@@ -22,14 +23,14 @@ from core.module_config_registry import validate_module_configuration, reload_mo
 logger = logging.getLogger(__name__)
 
 
-class ExtendableModel(models.Model):
+class ExtendableModel(RowSecurityMixin, models.Model):
     json_ext = JSONField(db_column="JsonExt", blank=True, null=True)
 
     class Meta:
         abstract = True
 
 
-class UUIDModel(models.Model):
+class UUIDModel(RowSecurityMixin, models.Model):
     """
     Abstract entity, parent of all (new) openIMIS entities.
     Enforces the UUID identifier.

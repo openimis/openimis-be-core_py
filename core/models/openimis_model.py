@@ -15,6 +15,7 @@ from core.utils import (  # , GenerateUUIDv7
 )
 from simple_history.utils import get_history_manager_for_model
 import datetime as base_datetime
+from core.models.row_security import RowSecurityMixin
 
 
 class HistoryCacheManager(CachedManager):
@@ -58,7 +59,7 @@ class HistoryCacheManager(CachedManager):
         return updated_count
 
 
-class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
+class OpenIMISHistoryMixin(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
     history = HistoricalRecords(
         inherit=True,
     )
