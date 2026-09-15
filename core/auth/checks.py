@@ -1,9 +1,10 @@
-"""Startup checks for the deployment key material.
+"""Startup checks for what the auth layer needs a deployment to have provided.
 
-The first system checks in core. They exist because both failures are otherwise
-invisible until something depends on them: an unprovisioned deployment signs
-nothing and only finds out at the first login, and an unpublishable verification
-key is dropped silently by the JWKS view on every request.
+Each is here because its failure is otherwise invisible until something depends
+on it: an unprovisioned deployment signs nothing and only finds out at the first
+login, an unpublishable verification key is dropped silently by the JWKS view on
+every request, and a second-factor app left out of INSTALLED_APPS has no device
+tables until an enrolment tries to write one.
 """
 
 from collections.abc import Mapping
