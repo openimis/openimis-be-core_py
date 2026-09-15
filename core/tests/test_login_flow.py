@@ -262,3 +262,16 @@ class SecondFactorLockoutTest(TestCase):
         with self.assertRaises(SecondFactorError):
             authenticate_login(_request(), self.user.username, self.password)
         self.assertEqual(self._failures(), 0)
+
+    def test_a_throttled_attempt_is_not_counted_either(self):
+        """No device was tried, so nothing was guessed wrong. axes' budget is
+        scoped to the IP by default (AXES_LOCKOUT_PARAMETERS resolves to
+        ["ip_address"], limit 5), so charging the retries a user makes during
+        django-otp's 1s/2s/4s back-off would lock out everyone behind it."""
+        _throttle(_enrol(self.user))
+        with self.assertRaises(SecondFactorError) as raised:
+            authenticate_login(
+                _request(), self.user.username, self.password, otp="000000"
+            )
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_THROTTLED)
+        self.assertEqual(self._failures(), 0)
