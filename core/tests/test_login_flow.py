@@ -5,6 +5,7 @@ from axes.models import AccessAttempt
 from django.contrib.auth import SESSION_KEY
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -44,6 +45,20 @@ def _enrol(user):
     device = devices.enrol_totp(user)
     assert devices.confirm_totp(device, _code(device))
     TOTPDevice.objects.filter(pk=device.pk).update(last_t=-1)
+    device.refresh_from_db()
+    return device
+
+
+def _throttle(device, count=1):
+    """Put a device into back-off from its counters, not from the clock.
+
+    Driving it by wall time means a run slow enough to cross django-otp's
+    one-second first back-off gets INVALID instead of THROTTLED. The sibling
+    suite sets the counters directly for the same reason.
+    """
+    type(device).objects.filter(pk=device.pk).update(
+        throttling_failure_count=count, throttling_failure_timestamp=timezone.now()
+    )
     device.refresh_from_db()
     return device
 
@@ -124,13 +139,7 @@ class AuthenticateLoginTest(TestCase):
         self.assertEqual(raised.exception.code, INVALID_SECOND_FACTOR)
 
     def test_a_throttled_device_reports_when_it_lifts(self):
-        _enrol(self.user)
-        with self.assertRaises(SecondFactorError):
-            authenticate_login(
-                _request(), self.user.username, self.password, otp="000000"
-            )
-        # Back-off starts at one second after the first failure, so an
-        # immediate retry is refused without being tried.
+        _throttle(_enrol(self.user))
         with self.assertRaises(SecondFactorError) as raised:
             authenticate_login(
                 _request(), self.user.username, self.password, otp="000000"
@@ -209,8 +218,7 @@ class TokenAuthSecondFactorTest(openIMISGraphQLTestCase):
         self.assertNotIn(SESSION_KEY, self.client.session)
 
     def test_a_throttled_attempt_says_when_it_lifts(self):
-        _enrol(self.user)
-        self._login(otp="000000")
+        _throttle(_enrol(self.user))
         content = self._login(otp="000000")
         self.assertEqual(content["errors"][0]["message"], SECOND_FACTOR_THROTTLED)
         self.assertTrue(content["errors"][0]["extensions"]["lockedUntil"])
