@@ -54,7 +54,14 @@ def _earliest_lift(blocked):
 def _candidates(user, device_id):
     if device_id is None:
         return list(devices_for_user(user, confirmed=True, for_verify=True))
-    device = Device.from_persistent_id(device_id, for_verify=True)
+    try:
+        device = Device.from_persistent_id(device_id, for_verify=True)
+    except (AttributeError, TypeError):
+        # from_persistent_id suppresses ValueError and LookupError but not
+        # these: an id naming a real model that is not a Device ("core.user/1")
+        # leaves it calling .first() on None, and a non-string id has no
+        # .rsplit. Both arrive from a client, so a bad id is "no such device".
+        return []
     # Ownership and confirmation are checked here rather than trusted from the
     # id: persistent_id is a model label and a primary key, both guessable.
     if device is None or device.user_id != user.pk or not device.confirmed:
