@@ -1,11 +1,13 @@
 import time
+from datetime import timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 from django_otp.oath import TOTP
 from django_otp.plugins.otp_static.models import StaticDevice
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
-from core.auth import devices
+from core.auth import devices, second_factor
 from core.models import User
 from core.test_helpers import create_test_interactive_user
 
@@ -77,3 +79,125 @@ class SecondFactorDevicesTest(TestCase):
         self.assertFalse(devices.has_second_factor(self.user))
         self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
         self.assertFalse(StaticDevice.objects.filter(user=self.user).exists())
+
+
+class SecondFactorVerifyTest(TestCase):
+    def setUp(self):
+        create_test_interactive_user(username="otp_verify")
+        self.user = User.objects.get(username="otp_verify")
+        self.totp = devices.enrol_totp(self.user)
+        devices.confirm_totp(self.totp, _code(self.totp))
+        # Confirming *consumes* the time step whose code was used - the replay
+        # floor is `last_t + 1`, and that is a real property, pinned by
+        # test_the_code_that_confirmed_cannot_also_log_in below. A genuine login
+        # happens in a later step than the enrolment it follows, so rewind the
+        # floor rather than make every test here wait 30 seconds.
+        TOTPDevice.objects.filter(pk=self.totp.pk).update(last_t=-1)
+        self.totp.refresh_from_db()
+
+    def test_the_code_that_confirmed_cannot_also_log_in(self):
+        """Enrolment is not a free first login. Fresh device, so the rewind in
+        setUp is undone here on purpose."""
+        device = devices.enrol_totp(self.user, name="Second phone")
+        code = _code(device)
+        self.assertTrue(devices.confirm_totp(device, code))
+        replay = second_factor.verify(
+            self.user, code, device_id=device.persistent_id
+        )
+        self.assertFalse(replay.ok)
+        self.assertEqual(replay.outcome, second_factor.INVALID)
+
+    def test_a_valid_code_verifies_and_names_the_device(self):
+        result = second_factor.verify(self.user, _code(self.totp))
+        self.assertTrue(result.ok)
+        self.assertEqual(result.outcome, second_factor.VERIFIED)
+        self.assertEqual(result.device.persistent_id, self.totp.persistent_id)
+
+    def test_a_reused_code_is_rejected(self):
+        code = _code(self.totp)
+        self.assertTrue(second_factor.verify(self.user, code).ok)
+        replay = second_factor.verify(self.user, code)
+        self.assertFalse(replay.ok)
+        self.assertEqual(replay.outcome, second_factor.INVALID)
+
+    def test_a_code_one_step_old_is_tolerated_and_the_drift_remembered(self):
+        # tolerance defaults to 1 step, which is the clock-drift allowance the
+        # ticket asks django-otp to provide; OTP_TOTP_SYNC (default True) then
+        # records the offset that matched, so a consistently slow phone is not
+        # re-tolerated from scratch on every login.
+        self.assertTrue(second_factor.verify(self.user, _code(self.totp, -1)).ok)
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.drift, -1)
+
+    def test_a_recovery_code_verifies_and_is_consumed(self):
+        codes = devices.issue_recovery_codes(self.user)
+        result = second_factor.verify(self.user, codes[0])
+        self.assertTrue(result.ok)
+        self.assertIsInstance(result.device, StaticDevice)
+        self.assertFalse(second_factor.verify(self.user, codes[0]).ok)
+        self.assertEqual(
+            StaticDevice.objects.get(user=self.user).token_set.count(), len(codes) - 1
+        )
+
+    def test_a_recovery_code_does_not_throttle_the_authenticator(self):
+        """The reason match_token is not used. The TOTP device is tried first and
+        fails, and without the collateral reset it would back off exponentially
+        every time the user fell back to a recovery code."""
+        codes = devices.issue_recovery_codes(self.user)
+        self.assertTrue(second_factor.verify(self.user, codes[0]).ok)
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.throttling_failure_count, 0)
+        self.assertIsNone(self.totp.throttling_failure_timestamp)
+
+    def test_a_wrong_code_throttles_every_device_it_was_tried_against(self):
+        devices.issue_recovery_codes(self.user)
+        result = second_factor.verify(self.user, "000000")
+        self.assertEqual(result.outcome, second_factor.INVALID)
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.throttling_failure_count, 1)
+        self.assertEqual(
+            StaticDevice.objects.get(user=self.user).throttling_failure_count, 1
+        )
+
+    def test_a_user_with_no_confirmed_device_reports_no_devices(self):
+        create_test_interactive_user(username="otp_bare")
+        bare = User.objects.get(username="otp_bare")
+        self.assertEqual(
+            second_factor.verify(bare, "000000").outcome, second_factor.NO_DEVICES
+        )
+
+    def test_every_device_throttled_reports_when_it_lifts(self):
+        self.totp.throttling_failure_count = 3
+        self.totp.throttling_failure_timestamp = timezone.now()
+        self.totp.save()
+        result = second_factor.verify(self.user, _code(self.totp))
+        self.assertEqual(result.outcome, second_factor.THROTTLED)
+        self.assertGreater(result.locked_until, timezone.now())
+        self.assertLess(result.locked_until, timezone.now() + timedelta(minutes=1))
+
+    def test_a_named_device_is_the_only_one_tried(self):
+        codes = devices.issue_recovery_codes(self.user)
+        static = StaticDevice.objects.get(user=self.user)
+        result = second_factor.verify(
+            self.user, codes[0], device_id=static.persistent_id
+        )
+        self.assertTrue(result.ok)
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.throttling_failure_count, 0)
+
+    def test_a_device_belonging_to_someone_else_is_refused(self):
+        create_test_interactive_user(username="otp_other")
+        other = User.objects.get(username="otp_other")
+        result = second_factor.verify(
+            other, _code(self.totp), device_id=self.totp.persistent_id
+        )
+        self.assertEqual(result.outcome, second_factor.NO_DEVICES)
+
+    def test_an_unconfirmed_device_cannot_be_named_either(self):
+        create_test_interactive_user(username="otp_pending")
+        pending_user = User.objects.get(username="otp_pending")
+        pending = devices.enrol_totp(pending_user)
+        result = second_factor.verify(
+            pending_user, _code(pending), device_id=pending.persistent_id
+        )
+        self.assertEqual(result.outcome, second_factor.NO_DEVICES)
