@@ -70,14 +70,19 @@ def authenticate_login(request, username, password, otp=None, otp_device=None):
     if result.ok:
         return user
 
+    if result.outcome == second_factor.THROTTLED:
+        # Deliberately ahead of the signal below: no device was tried, so
+        # nothing was guessed wrong. axes' budget is scoped to the IP by
+        # default, and charging the retries a user makes during django-otp's
+        # back-off would lock out everyone behind it.
+        lifted = result.locked_until.isoformat() if result.locked_until else None
+        raise SecondFactorError(SECOND_FACTOR_THROTTLED, lockedUntil=lifted)
+
     # Counted like a wrong password: axes listens for this signal, and the
     # lockout budget is per login, not per factor.
     user_login_failed.send(
         sender=__name__, credentials={"username": username}, request=request
     )
-    if result.outcome == second_factor.THROTTLED:
-        lifted = result.locked_until.isoformat() if result.locked_until else None
-        raise SecondFactorError(SECOND_FACTOR_THROTTLED, lockedUntil=lifted)
     # INVALID and NO_DEVICES both land here on purpose: NO_DEVICES with an
     # otp_device means the id named a device that is not this user's, and a
     # distinct answer would confirm the id exists.
