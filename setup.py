@@ -35,6 +35,7 @@ setup(
         "pandas",
         "uuid6",
         "cryptography",
+        "django-otp",
     ],
     classifiers=[
         "Environment :: Web Environment",
