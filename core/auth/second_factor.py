@@ -45,6 +45,32 @@ class Verification:
         return self.outcome == VERIFIED
 
 
+#: ThrottlingMixin's fields, not Device's - a device class can opt out of
+#: throttling, and then it has neither these nor `throttle_reset`.
+_THROTTLE_FIELDS = ("throttling_failure_count", "throttling_failure_timestamp")
+
+
+def _throttle_state(device):
+    """This device's throttling counters, or None if its class does not throttle."""
+    if not all(hasattr(device, field) for field in _THROTTLE_FIELDS):
+        return None
+    return tuple(getattr(device, field) for field in _THROTTLE_FIELDS)
+
+
+def _restore_throttle(device, state):
+    """Undo the failure this attempt charged to a device the code was not for.
+
+    Restores the counters rather than calling `throttle_reset`, which zeroes
+    them. Zeroing would mean every legitimate fallback login wiped a back-off an
+    attacker had built up on the other device, handing them a fresh budget.
+    """
+    if state is None or _throttle_state(device) == state:
+        return
+    for field, value in zip(_THROTTLE_FIELDS, state):
+        setattr(device, field, value)
+    device.save(update_fields=list(_THROTTLE_FIELDS))
+
+
 def _earliest_lift(blocked):
     stamps = [info.get("locked_until") for info in blocked if info]
     stamps = [stamp for stamp in stamps if stamp is not None]
@@ -92,12 +118,13 @@ def verify(user, token, device_id=None):
                 # outcome, and it is what lets us report locked_until.
                 blocked.append(reason)
                 continue
-            attempted.append(device)
+            attempted.append((device, _throttle_state(device)))
             if device.verify_token(token):
-                # Only reachable with a code that some device accepted, so this
-                # can never clear a back-off an attacker provoked.
-                for collateral in attempted[:-1]:
-                    collateral.throttle_reset()
+                # Every device tried before this one just took a failure for a
+                # code that was never meant for it. Undo those, and only those:
+                # the device that matched has reset its own counter already.
+                for collateral, state in attempted[:-1]:
+                    _restore_throttle(collateral, state)
                 return Verification(VERIFIED, device=device)
 
         if not attempted:
