@@ -20,7 +20,7 @@ from django.db import transaction
 from django_otp import devices_for_user
 from django_otp.models import Device
 
-#: A device accepted the code.
+#: A device accepted the code; `Verification.device` is which one.
 VERIFIED = "verified"
 #: Devices were tried and none accepted it.
 INVALID = "invalid"
@@ -32,9 +32,8 @@ THROTTLED = "throttled"
 
 @dataclass(frozen=True)
 class Verification:
-    """Four outcomes, not a bool: the caller answers differently to each. A wrong
-    code is a retry, no device is an enrolment prompt, and a throttled one needs
-    `locked_until` to say when to come back."""
+    """One attempt's result: an `outcome` constant from above, not a bool,
+    because the caller answers differently to each."""
 
     outcome: str
     device: Device = None
