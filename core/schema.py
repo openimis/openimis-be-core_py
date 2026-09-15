@@ -20,6 +20,8 @@ from graphql.error import GraphQLError
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 from graphql_jwt.decorators import login_required
+from graphql_jwt.refresh_token.shortcuts import get_refresh_token
+from graphql_jwt.settings import jwt_settings
 import graphene_django_optimizer as gql_optimizer
 from core.services import (
     create_or_update_interactive_user,
@@ -37,6 +39,7 @@ from core import prefix_filterset
 from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
+from django.contrib.auth import logout as django_logout
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from core.gql_errors import (
@@ -382,6 +385,28 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         request = getattr(info, "context", None)
 
         _check_csrf_token(request)
+
+        # Reject before anything is persisted or queued.
+        #
+        # Every OpenIMISMutation requires an authenticated user, but each one
+        # checks inside async_mutate -- which runs *after* the MutationLog row
+        # below is written and, when async_mutations is on (the default
+        # whenever MODE=prod), after a Celery job has been queued for it. An
+        # anonymous caller could therefore make the server write a row whose
+        # json_content/client_mutation_details it controls, and occupy a
+        # worker, once per request and without credentials.
+        #
+        # graphql_jwt's JWT_ALLOW_ANY_CLASSES lists the operations that may run
+        # anonymously; no OpenIMISMutation is among them, so this gate is
+        # unconditional. AuthenticationRequired is a JSONWebTokenError, which
+        # the GraphQL view maps to HTTP 401.
+        user = getattr(request, "user", None)
+        if (
+            user is None
+            or getattr(user, "is_anonymous", True)
+            or not getattr(user, "id", None)
+        ):
+            raise AuthenticationRequired()
 
         mutation_log = MutationLog.objects.create(
             json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
@@ -2304,6 +2329,81 @@ class GetCsrfTokenMutation(graphene.Mutation):
         return GetCsrfTokenMutation(csrf_token=csrf_token)
 
 
+class LogoutMutation(graphene.Mutation):
+    """Terminate the caller's session server side, not just in their browser.
+
+    deleteTokenCookie/deleteRefreshTokenCookie only ask the browser to drop the
+    cookies: neither of them touches any server-side state. Two things therefore
+    used to outlive a logout:
+
+      * the Django session. user_authentication() calls django login() for staff
+        users, so an admin gets a sessionid whose session record is never
+        destroyed. SessionAuthentication is one of the DRF default authentication
+        classes, so that cookie alone still authenticates /core/users/current_user/
+        and the front end silently logged the admin back in on the next page load.
+      * a long-running refresh token, when JWT_LONG_RUNNING_REFRESH_TOKEN is on:
+        it lives in the database and stays usable until it expires.
+
+    Listed in JWT_ALLOW_ANY_CLASSES so that logging out still works once the
+    access token has expired - that is precisely when the front end needs it.
+    """
+
+    success = graphene.Boolean(required=True)
+
+    @classmethod
+    def mutate(cls, root, info):
+        request = info.context
+
+        cls._revoke_refresh_token(request)
+        cls._flush_django_session(request)
+        cls._delete_auth_cookies(request)
+
+        return cls(success=True)
+
+    @staticmethod
+    def _revoke_refresh_token(request):
+        """Revoke the presented refresh token when it is stored server side.
+
+        No-op under the default sliding refresh tokens (JWT_LONG_RUNNING_REFRESH_TOKEN
+        off), which carry no server-side record to revoke.
+        """
+        if not jwt_settings.JWT_LONG_RUNNING_REFRESH_TOKEN:
+            return
+
+        token = request.COOKIES.get(jwt_settings.JWT_REFRESH_TOKEN_COOKIE_NAME)
+        if not token:
+            return
+
+        try:
+            get_refresh_token(token, request).revoke(request)
+        except Exception as exc:
+            # An unknown, already revoked or malformed token is not a reason to
+            # fail the logout: the rest of the teardown still has to happen.
+            logger.info("Could not revoke refresh token on logout: %s", exc)
+
+    @staticmethod
+    def _flush_django_session(request):
+        """Destroy the session record and let SessionMiddleware drop the cookie."""
+        if not hasattr(request, "session"):
+            return
+
+        try:
+            django_logout(request)
+        except Exception as exc:
+            logger.warning("Could not flush the Django session on logout: %s", exc)
+
+    @staticmethod
+    def _delete_auth_cookies(request):
+        """Ask the jwt_cookie decorator to emit the cookie-deleting headers.
+
+        It only tests hasattr(), and we set both unconditionally rather than
+        mirroring the graphql_jwt mixins, so the deletion headers go out even
+        when the browser did not send the cookie back.
+        """
+        request.delete_jwt_cookie = True
+        request.delete_refresh_token_cookie = True
+
+
 class Mutation(graphene.ObjectType):
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
@@ -2325,8 +2425,12 @@ class Mutation(graphene.ObjectType):
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()
 
+    # Kept for backward compatibility with older front ends. They only clear the
+    # browser cookies; new callers must use `logout`, which also tears down the
+    # server-side session.
     delete_token_cookie = graphql_jwt.DeleteJSONWebTokenCookie.Field()
     delete_refresh_token_cookie = graphql_jwt.DeleteRefreshTokenCookie.Field()
+    logout = LogoutMutation.Field()
     get_csrf_token = GetCsrfTokenMutation.Field()
 
 
