@@ -8,6 +8,7 @@ key is dropped silently by the JWKS view on every request.
 
 from collections.abc import Mapping
 
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
 
@@ -88,5 +89,33 @@ def deployment_algorithm_fits_the_signing_key(app_configs, **kwargs):
             "RSA key in JWT_SIGNING_KEY, so every login would fail. Use one of "
             f"{', '.join(_RSA_ALGORITHMS)}, or leave it unset for RS256.",
             id="core.auth.E006",
+        )
+    ]
+
+
+#: The apps that carry the device tables. core depends on the django-otp
+#: distribution, but only the assembly can install its apps, so a core upgrade
+#: without the matching assembly change is invisible until the first enrolment
+#: raises ProgrammingError on a table that was never created.
+SECOND_FACTOR_APPS = (
+    "django_otp.plugins.otp_totp",
+    "django_otp.plugins.otp_static",
+)
+
+
+@register(Tags.security)
+def second_factor_apps_are_installed(app_configs, **kwargs):
+    missing = [
+        app for app in SECOND_FACTOR_APPS if not django_apps.is_installed(app)
+    ]
+    if not missing:
+        return []
+    return [
+        Error(
+            "core.auth.second_factor verifies against django-otp device models, "
+            f"but {', '.join(missing)} is missing from INSTALLED_APPS. The tables "
+            "those models need are never created, so no second factor can be "
+            "enrolled or verified.",
+            id="core.auth.E004",
         )
     ]
