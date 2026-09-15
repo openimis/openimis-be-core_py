@@ -41,6 +41,55 @@ None
 * deleteRole
 * duplicateRole
 
+## Login and the second factor
+
+`tokenAuth(username, password, otp, otpDevice)` is the login. `otp` and
+`otpDevice` are optional; a client that knows nothing about a second factor is
+unchanged.
+
+| Client sends | User has a confirmed second-factor device | Result |
+|---|---|---|
+| `username`, `password` | no | token |
+| `username`, `password` | yes | `errors[0].message` = `SECOND_FACTOR_REQUIRED`, `data.tokenAuth` null |
+| + `otp` | yes | token - the code is tried against every confirmed device |
+| + `otp`, `otpDevice` | yes | token - tried against that device only |
+| + wrong `otp` | yes | `INVALID_SECOND_FACTOR` |
+| + `otp`, device backing off | yes | `SECOND_FACTOR_THROTTLED`, `errors[0].extensions.lockedUntil` (ISO-8601) |
+
+All three are returned with HTTP 200, the way `INCORRECT_CREDENTIALS` is, and
+repeated in `errors[0].extensions.code`. A rejected code counts as a failed
+login for the `axes` lockout, so the limit configured with
+`LOGIN_LOCKOUT_FAILURE_LIMIT` covers the whole login.
+
+`otpDevice` is a django-otp `persistent_id` (`otp_totp.totpdevice/3`). It is
+re-checked against the user server-side; a device that is not theirs reads as
+`INVALID_SECOND_FACTOR`.
+
+Whether a login needs a second factor is decided by `core.auth.login.mfa_required`,
+in one place. Until a policy exists it is "the user has enrolled a device".
+
+The same flow serves the REST login `POST /api/api_fhir_r4/login/`: `otp` and
+`otp_device` in the JSON body, the same three codes as `{"detail": <code>}`
+with HTTP 401, `locked_until` alongside when throttled.
+
+### Adding a channel that sends the code (SMS, WhatsApp, email)
+
+Nothing above changes. A server-sent code is a django-otp `SideChannelDevice`
+whose `generate_challenge()` delivers it (`otp_email.EmailDevice` is one that
+ships with the library). To add such a channel:
+
+1. install the device class;
+2. add one mutation, `requestSecondFactorCode(username, password, otpDevice)`,
+   that verifies the password, checks the device is the user's, and calls
+   `device.generate_challenge()`;
+3. the client then calls `tokenAuth` with `otp` and the same `otpDevice`.
+
+If the client needs to know which devices the user has in order to pick one,
+that list belongs in the `extensions` of `SECOND_FACTOR_REQUIRED`.
+
+Enrolment - `core.auth.devices.enrol_totp`, `confirm_totp`,
+`issue_recovery_codes` - has no GraphQL surface yet.
+
 ## Generic features
 
 ### Calendars
