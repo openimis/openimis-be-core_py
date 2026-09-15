@@ -1,8 +1,8 @@
-from django.core.cache import cache
 from rest_framework import serializers
 
 from .apps import CoreConfig
 from .models import User, InteractiveUser, TechnicalUser
+from core.cache_control import cache_get, cache_set
 from core.utils import get_cache_key
 
 
@@ -11,13 +11,13 @@ class CachedModelSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         cache_key = get_cache_key(instance.__class__, instance.id)
-        cached_data = cache.get(cache_key)
+        cached_data = cache_get(cache_key)
 
         if cached_data is not None:
             instance = cached_data
 
         representation = super().to_representation(instance)
-        cache.set(cache_key, representation, self.cache_ttl)
+        cache_set(cache_key, representation, self.cache_ttl)
         return representation
 
 

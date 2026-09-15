@@ -3,8 +3,17 @@ import os
 import sys
 import uuid
 from datetime import timedelta, datetime as py_datetime
-from django.core.cache import cache
 from cached_property import cached_property
+from core.cache_control import (
+    get_claim_admin_flag,
+    get_officer_flag,
+    get_user_is_admin,
+    get_user_rights,
+    set_claim_admin_flag,
+    set_officer_flag,
+    set_user_is_admin,
+    set_user_rights,
+)
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import (
@@ -343,7 +352,7 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def rights(self):
-        rights = cache.get("rights_" + str(self.id))
+        rights = get_user_rights(self.id)
         if rights:
             return rights
         if self.is_superuser:
@@ -360,7 +369,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 )
                 .distinct()
             ]
-        cache.set("rights_" + str(self.id), rights, timeout=None)
+        set_user_rights(self.id, rights)
         return rights
 
     @property
@@ -378,13 +387,12 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_officer(self):
-        cache_name = f"user_eo_{self.login_name}"
-        is_officer = cache.get(cache_name)
+        is_officer = get_officer_flag(self.login_name)
         if is_officer is None:
             is_officer = Officer.objects.filter(
                 code=self.login_name, has_login=True, *Officer.filter_validity()
             ).exists()
-            cache.set(cache_name, is_officer, None)
+            set_officer_flag(self.login_name, is_officer)
         return is_officer
 
     @property
@@ -392,8 +400,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         # Unlike Officer ClaimAdmin model was moved to the claim module,
         # and it's not granted that the module is installed.
         if "claim" in sys.modules:
-            cache_name = f"user_ca_{self.login_name}"
-            is_claim_admin = cache.get(cache_name)
+            is_claim_admin = get_claim_admin_flag(self.login_name)
             if is_claim_admin is None:
 
                 from core.models.user import ClaimAdmin
@@ -401,7 +408,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 is_claim_admin = ClaimAdmin.objects.filter(
                     code=self.login_name, has_login=True, *ClaimAdmin.filter_validity()
                 ).exists()
-                cache.set(cache_name, is_claim_admin, None)
+                set_claim_admin_flag(self.login_name, is_claim_admin)
             return is_claim_admin
         else:
             return False
@@ -412,7 +419,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         Deprecated: Use is_superuser instead. This will be removed in a future version.
         """
         # import warnings
-        is_admin = cache.get("is_admin_" + str(self.id))
+        is_admin = get_user_is_admin(self.id)
         if is_admin is None:
             is_admin = Role.objects.filter(
                 *Role.filter_validity(),
@@ -420,7 +427,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 is_system=Role.IMIS_ADMINISTRATOR,
                 user_roles__user=self,
             ).exists()
-            cache.set("is_admin_" + str(self.id), is_admin, 600)
+            set_user_is_admin(self.id, is_admin)
         return is_admin
 
     def set_password(self, raw_password, private_key=None):

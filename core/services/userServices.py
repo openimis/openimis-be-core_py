@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail, BadHeaderError
 from django.template import loader
 from django.utils.http import urlencode
-from django.core.cache import cache
+from core.cache_control import cache_delete, invalidate_user_rights
 from core.apps import CoreConfig
 from core.models.user import User, InteractiveUser, Officer, UserRole, UserManager
 from core.validation.obligatoryFieldValidation import (
@@ -77,7 +77,7 @@ def create_or_update_interactive_user(user_id, data, user_maker, connected):
         create_or_update_user_districts(
             i_user, data["districts"], user_maker.id_for_audit
         )
-    cache.delete("cs_InteractiveUserSerializer_" + str(i_user.id))
+    cache_delete("cs_InteractiveUserSerializer_" + str(i_user.id))
     return i_user, created
 
 
@@ -92,9 +92,8 @@ def create_or_update_user_roles(i_user, role_ids, audit_user_id):
         UserRole.objects.create(
             user=i_user, role_id=role_id, audit_user_id=audit_user_id
         )
-    cache.delete("rights_" + str(i_user.id))
-    cache.delete("is_admin_" + str(i_user.id))
-    cache.delete("cs_InteractiveUserSerializer_" + str(i_user.id))
+    invalidate_user_rights(i_user.id)
+    cache_delete("cs_InteractiveUserSerializer_" + str(i_user.id))
 
 
 # TODO move to location module ?
@@ -113,7 +112,7 @@ def create_or_update_user_districts(i_user, district_ids, audit_user_id):
             location_id=district_id,
             defaults={"validity_to": None, "audit_user_id": audit_user_id},
         )
-    cache.delete("q_allowed_locations_" + str(i_user.id))
+    cache_delete("q_allowed_locations_" + str(i_user.id))
 
 
 def create_or_update_officer_villages(officer, village_ids, audit_user_id):
@@ -254,9 +253,8 @@ def create_or_update_core_user(
     user.save(silent=silent)
     if is_superuser is not None and user.i_user_id:
         # is_superuser feeds InteractiveUser.rights, which is cached per user
-        cache.delete("rights_" + str(user.i_user_id))
-        cache.delete("is_admin_" + str(user.i_user_id))
-        cache.delete("cs_InteractiveUserSerializer_" + str(user.i_user_id))
+        invalidate_user_rights(user.i_user_id)
+        cache_delete("cs_InteractiveUserSerializer_" + str(user.i_user_id))
     return user, created
 
 
