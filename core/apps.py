@@ -113,6 +113,12 @@ class CoreConfig(AppConfig):
     password_digits = settings.PASSWORD_DIGITS
     password_symbols = settings.PASSWORD_SYMBOLS
 
+    # Deliberately sourced from settings (.env -> settings.py) and not from
+    # DEFAULT_CFG: impersonation is a security kill-switch, so it must not be
+    # flippable from the ModuleConfiguration table on a running production
+    # instance. Defaults to off when the assembly does not define it.
+    impersonation_enabled = getattr(settings, "IMPERSONATION_ENABLED", False)
+
     gql_query_enable_viewing_masked_data_perms = []
 
     csrf_protect_login = None

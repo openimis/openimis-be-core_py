@@ -6,7 +6,13 @@ from django.db.models import (
     Q, UUIDField, DateTimeField, BooleanField, Model, IntegerField, BigAutoField, JSONField,
 )
 from simple_history.models import HistoricalRecords
-from core.utils import CachedManager, CachedModelMixin, filter_validity as core_filter_validity, uuidv7  # , GenerateUUIDv7
+from core.utils import (  # , GenerateUUIDv7
+    CachedManager,
+    CachedModelMixin,
+    filter_validity as core_filter_validity,
+    get_original_user,
+    uuidv7,
+)
 from simple_history.utils import get_history_manager_for_model
 import datetime as base_datetime
 
@@ -75,6 +81,11 @@ class OpenIMISHistoryMixin(DirtyFieldsMixin, CachedModelMixin, Model):
         return self
 
     def save(self, *args, user=None, silent=False, **kwargs):
+        # While impersonating, history names whoever actually made the change
+        # rather than the user they were acting as.
+        original_user = get_original_user()
+        if original_user:
+            user = original_user
         # get the user data so as to assign later his uuid id in fields
         if user:
             self._history_user = user
