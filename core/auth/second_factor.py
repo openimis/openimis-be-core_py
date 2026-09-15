@@ -102,6 +102,13 @@ def verify(user, token, device_id=None):
     that must *send* a code first will use, and it avoids the collateral
     throttling below entirely; passing none tries everything the user has.
     """
+    if isinstance(token, str):
+        # A static token is lowercase base32 compared exactly, so a recovery
+        # code retyped in upper case - which a phone keyboard does by itself -
+        # would miss *and* charge a throttle failure to every device the user
+        # has. A TOTP token is digits, so folding case here costs nothing.
+        token = token.strip().lower()
+
     # One transaction: devices_for_user(for_verify=True) selects for update, so
     # two concurrent attempts cannot both spend the same recovery code.
     with transaction.atomic():
