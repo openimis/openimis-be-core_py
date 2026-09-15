@@ -8,6 +8,7 @@ from core.decorators import (  # noqa: F401
     check_authentication,
     check_permissions,
 )
+from core.service_errors import ServiceError
 
 
 def model_representation(model):
@@ -21,12 +22,11 @@ def model_representation(model):
 
 
 def output_exception(model_name, method, exception):
-    return {
-        "success": False,
-        "message": f"Failed to {method} {model_name}",
-        "detail": str(exception),
-        "data": "",
-    }
+    # Same payload as before plus a "code" derived from the exception type; see
+    # core.service_errors for why the shape is kept and what it unlocks.
+    return ServiceError.from_exception(
+        exception, message=f"Failed to {method} {model_name}"
+    ).as_dict()
 
 
 def output_result_success(dict_representation):

@@ -39,9 +39,15 @@ from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
-from core.gql_errors import AuthenticationRequired
+from core.gql_errors import (
+    AuthenticationRequired,
+    CodedGraphQLError,
+    CsrfTokenInvalid,
+    LockedOut,
+    safe_error_message,
+)
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, transaction, models
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -218,10 +224,13 @@ def _check_csrf_token(request):
         bypass in user_agent
         for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])
     )):
-        session_csrf = request.session['csrftoken']
-        request_csrf = request.META['HTTP_X_CSRFTOKEN']
-        if session_csrf != request_csrf:
-            raise PermissionDenied("CSRF token missing or incorrect.")
+        # .get(), not [...]: a missing token is the common case (expired or
+        # fresh session) and used to surface as KeyError('csrftoken'), which
+        # told the client nothing and never matched the message below.
+        session_csrf = (getattr(request, "session", None) or {}).get("csrftoken")
+        request_csrf = request.META.get("HTTP_X_CSRFTOKEN")
+        if not session_csrf or not request_csrf or session_csrf != request_csrf:
+            raise CsrfTokenInvalid("CSRF token missing or incorrect.")
 
 
 class OpenIMISJSONEncoder(DjangoJSONEncoder):
@@ -268,6 +277,12 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         abstract = True
 
     internal_id = graphene.Field(graphene.String)
+    client_mutation_id = graphene.Field(graphene.String)
+    status = graphene.Field(graphene.Int)
+    success = graphene.Field(graphene.Boolean)
+    error = graphene.Field(graphene.String)
+    message = graphene.Field(graphene.String)
+    metadata = GenericScalar(description="Metadata dictionary containing the mutated entity details or input parameters.")
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -424,7 +439,15 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
-                return cls(internal_id=mutation_log.id)
+                return cls(
+                    internal_id=mutation_log.id,
+                    client_mutation_id=mutation_log.client_mutation_id,
+                    status=mutation_log.status,
+                    success=False,
+                    error=mutation_log.error,
+                    message=mutation_log.client_mutation_label or mutation_log.error,
+                    metadata=data if data else None,
+                )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls,
@@ -525,9 +548,69 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 f"Exception while processing mutation id {mutation_log.id}",
                 exc_info=exc
             )
-            mutation_log.safe_mark_as_failed(str(exc))
+            # mutation_log.error is returned to the client, so an unexpected
+            # exception must not carry its text out of here -- the inner
+            # handler above already withholds details for the same reason.
+            # The full exception is in the log line just above.
+            mutation_log.safe_mark_as_failed(safe_error_message(exc))
 
-        return cls(internal_id=mutation_log.id)
+        metadata = {}
+        try:
+            if mutation_log.json_content:
+                metadata = json.loads(mutation_log.json_content)
+            elif data:
+                metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+            if isinstance(messages, dict):
+                metadata.update(messages)
+            elif isinstance(messages, models.Model):
+                if hasattr(messages, "uuid"):
+                    metadata["uuid"] = str(messages.uuid)
+                if hasattr(messages, "id") and not metadata.get("id"):
+                    metadata["id"] = messages.id
+
+            if isinstance(metadata, dict):
+                if not metadata.get("uuid"):
+                    if data.get("uuid"):
+                        metadata["uuid"] = str(data.get("uuid"))
+                    elif isinstance(messages, dict) and messages.get("uuid"):
+                        metadata["uuid"] = str(messages.get("uuid"))
+                    else:
+                        for rel in mutation_log._meta.related_objects:
+                            rel_name = rel.get_accessor_name()
+                            if hasattr(mutation_log, rel_name):
+                                rel_mgr = getattr(mutation_log, rel_name)
+                                first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                                if first_link:
+                                    for f in first_link._meta.fields:
+                                        if f.is_relation and f.name != "mutation":
+                                            linked_obj = getattr(first_link, f.name, None)
+                                            if linked_obj and hasattr(linked_obj, "uuid"):
+                                                metadata["uuid"] = str(linked_obj.uuid)
+                                                break
+                                    if metadata.get("uuid"):
+                                        break
+                if metadata:
+                    mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
+                    MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
+        except Exception as exc:
+            # Metadata is best-effort: the mutation itself already succeeded or
+            # failed above, so don't fail the response over it -- but don't
+            # discard the reason silently either.
+            logger.warning(
+                "[OpenIMISMutation %s] could not assemble metadata",
+                mutation_log.id,
+                exc_info=exc,
+            )
+
+        return cls(
+            internal_id=mutation_log.id,
+            client_mutation_id=mutation_log.client_mutation_id,
+            status=mutation_log.status,
+            success=(mutation_log.status == MutationLog.SUCCESS),
+            error=mutation_log.error,
+            message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
+            metadata=metadata if metadata else None,
+        )
 
 
 class FieldControlGQLType(DjangoObjectType):
@@ -715,6 +798,10 @@ class MutationLogGQLType(DjangoObjectType):
             [f"{pair[0]}: {pair[1]}" for pair in MutationLog.STATUS_CHOICES]
         ),
     )
+    success = graphene.Field(graphene.Boolean)
+
+    def resolve_success(self, info):
+        return self.status == MutationLog.SUCCESS
 
     @classmethod
     def get_queryset(cls, queryset, info):
@@ -2206,7 +2293,7 @@ class GetCsrfTokenMutation(graphene.Mutation):
     def mutate(cls, root, info):
         csrf_token = get_token(info.context)
         if not csrf_token:
-            raise GraphQLError("CSRF token could not be generated")
+            raise CodedGraphQLError("CSRF token could not be generated")
         if info.context and hasattr(info.context, 'session'):
             info.context.session['csrftoken'] = csrf_token
             info.context.session.save()
@@ -2329,7 +2416,7 @@ def check_lockout(request):
                     now() - last_attempt_time
                 )
                 remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
-                raise GraphQLError(
+                raise LockedOut(
                     f"Too many failed attempts."
                     f"Try again in {remaining_minutes} minutes."
                 )
