@@ -37,7 +37,6 @@ DEFAULT_CFG = {
     ),
     "password_reset_template": "password_reset.txt",
     "currency": "$",
-    "gql_query_claim_admins_perms": [],
     "gql_query_users_perms": ["121701"],
     "gql_query_users_profile_perms": ["122000"],
     "gql_mutation_create_users_perms": ["121702"],
@@ -78,7 +77,6 @@ class CoreConfig(AppConfig):
     age_of_majority = 18
     password_reset_template = "password_reset.txt"
 
-    gql_query_claim_admins_perms = []
     gql_query_roles_perms = []
     gql_mutation_create_roles_perms = []
     gql_mutation_update_roles_perms = []
@@ -199,7 +197,6 @@ class CoreConfig(AppConfig):
         )
 
     def _configure_permissions(self, cfg):
-        CoreConfig.gql_query_claim_admins_perms = cfg["gql_query_claim_admins_perms"]
         CoreConfig.gql_query_roles_perms = cfg["gql_query_roles_perms"]
         CoreConfig.gql_mutation_create_roles_perms = cfg[
             "gql_mutation_create_roles_perms"
