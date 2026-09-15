@@ -1,8 +1,8 @@
 from secrets import token_hex
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from django.conf import settings
 from django.test import TestCase, override_settings
 
 from core.auth import checks, keys
@@ -133,13 +133,17 @@ class SecondFactorAppsCheckTest(TestCase):
     assembly can install its apps, so the two can drift apart."""
 
     def test_missing_second_factor_apps_are_reported(self):
-        installed = [
-            app
-            for app in settings.INSTALLED_APPS
-            if app != "django_otp.plugins.otp_static"
-        ]
-        with override_settings(INSTALLED_APPS=installed):
+        # Patching is_installed rather than override_settings(INSTALLED_APPS=...):
+        # that override rebuilds the app registry, which re-runs CoreConfig.ready
+        # and loses core's management-command registration for every test that
+        # follows - three createsuperuser tests failed on it. The check reads
+        # nothing but is_installed, so this is the whole seam.
+        def installed(app):
+            return app != "django_otp.plugins.otp_static"
+
+        with patch.object(checks.django_apps, "is_installed", side_effect=installed):
             errors = checks.second_factor_apps_are_installed(None)
+
         self.assertEqual([error.id for error in errors], ["core.auth.E004"])
         self.assertIn("otp_static", errors[0].msg)
 
