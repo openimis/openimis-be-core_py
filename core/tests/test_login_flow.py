@@ -1,6 +1,7 @@
 import json
 from secrets import token_hex
 
+from axes.models import AccessAttempt
 from django.contrib.auth import SESSION_KEY
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory, TestCase
@@ -213,3 +214,43 @@ class TokenAuthSecondFactorTest(openIMISGraphQLTestCase):
         content = self._login(otp="000000")
         self.assertEqual(content["errors"][0]["message"], SECOND_FACTOR_THROTTLED)
         self.assertTrue(content["errors"][0]["extensions"]["lockedUntil"])
+
+
+class SecondFactorLockoutTest(TestCase):
+    """One login, one lockout budget: a wrong code is a failed login to axes,
+    exactly as a wrong password is. Without this, someone holding the password
+    is throttled only by django-otp's per-device back-off."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.user = create_test_interactive_user(
+            username="lockoutOtp", password=cls.password
+        )
+
+    def _failures(self):
+        attempt = AccessAttempt.objects.filter(username=self.user.username).first()
+        return attempt.failures_since_start if attempt else 0
+
+    def test_a_rejected_code_is_a_failed_login(self):
+        _enrol(self.user)
+        self.assertEqual(self._failures(), 0)
+        with self.assertRaises(SecondFactorError):
+            authenticate_login(
+                _request(), self.user.username, self.password, otp="000000"
+            )
+        self.assertEqual(self._failures(), 1)
+
+    def test_an_accepted_code_is_not(self):
+        device = _enrol(self.user)
+        authenticate_login(
+            _request(), self.user.username, self.password, otp=_code(device)
+        )
+        self.assertEqual(self._failures(), 0)
+
+    def test_a_missing_code_is_not_either(self):
+        # Being asked for the code is not a failure; only a wrong one is.
+        _enrol(self.user)
+        with self.assertRaises(SecondFactorError):
+            authenticate_login(_request(), self.user.username, self.password)
+        self.assertEqual(self._failures(), 0)
