@@ -1,5 +1,7 @@
+import json
 from secrets import token_hex
 
+from django.contrib.auth import SESSION_KEY
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory, TestCase
 from django_otp.plugins.otp_totp.models import TOTPDevice
@@ -13,6 +15,7 @@ from core.auth.login import (
     SecondFactorError,
     authenticate_login,
 )
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.test_helpers import create_test_interactive_user
 from core.tests.test_second_factor import _code
 
@@ -133,3 +136,80 @@ class AuthenticateLoginTest(TestCase):
             )
         self.assertEqual(raised.exception.code, SECOND_FACTOR_THROTTLED)
         self.assertTrue(raised.exception.extensions["lockedUntil"])
+
+
+TOKEN_AUTH = """
+    mutation login($username: String!, $password: String!, $otp: String, $otpDevice: String) {
+        tokenAuth(username: $username, password: $password, otp: $otp, otpDevice: $otpDevice) {
+            token
+        }
+    }
+"""
+
+
+class TokenAuthSecondFactorTest(openIMISGraphQLTestCase):
+    """The contract the frontend builds against: HTTP 200, the code in
+    errors[0].message, detail in errors[0].extensions - the shape
+    INCORRECT_CREDENTIALS already has."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = _password()
+        cls.user = create_test_interactive_user(
+            username="tokenAuthOtp", password=cls.password
+        )
+
+    def _login(self, **variables):
+        response = self.query(
+            TOKEN_AUTH,
+            variables={
+                "username": self.user.username,
+                "password": self.password,
+                **variables,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.content)
+
+    def test_an_unenrolled_user_logs_in_as_before(self):
+        content = self._login()
+        self.assertNotIn("errors", content)
+        self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+    def test_an_enrolled_user_without_a_code_is_told_to_send_one(self):
+        _enrol(self.user)
+        content = self._login()
+        self.assertEqual(content["errors"][0]["message"], SECOND_FACTOR_REQUIRED)
+        self.assertEqual(
+            content["errors"][0]["extensions"]["code"], SECOND_FACTOR_REQUIRED
+        )
+        self.assertIsNone(content["data"]["tokenAuth"])
+
+    def test_an_enrolled_user_with_a_code_gets_a_token(self):
+        device = _enrol(self.user)
+        content = self._login(otp=_code(device))
+        self.assertNotIn("errors", content)
+        self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+    def test_a_named_device_is_accepted(self):
+        device = _enrol(self.user)
+        content = self._login(otp=_code(device), otpDevice=device.persistent_id)
+        self.assertNotIn("errors", content)
+        self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+    def test_a_wrong_code_mints_no_token_and_opens_no_session(self):
+        # A non-staff user would pass the session half for the wrong reason.
+        self.assertTrue(self.user.is_staff)
+        _enrol(self.user)
+        content = self._login(otp="000000")
+        self.assertEqual(content["errors"][0]["message"], INVALID_SECOND_FACTOR)
+        self.assertIsNone(content["data"]["tokenAuth"])
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+    def test_a_throttled_attempt_says_when_it_lifts(self):
+        _enrol(self.user)
+        self._login(otp="000000")
+        content = self._login(otp="000000")
+        self.assertEqual(content["errors"][0]["message"], SECOND_FACTOR_THROTTLED)
+        self.assertTrue(content["errors"][0]["extensions"]["lockedUntil"])
