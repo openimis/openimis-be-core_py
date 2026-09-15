@@ -193,6 +193,23 @@ class SecondFactorVerifyTest(TestCase):
         )
         self.assertEqual(result.outcome, second_factor.NO_DEVICES)
 
+    def test_a_malformed_device_id_is_no_such_device_not_a_crash(self):
+        """django-otp suppresses ValueError and LookupError, so a nonsense id is
+        already safe - but an id naming a real non-Device model leaves it calling
+        .first() on None, and a non-string id has no .rsplit. OP-3134 passes this
+        value straight from a client, so neither may be a 500."""
+        for bad in [
+            "core.user/1",       # a real model, not a Device subclass
+            "core.user/abc",     # same, and an unparseable pk
+            "nosuchapp.model/1",  # LookupError, already suppressed upstream
+            "nodelimiter",       # ValueError, already suppressed upstream
+            "",
+            12345,               # not a string at all
+        ]:
+            with self.subTest(device_id=bad):
+                result = second_factor.verify(self.user, "000000", device_id=bad)
+                self.assertEqual(result.outcome, second_factor.NO_DEVICES)
+
     def test_an_unconfirmed_device_cannot_be_named_either(self):
         create_test_interactive_user(username="otp_pending")
         pending_user = User.objects.get(username="otp_pending")
