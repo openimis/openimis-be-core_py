@@ -139,6 +139,19 @@ class SecondFactorVerifyTest(TestCase):
             StaticDevice.objects.get(user=self.user).token_set.count(), len(codes) - 1
         )
 
+    def test_a_recovery_code_verifies_in_any_case_and_around_whitespace(self):
+        """Static tokens are lowercase base32 matched exactly, so without
+        normalising, a code retyped in upper case fails *and* burns a throttle
+        failure on every device - a user locking themselves out by typing."""
+        codes = devices.issue_recovery_codes(self.user)
+
+        result = second_factor.verify(self.user, f"  {codes[0].upper()}  ")
+
+        self.assertTrue(result.ok)
+        self.assertIsInstance(result.device, StaticDevice)
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.throttling_failure_count, 0)
+
     def test_a_recovery_code_does_not_throttle_the_authenticator(self):
         """The reason match_token is not used. The TOTP device is tried first and
         fails, and without the collateral reset it would back off exponentially
