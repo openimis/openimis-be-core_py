@@ -149,6 +149,23 @@ class SecondFactorVerifyTest(TestCase):
         self.assertEqual(self.totp.throttling_failure_count, 0)
         self.assertIsNone(self.totp.throttling_failure_timestamp)
 
+    def test_a_fallback_login_does_not_clear_an_existing_back_off(self):
+        """Restore, not reset. throttle_reset() zeroes the counter, so clearing
+        outright would let each legitimate recovery-code login wipe a back-off an
+        attacker had built up on the authenticator - handing them a fresh budget
+        every time the real user logged in."""
+        codes = devices.issue_recovery_codes(self.user)
+        earlier = timezone.now() - timedelta(minutes=5)
+        TOTPDevice.objects.filter(pk=self.totp.pk).update(
+            throttling_failure_count=4, throttling_failure_timestamp=earlier
+        )
+
+        self.assertTrue(second_factor.verify(self.user, codes[0]).ok)
+
+        self.totp.refresh_from_db()
+        self.assertEqual(self.totp.throttling_failure_count, 4)
+        self.assertEqual(self.totp.throttling_failure_timestamp, earlier)
+
     def test_a_wrong_code_throttles_every_device_it_was_tried_against(self):
         devices.issue_recovery_codes(self.user)
         result = second_factor.verify(self.user, "000000")
