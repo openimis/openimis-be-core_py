@@ -13,7 +13,7 @@ saved value can be validated against them and re-applied without a restart.
 
 import logging
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 from core.apps import CoreConfig
 
@@ -118,3 +118,57 @@ def mandates(user):
         user_roles__user=user.i_user,
         name__in=CoreConfig.second_factor_mandatory_roles,
     ).exists()
+
+
+def validate_configuration(instance):
+    """Refuse a core configuration row this module could not act on.
+
+    Registered for the core module; ModuleConfiguration.clean() calls it on
+    every save. Missing keys are fine - the row is merged over the defaults -
+    so only what the row itself says is checked. A role name matching no valid
+    role is refused here, at save time: at login it would match nobody, and
+    everyone holding the intended role would be silently exempt.
+    """
+    cfg = instance._cfg
+    mode = cfg.get("second_factor_policy", OPTIONAL)
+    if mode not in POLICIES:
+        raise ValidationError(
+            {
+                "config": "second_factor_policy must be one of "
+                f"{', '.join(POLICIES)}, not {mode!r}."
+            }
+        )
+    roles = cfg.get("second_factor_mandatory_roles", []) or []
+    if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
+        raise ValidationError(
+            {"config": "second_factor_mandatory_roles must be a list of role names."}
+        )
+    if roles:
+        from core.models import Role
+
+        known = set(
+            Role.objects.filter(*Role.filter_validity(), name__in=roles).values_list(
+                "name", flat=True
+            )
+        )
+        unknown = sorted(set(roles) - known)
+        if unknown:
+            raise ValidationError(
+                {
+                    "config": "second_factor_mandatory_roles names no existing role: "
+                    + ", ".join(unknown)
+                }
+            )
+
+
+def reload_configuration(instance):
+    """Re-apply the effective core configuration after a row is committed.
+
+    Reads it the way CoreConfig.ready() does rather than trusting the saved
+    instance: a row disabled with is_disabled_until, or a second row, resolves
+    exactly as it will at the next start.
+    """
+    from core.apps import DEFAULT_CFG, MODULE_NAME
+    from core.models import ModuleConfiguration
+
+    configure(ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG))
