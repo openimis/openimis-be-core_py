@@ -4,10 +4,12 @@ Each is here because its failure is otherwise invisible until something depends
 on it: an unprovisioned deployment signs nothing and only finds out at the first
 login, an unpublishable verification key is dropped silently by the JWKS view on
 every request, a second-factor app left out of INSTALLED_APPS has no device
-tables until an enrolment tries to write one, and a second-factor policy value
-the predicate cannot act on refuses every login.
+tables until an enrolment tries to write one, a second-factor policy value the
+predicate cannot act on refuses every login, and a mandate naming a role that no
+longer resolves binds nobody without saying so.
 """
 
+import logging
 from collections.abc import Mapping
 
 from django.apps import apps as django_apps
@@ -15,6 +17,9 @@ from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
 
 from core.auth import keys
+from core.bootstrap import database_expected, optional_database
+
+logger = logging.getLogger(__name__)
 
 
 @register(Tags.security)
@@ -139,5 +144,42 @@ def second_factor_policy_is_known(app_configs, **kwargs):
             f"{', '.join(policy.POLICIES)}. Until it is, core.auth.login cannot "
             "decide whether a login needs a second factor and every login fails.",
             id="core.auth.E005",
+        )
+    ]
+
+
+@register(Tags.security)
+def second_factor_roles_exist(app_configs, **kwargs):
+    from core.apps import CoreConfig
+    from core.auth import policy
+
+    if CoreConfig.second_factor_policy != policy.PER_ROLE:
+        return []
+    configured = CoreConfig.second_factor_mandatory_roles or []
+    if not configured or not database_expected():
+        return []
+
+    unknown = []
+    # Best-effort: a check must not break `migrate` on a database whose tables
+    # are half-built, and a skipped check is better than a failed command.
+    with optional_database("check the second-factor role names", logger):
+        from core.models import Role
+
+        known = set(
+            Role.objects.filter(
+                *Role.filter_validity(), name__in=configured
+            ).values_list("name", flat=True)
+        )
+        unknown = sorted(set(configured) - known)
+    if not unknown:
+        return []
+    return [
+        Warning(
+            "second_factor_mandatory_roles names no valid role: "
+            f"{', '.join(unknown)}. Nobody is bound to a second factor by those "
+            "entries, so the users they were meant to cover can log in with a "
+            "password alone. Renaming a role moves its name and keeps its id, "
+            "so a name that was valid when it was configured can stop matching.",
+            id="core.auth.W002",
         )
     ]

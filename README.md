@@ -112,7 +112,16 @@ The row is validated when saved: an unknown policy value, or a role name that
 matches no existing role, is refused rather than silently exempting anyone. A
 change saved from inside the application - the Django admin, a mutation -
 applies without a restart; one made by direct SQL or from a separate `manage.py
-shell` reaches the running server only when it restarts. **Turn on `per_role` or
+shell` reaches the running server only when it restarts.
+
+**Renaming a role that the mandate names takes those users out of it.** The
+mandate matches on the role's name, and renaming a role keeps its id and moves
+only its name, so a name that was valid when it was configured can stop
+matching later. Nothing detects that at the moment it happens: the users the
+entry covered simply stop being required to use a second factor. A startup
+check (`core.auth.W002`) reports any configured name that no longer resolves, so
+the next restart says so - but if you rename a role, update this configuration
+in the same change. **Turn on `per_role` or
 `mandatory` only after the users it binds have enrolled** - a bound user with no
 device cannot log in, and enrolment currently needs a login.
 
