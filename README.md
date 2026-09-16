@@ -51,12 +51,13 @@ unchanged.
 |---|---|---|
 | `username`, `password` | no | token |
 | `username`, `password` | yes | `errors[0].message` = `SECOND_FACTOR_REQUIRED`, `data.tokenAuth` null |
+| `username`, `password` | no, **and the policy binds the user** | `errors[0].message` = `SECOND_FACTOR_ENROLMENT_REQUIRED`, `data.tokenAuth` null |
 | + `otp` | yes | token - the code is tried against every confirmed device |
 | + `otp`, `otpDevice` | yes | token - tried against that device only |
 | + wrong `otp` | yes | `INVALID_SECOND_FACTOR` |
 | + `otp`, device backing off | yes | `SECOND_FACTOR_THROTTLED`, `errors[0].extensions.lockedUntil` (ISO-8601) |
 
-All three are returned with HTTP 200, the way `INCORRECT_CREDENTIALS` is, and
+All four are returned with HTTP 200, the way `INCORRECT_CREDENTIALS` is, and
 repeated in `errors[0].extensions.code`. A rejected code counts as a failed
 login for the `axes` lockout, so the limit configured with
 `LOGIN_LOCKOUT_FAILURE_LIMIT` covers the whole login.
@@ -66,15 +67,57 @@ re-checked against the user server-side; a device that is not theirs reads as
 `INVALID_SECOND_FACTOR`.
 
 Whether a login needs a second factor is decided by `core.auth.login.mfa_required`,
-in one place. Until a policy exists it is "the user has enrolled a device".
+in one place, from two things: a user who has enrolled a confirmed device must use
+it, whatever the policy says, and the deployment's policy may bind users who have
+not enrolled. A bound user with no device is refused with
+`SECOND_FACTOR_ENROLMENT_REQUIRED` and has to enrol before they can log in.
 
 Enrolling a device binds the next login, not the sessions already open: a token
 issued on the password alone before the enrolment stays valid until it expires.
 To end those too, sign the account out everywhere (`signOutEverywhere`).
 
 The same flow serves the REST login `POST /api/api_fhir_r4/login/`: `otp` and
-`otp_device` in the JSON body, the same three codes as `{"detail": <code>}`
+`otp_device` in the JSON body, the same four codes as `{"detail": <code>}`
 with HTTP 401, `locked_until` alongside when throttled.
+
+### Configuring who must use a second factor
+
+Two keys in the `core` module configuration (`core_ModuleConfiguration`,
+`module = "core"`, `layer = "be"`), over these defaults:
+
+```json
+{
+  "second_factor_policy": "optional",
+  "second_factor_mandatory_roles": []
+}
+```
+
+| `second_factor_policy` | binds |
+|---|---|
+| `optional` | only users who enrolled a device (the default: nothing changes for existing deployments) |
+| `per_role` | users holding a role named in `second_factor_mandatory_roles`, plus every superuser, every holder of the IMIS Administrator role, and every account that can open the Django admin |
+| `mandatory` | every interactive user, plus every account that can open the Django admin |
+
+A technical user - the kind of account an integration authenticates with - is
+outside every policy as long as it is not privileged: no staff flag, no
+superuser flag on its user row. Such an account has no admin access and no
+rights of its own, and it is why HTTP Basic stays enabled at all. A technical
+user that is privileged is a different thing: it opens the Django admin like any
+administrator, so a policy binds it, and it then has to log in through the token
+flow with a code like anyone else. Ticking `is_superuser` when editing a
+technical user in the Django admin also makes it staff, so that is the form a
+privileged technical account normally takes.
+
+The row is validated when saved: an unknown policy value, or a role name that
+matches no existing role, is refused rather than silently exempting anyone. A
+change saved from inside the application - the Django admin, a mutation -
+applies without a restart; one made by direct SQL or from a separate `manage.py
+shell` reaches the running server only when it restarts. **Turn on `per_role` or
+`mandatory` only after the users it binds have enrolled** - a bound user with no
+device cannot log in, and enrolment currently needs a login.
+
+Delegating the requirement to an identity provider later is a change to
+`mfa_required` alone; nothing else decides.
 
 ### Adding a channel that sends the code (SMS, WhatsApp, email)
 
