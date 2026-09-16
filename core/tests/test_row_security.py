@@ -280,6 +280,40 @@ class DeclarativeScopeTest(TestCase):
         self.assertNotEqual(str(base.query), str(scoped.query))
         self.assertIn("tblClaim", str(scoped.query))
 
+    def _subquery_sql(self, scope, tag):
+        """The SQL a ClaimItem queryset gets under ``scope``, for one user.
+
+        Quoting is stripped so the assertion reads the same on either backend
+        (``"ClaimID"`` on postgres, ``[ClaimID]`` on mssql). The subquery has
+        ``IS NULL`` terms of its own -- validity, and the location filter's --
+        so the test names the column it cares about rather than counting.
+        """
+        self.scope(self.ClaimItem, scope)
+        role = create_test_role(perm_names=[], name=f"RowSecNull{tag}")
+        user = create_test_interactive_user(
+            username=f"rowsec_null_{tag}",
+            roles=[role.id],
+            custom_props={"is_superuser": False},
+        )
+        queryset = self.ClaimItem.get_queryset(self.ClaimItem.objects.all(), user)
+        return str(queryset.query).translate(str.maketrans("", "", '"[]'))
+
+    def test_a_parentless_row_is_hidden_unless_the_model_says_otherwise(self):
+        """``field__in`` never matches a null, and that is the default reading."""
+        from core.models import ParentScope
+
+        sql = self._subquery_sql(ParentScope("claim"), "off")
+
+        self.assertNotIn("ClaimID IS NULL", sql)
+
+    def test_allow_null_keeps_a_parentless_row_visible(self):
+        """A row with nothing to narrow it stays in, like a null location."""
+        from core.models import ParentScope
+
+        sql = self._subquery_sql(ParentScope("claim", allow_null=True), "on")
+
+        self.assertIn("ClaimID IS NULL", sql)
+
     def test_a_location_scope_needs_a_path(self):
         from core.models import LocationScope
 
