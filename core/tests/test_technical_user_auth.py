@@ -91,12 +91,12 @@ class TechnicalUserTokenTest(TestCase):
 
 
 class TechnicalUserRevocationBoundaryTest(TestCase):
-    """The gap this ticket accepts rather than closes.
+    """The gap this change accepts rather than closes.
 
     Revocation is a not-before stored in InteractiveUser.json_ext, and a
     technical user has no InteractiveUser row and no JSON column of its own, so
-    nothing records one. Each test below is a decision, not an oversight - see
-    the task file's decision 1.
+    nothing records one. Each test below pins behaviour that is accepted, not an
+    oversight.
     """
 
     def test_a_token_survives_a_password_change_by_design(self):
@@ -136,8 +136,8 @@ class TechnicalUserRevocationBoundaryTest(TestCase):
 
 
 class TechnicalUserRightsTest(TestCase):
-    """Pre-existing behaviour, pinned because this ticket is what first lets a
-    technical user hold a token to exercise it.
+    """Pre-existing behaviour, pinned because working token issuance for a
+    technical user is what first lets one hold a token to exercise it.
     """
 
     def test_a_technical_user_holds_no_rights(self):
