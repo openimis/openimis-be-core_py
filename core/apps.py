@@ -67,6 +67,13 @@ DEFAULT_CFG = {
     "locked_user_password_hash": "locked",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
+    # Who must present a second factor beyond the users who enrolled one:
+    # "optional" nobody, "per_role" the roles below plus the accounts that skip
+    # right checks or reach the Django admin, "mandatory" every interactive
+    # user. Read by core.auth.policy; a saved configuration naming a role that
+    # does not exist is refused rather than silently exempting everyone in it.
+    "second_factor_policy": "optional",
+    "second_factor_mandatory_roles": [],
 }
 
 
@@ -116,6 +123,9 @@ class CoreConfig(AppConfig):
     gql_query_enable_viewing_masked_data_perms = []
 
     csrf_protect_login = None
+
+    second_factor_policy = None
+    second_factor_mandatory_roles = []
 
     def _import_module(self, cfg, k):
         logger.info("import %s.%s" % (cfg["%s_module" % k], cfg["%s_package" % k]))
@@ -285,6 +295,10 @@ class CoreConfig(AppConfig):
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
         self._configure_additional_settings(cfg)
+
+        from core.auth import policy
+
+        policy.configure(cfg)
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
