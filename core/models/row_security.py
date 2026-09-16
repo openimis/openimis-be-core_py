@@ -250,12 +250,22 @@ class ParentScope(Scope):
 
     The parent's paths are prefixed with this model's foreign key, so the rule
     stays declared once on whichever ancestor owns the location.
+
+    ``allow_null`` is for a nullable parent: a row that has no parent at all has
+    nothing to narrow it by, so it stays visible -- the same way a null location
+    does in ``build_user_location_filter_query`` and a null subject does in
+    ``GenericScope``. It is opt-in because the alternative reading ("no parent,
+    no reason to show it") is the safer default, and only the model knows which
+    of the two its nullable foreign key means. It matters only on the subquery
+    path below; when the parent's paths compose, a null parent already falls
+    through the outer join onto the location filter's own ``isnull`` term.
     """
 
-    def __init__(self, field, loc_types=None, link_types=None):
+    def __init__(self, field, loc_types=None, link_types=None, allow_null=False):
         self.field = field
         self._loc_types = loc_types
         self._link_types = link_types
+        self.allow_null = allow_null
 
     def _parent_scope(self, model):
         parent = model._meta.get_field(self.field).related_model
@@ -308,7 +318,10 @@ class ParentScope(Scope):
             )
             return queryset
         allowed = parent_get_queryset(parent.objects.all(), user)
-        return queryset.filter(**{f"{self.field}__in": allowed})
+        condition = Q(**{f"{self.field}__in": allowed})
+        if self.allow_null:
+            condition |= Q(**{f"{self.field}__isnull": True})
+        return queryset.filter(condition)
 
 
 def is_row_secured(model):
