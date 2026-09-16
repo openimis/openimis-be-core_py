@@ -46,7 +46,11 @@ class Command(compilemessages.Command):
             with resources.path(mod_name, "__init__.py") as path:
                 os.chdir(path.parent.parent)
                 print(f'Trying to run makemessages in {mod_name} with locale={locale}')
-                call_command("makemessages", locale=locale)
+                call_command(
+                    "makemessages",
+                    locale=locale,
+                    ignore_patterns=list(ignore_patterns) + ["*.dist-info", "*.egg-info", "site-packages"],
+                )
                 apps.append(
                     path.parent.parent
                 )  # This might need to be more restrictive
