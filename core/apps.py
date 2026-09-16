@@ -297,8 +297,11 @@ class CoreConfig(AppConfig):
         self._configure_additional_settings(cfg)
 
         from core.auth import policy
+        from core.module_config_registry import register_reloader, register_validator
 
         policy.configure(cfg)
+        register_validator(MODULE_NAME, policy.validate_configuration)
+        register_reloader(MODULE_NAME, policy.reload_configuration)
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]

@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 
+from core.apps import CoreConfig
 from core.auth import checks, keys
 
 
@@ -149,3 +150,18 @@ class SecondFactorAppsCheckTest(TestCase):
 
     def test_installed_second_factor_apps_report_nothing(self):
         self.assertEqual(checks.second_factor_apps_are_installed(None), [])
+
+
+class SecondFactorPolicyCheckTest(TestCase):
+    """`core.auth.E005` - a policy value the predicate cannot act on, caught at
+    startup rather than at the first login."""
+
+    def test_an_unknown_policy_is_reported(self):
+        with patch.object(CoreConfig, "second_factor_policy", "sometimes"):
+            errors = checks.second_factor_policy_is_known(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E005"])
+
+    def test_a_known_policy_is_not(self):
+        with patch.object(CoreConfig, "second_factor_policy", "per_role"):
+            self.assertEqual(checks.second_factor_policy_is_known(None), [])
