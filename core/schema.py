@@ -36,7 +36,7 @@ from core.services import (
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
-from core.auth import revocation
+from core.auth import recovery, revocation
 from core.auth.login import authenticate_login
 from django import dispatch
 from django.conf import settings
@@ -2157,6 +2157,40 @@ class SignOutEverywhereMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class ResetUserSecondFactorMutation(OpenIMISMutation):
+    """Remove every second-factor device a user has and end their sessions.
+
+    An OpenIMISMutation because this one has to leave a record: the base class
+    writes a mutation log row before anything runs and marks its outcome, so a
+    refused attempt is as visible as a granted one. The class name carries
+    "User" and the input is named uuid because that pair is what links the row
+    to the account it was about.
+    """
+
+    _mutation_module = "core"
+    _mutation_class = "ResetUserSecondFactorMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuid = graphene.String(
+            required=True, description="The user whose second factor is reset"
+        )
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise PermissionDenied(_("mutation.authentication_required"))
+            recovery.reset_second_factor(user, data["uuid"])
+            return None
+        except Exception as exc:
+            return [
+                {
+                    "message": "core.mutation.failed_to_reset_second_factor",
+                    "detail": str(exc),
+                }
+            ]
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2295,6 +2329,7 @@ class Mutation(graphene.ObjectType):
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
     sign_out_everywhere = SignOutEverywhereMutation.Field()
+    reset_user_second_factor = ResetUserSecondFactorMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
