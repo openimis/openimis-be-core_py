@@ -5,6 +5,8 @@ re-issues their own recovery codes, while a user who holds nothing needs an
 administrator whose action is gated, recorded and ends every session.
 """
 
+import json
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
@@ -13,7 +15,11 @@ from graphql_jwt.refresh_token.shortcuts import create_refresh_token
 from rest_framework.exceptions import AuthenticationFailed
 
 from core.auth import devices, recovery
-from core.models import User
+from core.models import MutationLog, User, UserMutation
+from core.models.openimis_graphql_test_case import (
+    BaseTestContext,
+    openIMISGraphQLTestCase,
+)
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
@@ -126,3 +132,93 @@ class ResetSecondFactorTest(TestCase):
             recovery.reset_second_factor(
                 self.resetter, "00000000-0000-0000-0000-000000000000"
             )
+
+
+class ResetUserSecondFactorMutationTest(openIMISGraphQLTestCase):
+    """The GraphQL surface and the record it leaves behind."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.admin = create_test_interactive_user(
+            username="mfaResetAdmin", password=_password()
+        )
+        cls.nobody = create_test_interactive_user(
+            username="mfaResetNobody", password=_password(), roles=[]
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.target = create_test_interactive_user(
+            username="mfaResetTarget", password=_password(), roles=[]
+        )
+        _enrol(self.target)
+
+    def _reset(self, caller, target_id):
+        """The mutation, returning its log row.
+
+        follow=False: the base class records the outcome on the log rather
+        than in the response, so a refusal has to be read there too and
+        waiting for a success would hang on one.
+        """
+        token = BaseTestContext(user=caller).get_jwt()
+        content = self.send_mutation(
+            "resetUserSecondFactor",
+            {"uuid": str(target_id)},
+            token,
+            follow=False,
+            add_client_mutation_id=True,
+        )
+        return MutationLog.objects.get(
+            id=content["data"]["resetUserSecondFactor"]["internalId"]
+        )
+
+    def test_an_administrator_resets_a_user_and_the_log_records_it(self):
+        log = self._reset(self.admin, self.target.id)
+
+        self.assertEqual(log.status, MutationLog.SUCCESS, log.error)
+        self.assertEqual(log.user_id, self.admin.id)
+        self.assertEqual(json.loads(log.json_content)["uuid"], str(self.target.id))
+        self.assertTrue(
+            UserMutation.objects.filter(core_user=self.target, mutation=log).exists()
+        )
+        self.assertFalse(devices.has_second_factor(self.target))
+
+    def test_a_refusal_is_recorded_too_and_changes_nothing(self):
+        log = self._reset(self.nobody, self.target.id)
+
+        self.assertEqual(log.status, MutationLog.ERROR)
+        self.assertEqual(log.user_id, self.nobody.id)
+        self.assertTrue(devices.has_second_factor(self.target))
+        # The link is written while the mutation is validated, before anyone
+        # is allowed through, so a refused attempt is traceable to the account
+        # it was aimed at rather than only to the caller.
+        self.assertTrue(
+            UserMutation.objects.filter(core_user=self.target, mutation=log).exists()
+        )
+
+    def test_a_uuid_that_is_nobody_fails_before_the_service_runs(self):
+        log = self._reset(self.admin, "00000000-0000-0000-0000-000000000000")
+
+        self.assertEqual(log.status, MutationLog.ERROR)
+        self.assertTrue(devices.has_second_factor(self.target))
+
+    def test_an_anonymous_caller_is_refused(self):
+        response = self.query(
+            """
+            mutation {
+                resetUserSecondFactor(input: {uuid: "%s", clientMutationId: "anon"}) {
+                    internalId
+                }
+            }
+            """
+            % self.target.id
+        )
+
+        content = json.loads(response.content)
+        log = MutationLog.objects.get(
+            id=content["data"]["resetUserSecondFactor"]["internalId"]
+        )
+        self.assertEqual(log.status, MutationLog.ERROR)
+        self.assertIsNone(log.user_id)
+        self.assertTrue(devices.has_second_factor(self.target))
