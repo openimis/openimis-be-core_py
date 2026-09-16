@@ -2,7 +2,7 @@
 
 AdminSite.login takes a password and opens a session, and that session
 authenticates the REST API too - SessionAuthentication is in
-DEFAULT_AUTHENTICATION_CLASSES, kept deliberately by OP-3146. So an enrolled
+DEFAULT_AUTHENTICATION_CLASSES and stays there deliberately. So an enrolled
 administrator would log in there on the password alone, and administrators are
 who the second factor is for.
 
