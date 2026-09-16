@@ -2213,6 +2213,7 @@ class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
     codes = graphene.List(graphene.String)
     success = graphene.Boolean()
     error = graphene.String()
+    locked_until = graphene.String()
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, otp, otp_device=None, **input):
@@ -2223,7 +2224,14 @@ class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
             codes = recovery.reissue_recovery_codes(user, otp, otp_device)
             return IssueRecoveryCodesMutation(success=True, codes=codes)
         except SecondFactorError as exc:
-            return IssueRecoveryCodesMutation(success=False, error=exc.code)
+            # lockedUntil rides along when the devices are backing off, the
+            # way tokenAuth reports it, so a client knows to wait rather than
+            # reading a back-off as a wrong code.
+            return IssueRecoveryCodesMutation(
+                success=False,
+                error=exc.code,
+                locked_until=exc.extensions.get("lockedUntil"),
+            )
         except Exception as exc:
             logger.exception(exc)
             return IssueRecoveryCodesMutation(

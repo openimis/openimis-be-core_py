@@ -130,16 +130,16 @@ Two mutations, for two situations.
 
 **The user still has a device and wants new recovery codes.**
 
-    mutation { issueRecoveryCodes(input: {otp: "123456", clientMutationId: "x"}) { codes success error } }
+    mutation { issueRecoveryCodes(input: {otp: "123456", clientMutationId: "x"}) { codes success error lockedUntil } }
 
 `otp` is a current code from any confirmed device, a recovery code included.
 `codes` is the new set of ten, returned once and never again; the previous set
 is gone. On failure `success` is false and `error` is the code `tokenAuth`
 would have given: `SECOND_FACTOR_ENROLMENT_REQUIRED` (no confirmed device),
 `SECOND_FACTOR_REQUIRED` (no code sent), `INVALID_SECOND_FACTOR`,
-`SECOND_FACTOR_THROTTLED`. This is not a login, so a wrong code here does not
-count towards the `axes` lockout; django-otp's per-device back-off is what
-slows it down.
+`SECOND_FACTOR_THROTTLED`, which carries `lockedUntil` (ISO-8601) alongside.
+This is not a login, so a wrong code here does not count towards the `axes`
+lockout; django-otp's per-device back-off is what slows it down.
 
 **The user has lost every device.** An administrator resets them:
 
