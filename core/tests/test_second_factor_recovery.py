@@ -6,8 +6,9 @@ administrator whose action is gated, recorded and ends every session.
 """
 
 import json
+from unittest.mock import Mock
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from django_otp.plugins.otp_totp.models import TOTPDevice
@@ -15,6 +16,7 @@ from graphql_jwt.refresh_token.shortcuts import create_refresh_token
 from rest_framework.exceptions import AuthenticationFailed
 
 from core.auth import devices, recovery, second_factor
+from core.gql_queries import UserGQLType
 from core.auth.login import (
     INVALID_SECOND_FACTOR,
     SECOND_FACTOR_ENROLMENT_REQUIRED,
@@ -369,3 +371,56 @@ class IssueRecoveryCodesMutationTest(openIMISGraphQLTestCase):
         refused = "errors" in body or (payload and payload["success"] is False)
         self.assertTrue(refused, body)
         self.assertEqual(_codes_stored(self.user), set())
+
+
+class HasSecondFactorFieldTest(openIMISGraphQLTestCase):
+    """The one bit an administrator needs before deciding to reset."""
+
+    USERS = """
+        query {
+            users(username: "%s") {
+                edges { node { hasSecondFactor } }
+            }
+        }
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.admin = create_test_interactive_user(
+            username="mfaFieldAdmin", password=_password()
+        )
+        cls.enrolled = create_test_interactive_user(
+            username="mfaFieldEnrolled", password=_password(), roles=[]
+        )
+        cls.plain = create_test_interactive_user(
+            username="mfaFieldPlain", password=_password(), roles=[]
+        )
+        _enrol(cls.enrolled)
+
+    def _read(self, caller, username):
+        token = BaseTestContext(user=caller).get_jwt()
+        response = self.query(
+            self.USERS % username, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
+        )
+        return json.loads(response.content)
+
+    def test_true_for_an_enrolled_user_and_false_otherwise(self):
+        enrolled = self._read(self.admin, self.enrolled.username)
+        plain = self._read(self.admin, self.plain.username)
+
+        self.assertTrue(
+            enrolled["data"]["users"]["edges"][0]["node"]["hasSecondFactor"]
+        )
+        self.assertFalse(plain["data"]["users"]["edges"][0]["node"]["hasSecondFactor"])
+
+    def test_the_resolver_refuses_another_user_without_the_users_right(self):
+        # The users query already refuses this caller outright, so the field's
+        # own rule is exercised directly - it is what would guard the value if
+        # any query ever exposed the type to a plain user.
+        info = Mock()
+        info.context.user = self.plain
+
+        self.assertFalse(UserGQLType.resolve_has_second_factor(self.plain, info))
+        with self.assertRaises(PermissionDenied):
+            UserGQLType.resolve_has_second_factor(self.enrolled, info)
