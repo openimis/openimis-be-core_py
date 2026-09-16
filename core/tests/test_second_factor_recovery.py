@@ -14,7 +14,14 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 from graphql_jwt.refresh_token.shortcuts import create_refresh_token
 from rest_framework.exceptions import AuthenticationFailed
 
-from core.auth import devices, recovery
+from core.auth import devices, recovery, second_factor
+from core.auth.login import (
+    INVALID_SECOND_FACTOR,
+    SECOND_FACTOR_ENROLMENT_REQUIRED,
+    SECOND_FACTOR_REQUIRED,
+    SECOND_FACTOR_THROTTLED,
+    SecondFactorError,
+)
 from core.models import MutationLog, User, UserMutation
 from core.models.openimis_graphql_test_case import (
     BaseTestContext,
@@ -26,7 +33,8 @@ from core.test_helpers import (
     create_test_technical_user,
 )
 from core.tests.test_auth_revocation import _now, _stored_not_before
-from core.tests.test_login_flow import _enrol, _password
+from core.tests.test_login_flow import _enrol, _password, _throttle
+from core.tests.test_second_factor import _code
 
 
 def _codes_stored(user):
@@ -222,3 +230,142 @@ class ResetUserSecondFactorMutationTest(openIMISGraphQLTestCase):
         self.assertEqual(log.status, MutationLog.ERROR)
         self.assertIsNone(log.user_id)
         self.assertTrue(devices.has_second_factor(self.target))
+
+
+class ReissueRecoveryCodesTest(TestCase):
+    """The service: who gets a new set, and what it costs them."""
+
+    def setUp(self):
+        self.user = create_test_interactive_user(
+            username="mfaReissue", password=_password(), roles=[]
+        )
+
+    def test_a_user_with_no_device_is_told_to_enrol(self):
+        with self.assertRaises(SecondFactorError) as raised:
+            recovery.reissue_recovery_codes(self.user, "000000")
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+        self.assertEqual(_codes_stored(self.user), set())
+
+    def test_an_authenticator_code_replaces_the_set(self):
+        device = _enrol(self.user)
+        old = set(devices.issue_recovery_codes(self.user))
+
+        new = recovery.reissue_recovery_codes(self.user, _code(device))
+
+        self.assertEqual(len(new), 10)
+        self.assertEqual(_codes_stored(self.user), set(new))
+        self.assertTrue(old.isdisjoint(new))
+
+    def test_a_wrong_code_is_invalid_and_leaves_the_old_set(self):
+        _enrol(self.user)
+        old = set(devices.issue_recovery_codes(self.user))
+
+        with self.assertRaises(SecondFactorError) as raised:
+            recovery.reissue_recovery_codes(self.user, "000000")
+
+        self.assertEqual(raised.exception.code, INVALID_SECOND_FACTOR)
+        self.assertEqual(_codes_stored(self.user), old)
+
+    def test_a_recovery_code_can_refill_the_set_and_is_spent_doing_it(self):
+        _enrol(self.user)
+        old = devices.issue_recovery_codes(self.user)
+
+        new = recovery.reissue_recovery_codes(self.user, old[0])
+
+        self.assertEqual(len(new), 10)
+        self.assertNotIn(old[0], _codes_stored(self.user))
+
+    def test_a_new_code_logs_in_once(self):
+        device = _enrol(self.user)
+
+        new = recovery.reissue_recovery_codes(self.user, _code(device))
+
+        self.assertTrue(second_factor.verify(self.user, new[0]).ok)
+        self.assertEqual(
+            second_factor.verify(self.user, new[0]).outcome, second_factor.INVALID
+        )
+
+    def test_an_empty_code_asks_for_one_without_charging_the_devices(self):
+        device = _enrol(self.user)
+        devices.issue_recovery_codes(self.user)
+
+        with self.assertRaises(SecondFactorError) as raised:
+            recovery.reissue_recovery_codes(self.user, "")
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_REQUIRED)
+        device.refresh_from_db()
+        self.assertEqual(device.throttling_failure_count, 0)
+
+    def test_a_throttled_device_reports_when_it_lifts(self):
+        device = _enrol(self.user)
+        devices.issue_recovery_codes(self.user)
+        _throttle(device)
+        _throttle(StaticDevice.objects.get(user=self.user))
+
+        with self.assertRaises(SecondFactorError) as raised:
+            recovery.reissue_recovery_codes(self.user, _code(device))
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_THROTTLED)
+        self.assertIsNotNone(raised.exception.extensions["lockedUntil"])
+
+
+class IssueRecoveryCodesMutationTest(openIMISGraphQLTestCase):
+    """The GraphQL surface: the codes come back once, and nowhere else."""
+
+    ISSUE = """
+        mutation {
+            issueRecoveryCodes(input: {otp: "%s", clientMutationId: "reissue"}) {
+                codes
+                success
+                error
+            }
+        }
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.user = create_test_interactive_user(
+            username="mfaIssueCodes", password=_password(), roles=[]
+        )
+        self.device = _enrol(self.user)
+        self.token = BaseTestContext(user=self.user).get_jwt()
+
+    def _issue(self, otp, token=None):
+        response = self.query(
+            self.ISSUE % otp,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token or self.token}"},
+        )
+        return json.loads(response.content)
+
+    def test_a_current_code_returns_a_fresh_set(self):
+        body = self._issue(_code(self.device))
+
+        payload = body["data"]["issueRecoveryCodes"]
+        self.assertTrue(payload["success"], payload["error"])
+        self.assertEqual(len(payload["codes"]), 10)
+        self.assertEqual(_codes_stored(self.user), set(payload["codes"]))
+
+    def test_a_wrong_code_returns_the_code_not_codes(self):
+        body = self._issue("000000")
+
+        payload = body["data"]["issueRecoveryCodes"]
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], INVALID_SECOND_FACTOR)
+        self.assertIsNone(payload["codes"])
+
+    def test_the_codes_reach_no_mutation_log(self):
+        before = MutationLog.objects.count()
+
+        self._issue(_code(self.device))
+
+        self.assertEqual(MutationLog.objects.count(), before)
+
+    def test_an_anonymous_caller_is_refused(self):
+        response = self.query(self.ISSUE % "000000")
+
+        body = json.loads(response.content)
+        payload = (body.get("data") or {}).get("issueRecoveryCodes")
+        refused = "errors" in body or (payload and payload["success"] is False)
+        self.assertTrue(refused, body)
+        self.assertEqual(_codes_stored(self.user), set())
