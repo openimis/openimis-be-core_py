@@ -29,5 +29,9 @@ def admin_login_redirect(request):
     `next` is dropped: the frontend login has no return-to, and it lands on the
     app rather than back here.
     """
-    front = getattr(settings, "SITE_FRONT", "front")
+    # Stripped, not interpolated raw: SITE_FRONT is an operator-set string and
+    # a leading slash would make this "//front/login" - scheme-relative, so the
+    # browser leaves for a host called "front". SITE_ROOT and SITE_URL
+    # normalise for the same reason.
+    front = getattr(settings, "SITE_FRONT", "front").strip("/")
     return redirect(f"/{front}/login")
