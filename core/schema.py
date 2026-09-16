@@ -37,7 +37,7 @@ from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
 from core.auth import recovery, revocation
-from core.auth.login import authenticate_login
+from core.auth.login import SecondFactorError, authenticate_login
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -2191,6 +2191,46 @@ class ResetUserSecondFactorMutation(OpenIMISMutation):
             ]
 
 
+class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
+    """Hand the signed-in user a fresh set of recovery codes, once.
+
+    Deliberately not an OpenIMISMutation: that base returns only the id of a
+    log row, and these codes have to reach the client - while the log row
+    keeps the mutation's input and result, which is the last place a spare
+    set of credentials should be written. A current code is the price, so a
+    stolen session cannot mint its own way around the factor it got past.
+    """
+
+    class Input:
+        otp = graphene.String(
+            required=True, description="A current code from any confirmed device"
+        )
+        otp_device = graphene.String(
+            required=False,
+            description="A device persistent_id to try instead of all of them",
+        )
+
+    codes = graphene.List(graphene.String)
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, otp, otp_device=None, **input):
+        user = info.context.user
+        if type(user) is AnonymousUser or not user.id:
+            raise PermissionDenied(_("mutation.authentication_required"))
+        try:
+            codes = recovery.reissue_recovery_codes(user, otp, otp_device)
+            return IssueRecoveryCodesMutation(success=True, codes=codes)
+        except SecondFactorError as exc:
+            return IssueRecoveryCodesMutation(success=False, error=exc.code)
+        except Exception as exc:
+            logger.exception(exc)
+            return IssueRecoveryCodesMutation(
+                success=False, error=gettext_lazy("Failed to issue recovery codes")
+            )
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2330,6 +2370,7 @@ class Mutation(graphene.ObjectType):
     set_password = SetPasswordMutation.Field()
     sign_out_everywhere = SignOutEverywhereMutation.Field()
     reset_user_second_factor = ResetUserSecondFactorMutation.Field()
+    issue_recovery_codes = IssueRecoveryCodesMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
