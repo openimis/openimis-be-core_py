@@ -3,8 +3,9 @@
 Each is here because its failure is otherwise invisible until something depends
 on it: an unprovisioned deployment signs nothing and only finds out at the first
 login, an unpublishable verification key is dropped silently by the JWKS view on
-every request, and a second-factor app left out of INSTALLED_APPS has no device
-tables until an enrolment tries to write one.
+every request, a second-factor app left out of INSTALLED_APPS has no device
+tables until an enrolment tries to write one, and a second-factor policy value
+the predicate cannot act on refuses every login.
 """
 
 from collections.abc import Mapping
@@ -86,5 +87,25 @@ def second_factor_apps_are_installed(app_configs, **kwargs):
             "those models need are never created, so no second factor can be "
             "enrolled or verified.",
             id="core.auth.E004",
+        )
+    ]
+
+
+@register(Tags.security)
+def second_factor_policy_is_known(app_configs, **kwargs):
+    # Imported here: core.apps is the AppConfig module and this file is
+    # imported from its ready().
+    from core.apps import CoreConfig
+    from core.auth import policy
+
+    mode = CoreConfig.second_factor_policy
+    if mode in policy.POLICIES:
+        return []
+    return [
+        Error(
+            f"second_factor_policy is {mode!r}; it must be one of "
+            f"{', '.join(policy.POLICIES)}. Until it is, core.auth.login cannot "
+            "decide whether a login needs a second factor and every login fails.",
+            id="core.auth.E005",
         )
     ]

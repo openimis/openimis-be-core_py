@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from axes.models import AccessAttempt
 from django.contrib.sessions.middleware import SessionMiddleware
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test import RequestFactory, TestCase
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
@@ -20,6 +20,7 @@ from core.auth.login import (
     authenticate_login,
     mfa_required,
 )
+from core.models import ModuleConfiguration
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.services import create_or_update_user_roles
 from core.test_helpers import (
@@ -444,3 +445,55 @@ class TokenAuthEnrolmentRequiredTest(openIMISGraphQLTestCase):
             content["errors"][0]["extensions"]["code"], SECOND_FACTOR_ENROLMENT_REQUIRED
         )
         self.assertIsNone(content["data"]["tokenAuth"])
+
+
+def _row(**cfg):
+    return ModuleConfiguration(
+        module="core", layer="be", version="1", config=json.dumps(cfg)
+    )
+
+
+class PolicyConfigurationValidationTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_test_role(name="Supervisor")
+
+    def test_a_row_naming_neither_key_is_fine(self):
+        # Every other core key is optional in the row; these two are too.
+        _row(csrf_protect_login=False).clean()
+
+    def test_a_valid_policy_is_accepted(self):
+        _row(
+            second_factor_policy="per_role",
+            second_factor_mandatory_roles=["Supervisor"],
+        ).clean()
+
+    def test_an_unknown_policy_value_is_refused(self):
+        with self.assertRaises(ValidationError) as caught:
+            _row(second_factor_policy="sometimes").clean()
+        self.assertIn("config", caught.exception.message_dict)
+
+    def test_roles_must_be_a_list_of_strings(self):
+        for bad in ("Supervisor", [1, 2], {"name": "Supervisor"}):
+            with self.subTest(value=bad), self.assertRaises(ValidationError):
+                _row(second_factor_mandatory_roles=bad).clean()
+
+    def test_a_name_matching_no_valid_role_is_refused(self):
+        # Fail closed here rather than open at login: a misspelt name would
+        # otherwise silently exempt everyone who holds the real one.
+        with self.assertRaises(ValidationError) as caught:
+            _row(second_factor_mandatory_roles=["Supervisor", "Suprevisor"]).clean()
+        self.assertIn("Suprevisor", str(caught.exception))
+
+
+class PolicyConfigurationReloadTest(TestCase):
+    def test_saving_the_row_applies_the_policy_without_a_restart(self):
+        create_test_role(name="Supervisor")
+        with _policy(policy.OPTIONAL):
+            with self.captureOnCommitCallbacks(execute=True):
+                _row(
+                    second_factor_policy="per_role",
+                    second_factor_mandatory_roles=["Supervisor"],
+                ).save()
+            self.assertEqual(CoreConfig.second_factor_policy, "per_role")
+            self.assertEqual(CoreConfig.second_factor_mandatory_roles, ["Supervisor"])
