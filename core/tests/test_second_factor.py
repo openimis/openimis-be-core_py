@@ -226,8 +226,8 @@ class SecondFactorVerifyTest(TestCase):
     def test_a_malformed_device_id_is_no_such_device_not_a_crash(self):
         """django-otp suppresses ValueError and LookupError, so a nonsense id is
         already safe - but an id naming a real non-Device model leaves it calling
-        .first() on None, and a non-string id has no .rsplit. OP-3134 passes this
-        value straight from a client, so neither may be a 500."""
+        .first() on None, and a non-string id has no .rsplit. The login flow passes
+        this value straight from a client, so neither may be a 500."""
         for bad in [
             "core.user/1",       # a real model, not a Device subclass
             "core.user/abc",     # same, and an unparseable pk
