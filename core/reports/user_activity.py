@@ -3305,7 +3305,10 @@ def fetch_entity_data(
 ):
     data = []
     try:
-        manager = apps.get_model(MODULE_MAPPING[requested_entity], requested_entity)
+        # apps.get_model returns the model class, not a manager -- the old
+        # name is what led to `manager.model._meta` below, an AttributeError on
+        # every entity.
+        model = apps.get_model(MODULE_MAPPING[requested_entity], requested_entity)
         
         # Build base validity filters (unchanged)
         filters = (
@@ -3320,10 +3323,10 @@ def fetch_entity_data(
         # Determine which fields actually exist and collect OR filters + name field
         user_filters = Q()
         model_fields = {
-            f.name for f in manager.model._meta.get_fields() 
+            f.name for f in model._meta.get_fields()
         }
 
-        qs = manager.objects.filter(filters)
+        qs = model.objects.filter(filters)
         if "audit_user_id" in model_fields:
             user_filters |= Q(**{"audit_user_id": user_id})
         if "user_updated" in model_fields:
@@ -3348,7 +3351,13 @@ def fetch_entity_data(
         known_legacy_ids = set()
         for element in elements:
             action_type = determine_action_type(
-                element.id, element.validity_to, element.legacy_id, known_legacy_ids
+                element.id,
+                element.validity_to,
+                # Not every entity has legacy_id -- migration 0032 dropped it
+                # from InteractiveUser. determine_action_type already treats a
+                # falsy one as "not legacy-versioned", which is what that means.
+                getattr(element, "legacy_id", None),
+                known_legacy_ids,
             )
             if action_type != report_params["action"] and report_params["action"] != ACTION_ALL:
                 continue
@@ -3359,7 +3368,11 @@ def fetch_entity_data(
                 "datetime": determine_datetime(
                     element.validity_to, element.validity_from, action_type
                 ),
-                "user_name": user_names_mapping.get(element.audit_user_id, "openIMIS"),
+                # audit_user_id is only present, or annotated above, for entities
+                # that carry one; the rest are attributed to openIMIS.
+                "user_name": user_names_mapping.get(
+                    getattr(element, "audit_user_id", None), "openIMIS"
+                ),
             }
             data.append(new_data_element)
 

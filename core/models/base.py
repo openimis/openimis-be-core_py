@@ -5,7 +5,6 @@ import uuid
 
 from datetime import datetime as py_datetime
 import datetime as base_datetime
-from cached_property import cached_property
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q, JSONField
@@ -102,11 +101,25 @@ class ModuleConfiguration(UUIDModel):
                 logger.info("No %s configuration, using default!" % module)
         return configuration
 
-    @cached_property
+    @property
     def _cfg(self):
+        """The parsed ``config``, re-parsed whenever ``config`` changes.
+
+        Deliberately not a ``cached_property``: ``config`` is reassigned in
+        place (the admin, a mutation, a test loading a fixture), and a cache
+        keyed only on the instance kept serving the JSON it replaced -- so
+        ``clean()`` validated, and the module reload applied, the *previous*
+        configuration.
+        """
         import collections
 
-        return json.loads(self.config, object_pairs_hook=collections.OrderedDict)
+        if "_cfg_parsed" not in self.__dict__ or self.__dict__["_cfg_source"] != self.config:
+            parsed = json.loads(self.config, object_pairs_hook=collections.OrderedDict)
+            # only after a successful parse, so a bad config raises on every
+            # access rather than falling back to the last good one
+            self.__dict__["_cfg_parsed"] = parsed
+            self.__dict__["_cfg_source"] = self.config
+        return self.__dict__["_cfg_parsed"]
 
     def clean(self):
         super().clean()

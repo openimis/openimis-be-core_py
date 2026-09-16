@@ -91,6 +91,15 @@ class AdDate(py_datetime.date):
         if isinstance(other, py_datetime.datetime):
             return operation(AdDatetime.from_ad_datetime(other))
 
+    def __hash__(self):
+        # Defining __eq__ sets __hash__ to None, which makes the class
+        # unhashable -- it could not be a dict key, go in a set, or reach
+        # django.utils.hashable.make_hashable, which a queryset does for any
+        # date wrapped in an ORM expression. AdDatetime already does this;
+        # AdDate was simply missed. Equality still matches date's, so the
+        # inherited hash stays consistent with it.
+        return super().__hash__()
+
     def __eq__(self, other):
         result = self._date_operation(super(AdDate, self).__eq__, other)
         return result if result else self - other == datetimedelta()

@@ -268,6 +268,28 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         )
         self.assertIn(expected_error, error, error)
 
+    def assert_unauthenticated(self, response):
+        """Asserts a mutation was refused because the caller was anonymous.
+
+        ``OpenIMISMutation`` rejects an anonymous caller *before* writing its
+        MutationLog row -- otherwise an unauthenticated request could make the
+        server persist content it controls and occupy a worker -- so there is no
+        log to read back and the refusal arrives as HTTP 401 carrying the
+        ``UNAUTHENTICATED`` code. Use this rather than ``assert_mutation_error``,
+        which has no log to find.
+
+        Assert on the code, not the message: that goes through gettext, and the
+        en catalogue already rewrites "unauthenticated".
+        """
+        from core.gql_errors import UNAUTHENTICATED
+
+        self.assertEqual(response.status_code, 401, response.content)
+        codes = [
+            (error.get("extensions") or {}).get("code")
+            for error in json.loads(response.content).get("errors", [])
+        ]
+        self.assertIn(UNAUTHENTICATED, codes, response.content)
+
     def assert_mutation_success(self, mutation_uuid, token, internal=True):
         """Asserts the mutation completed successfully."""
         from core.models.base_mutation import MutationLog
