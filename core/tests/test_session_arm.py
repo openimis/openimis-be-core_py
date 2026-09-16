@@ -80,8 +80,9 @@ class OpenAdminSessionTest(TestCase):
 
 
 class GraphQLSessionArmTest(openIMISGraphQLTestCase):
-    """OP-3128 finding 9's table, in reverse. `languages` is the probe because
-    its resolver raises AuthenticationRequired, which the view maps to 401.
+    """The GraphQL half of the session arm: a session alone must not authenticate
+    a query. `languages` is the probe because its resolver raises
+    AuthenticationRequired, which the view maps to 401.
     """
 
     PROBE = "query { languages { name } }"
