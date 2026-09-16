@@ -478,6 +478,17 @@ class PolicyConfigurationValidationTest(TestCase):
             with self.subTest(value=bad), self.assertRaises(ValidationError):
                 _row(second_factor_mandatory_roles=bad).clean()
 
+    def test_a_config_body_that_is_not_an_object_is_refused(self):
+        # clean() guards JSON syntax but not shape, so a valid-JSON list
+        # reaches this validator. It must answer with the field error the
+        # model's contract promises, not an AttributeError out of save().
+        row = ModuleConfiguration(
+            module="core", layer="be", version="1", config="[1, 2]"
+        )
+        with self.assertRaises(ValidationError) as caught:
+            row.clean()
+        self.assertIn("config", caught.exception.message_dict)
+
     def test_a_name_matching_no_valid_role_is_refused(self):
         # Fail closed here rather than open at login: a misspelt name would
         # otherwise silently exempt everyone who holds the real one.

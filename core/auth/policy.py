@@ -130,6 +130,11 @@ def validate_configuration(instance):
     everyone holding the intended role would be silently exempt.
     """
     cfg = instance._cfg
+    if not isinstance(cfg, dict):
+        # clean() guards the JSON syntax but not its shape, so a valid-JSON
+        # list arrives here intact and would raise AttributeError out of
+        # save(). The model's contract is a field error.
+        raise ValidationError({"config": "The configuration must be a JSON object."})
     mode = cfg.get("second_factor_policy", OPTIONAL)
     if mode not in POLICIES:
         raise ValidationError(
