@@ -8,6 +8,7 @@ administrator whose action is gated, recorded and ends every session.
 import json
 from unittest.mock import Mock
 
+from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
@@ -424,3 +425,13 @@ class HasSecondFactorFieldTest(openIMISGraphQLTestCase):
         self.assertFalse(UserGQLType.resolve_has_second_factor(self.plain, info))
         with self.assertRaises(PermissionDenied):
             UserGQLType.resolve_has_second_factor(self.enrolled, info)
+
+
+class DeviceAdminPagesTest(TestCase):
+    def test_the_device_models_are_off_the_admin_site(self):
+        # django-otp's plugin apps register both. Left in place they are a
+        # staff-only way to remove someone's device that needs no right of its
+        # own, records nothing and ends none of their sessions - the three
+        # things the reset mutation exists to guarantee.
+        self.assertFalse(admin.site.is_registered(TOTPDevice))
+        self.assertFalse(admin.site.is_registered(StaticDevice))
