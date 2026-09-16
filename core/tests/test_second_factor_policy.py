@@ -1,16 +1,33 @@
+import base64
+import json
+from secrets import token_hex
 from unittest.mock import patch
 
+from axes.models import AccessAttempt
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import ImproperlyConfigured
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
+from django_otp.plugins.otp_totp.models import TOTPDevice
+from rest_framework.exceptions import AuthenticationFailed
 
 from core.apps import CoreConfig
-from core.auth import policy
+from core.auth import devices, policy
+from core.auth.basic import SecondFactorBasicAuthentication
+from core.auth.login import (
+    SECOND_FACTOR_ENROLMENT_REQUIRED,
+    SECOND_FACTOR_REQUIRED,
+    SecondFactorError,
+    authenticate_login,
+    mfa_required,
+)
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.services import create_or_update_user_roles
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_role,
     create_test_technical_user,
 )
+from core.tests.test_second_factor import _code
 
 
 def _policy(mode, roles=()):
@@ -21,6 +38,45 @@ def _policy(mode, roles=()):
         second_factor_policy=mode,
         second_factor_mandatory_roles=list(roles),
     )
+
+
+def _password():
+    """Generated, so no password-shaped literal ends up in the repository."""
+    return token_hex(16) + "Aa1!"
+
+
+def _request():
+    """A request with a real, empty session - what open_admin_session needs."""
+    request = RequestFactory().post("/api/graphql")
+    SessionMiddleware(lambda r: None).process_request(request)
+    return request
+
+
+def _basic_request(username, password):
+    """A GET carrying an HTTP Basic header, as a REST client would send it."""
+    encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return RequestFactory().get(
+        "/api/api_fhir_r4/Patient/", HTTP_AUTHORIZATION=f"Basic {encoded}"
+    )
+
+
+def _enrol(user):
+    """A confirmed TOTP device, with the replay floor rewound.
+
+    Confirming consumes the time step whose code was used; rewind rather than
+    make every test wait 30 seconds. The property itself is pinned by
+    test_second_factor.test_the_code_that_confirmed_cannot_also_log_in.
+    """
+    device = devices.enrol_totp(user)
+    assert devices.confirm_totp(device, _code(device))
+    TOTPDevice.objects.filter(pk=device.pk).update(last_t=-1)
+    device.refresh_from_db()
+    return device
+
+
+def _failures(username):
+    attempt = AccessAttempt.objects.filter(username=username).first()
+    return attempt.failures_since_start if attempt else 0
 
 
 class PolicyMandatesTest(TestCase):
@@ -169,3 +225,222 @@ class PolicyConfigureTest(TestCase):
                 }
             )
             self.assertEqual(CoreConfig.second_factor_mandatory_roles, [])
+
+
+class MfaRequiredTest(TestCase):
+    """The one predicate: enrolment binds under every policy; the policy binds
+    more."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.role = create_test_role(name="Supervisor")
+        cls.other = create_test_role(name="Field Agent")
+        cls.bound = create_test_interactive_user(
+            username="mfaBound", password=cls.password, roles=[cls.role.id]
+        )
+        cls.free = create_test_interactive_user(
+            username="mfaFree", password=cls.password, roles=[cls.other.id]
+        )
+
+    def test_an_enrolled_user_is_required_under_every_policy(self):
+        _enrol(self.free)
+        for mode in policy.POLICIES:
+            with self.subTest(mode=mode), _policy(mode, ["Supervisor"]):
+                self.assertTrue(mfa_required(self.free))
+
+    def test_an_unenrolled_user_is_required_only_when_the_policy_binds_them(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            self.assertTrue(mfa_required(self.bound))
+            self.assertFalse(mfa_required(self.free))
+
+
+class MandatedLoginTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.role = create_test_role(name="Supervisor")
+        cls.other = create_test_role(name="Field Agent")
+        cls.bound = create_test_interactive_user(
+            username="loginBound", password=cls.password, roles=[cls.role.id]
+        )
+        cls.free = create_test_interactive_user(
+            username="loginFree", password=cls.password, roles=[cls.other.id]
+        )
+
+    def test_a_bound_user_with_no_device_is_told_to_enrol(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(SecondFactorError) as raised:
+                authenticate_login(_request(), "loginBound", self.password)
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+        self.assertEqual(
+            raised.exception.extensions, {"code": SECOND_FACTOR_ENROLMENT_REQUIRED}
+        )
+
+    def test_a_stray_code_does_not_turn_enrol_into_invalid(self):
+        # The device check precedes the otp branch: the answer is "enrol",
+        # and INVALID_SECOND_FACTOR would send the frontend to a code field.
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(SecondFactorError) as raised:
+                authenticate_login(
+                    _request(), "loginBound", self.password, otp="123456"
+                )
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+
+    def test_being_told_to_enrol_is_not_a_failed_login(self):
+        # Only a rejected code counts against the lockout; being asked for a
+        # factor is not guessing.
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(SecondFactorError):
+                authenticate_login(_request(), "loginBound", self.password)
+        self.assertEqual(_failures("loginBound"), 0)
+
+    def test_a_bound_user_who_enrolled_is_asked_for_the_code_then_logs_in(self):
+        device = _enrol(self.bound)
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(SecondFactorError) as raised:
+                authenticate_login(_request(), "loginBound", self.password)
+            self.assertEqual(raised.exception.code, SECOND_FACTOR_REQUIRED)
+            user = authenticate_login(
+                _request(), "loginBound", self.password, otp=_code(device)
+            )
+        self.assertEqual(user.pk, self.bound.pk)
+
+    def test_a_user_the_policy_leaves_alone_logs_in_on_the_password(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            user = authenticate_login(_request(), "loginFree", self.password)
+        self.assertEqual(user.pk, self.free.pk)
+
+    def test_a_wrong_password_still_fails_first(self):
+        # Nothing about the policy may be learned without the password.
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(AuthenticationFailed):
+                authenticate_login(_request(), "loginBound", "not-it")
+
+    def test_mandatory_binds_the_unenrolled_field_agent_too(self):
+        with _policy(policy.MANDATORY):
+            with self.assertRaises(SecondFactorError) as raised:
+                authenticate_login(_request(), "loginFree", self.password)
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+
+    def test_mandatory_still_logs_a_plain_technical_user_in(self):
+        technical = create_test_technical_user(
+            username="loginTech", password=self.password
+        )
+        with _policy(policy.MANDATORY):
+            user = authenticate_login(_request(), "loginTech", self.password)
+        self.assertEqual(user.pk, technical.pk)
+
+    def test_a_staff_technical_user_is_told_to_enrol(self):
+        # It can log in here and, being is_staff, open_admin_session gives it
+        # the Django admin. Exempting it would leave an admin-capable
+        # password-only login outside the policy.
+        create_test_technical_user(
+            username="loginTechStaff",
+            password=self.password,
+            staff=True,
+            super_user=True,
+        )
+        with _policy(policy.MANDATORY):
+            with self.assertRaises(SecondFactorError) as raised:
+                authenticate_login(_request(), "loginTechStaff", self.password)
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+
+
+class BasicUnderPolicyTest(TestCase):
+    """The HTTP Basic authenticator asks the same predicate; these pin what the
+    policy does to it, the technical accounts included."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = _password()
+        cls.role = create_test_role(name="Supervisor")
+        cls.other = create_test_role(name="Field Agent")
+        cls.bound = create_test_interactive_user(
+            username="basicBound", password=cls.password, roles=[cls.role.id]
+        )
+        cls.free = create_test_interactive_user(
+            username="basicFree", password=cls.password, roles=[cls.other.id]
+        )
+        cls.technical = create_test_technical_user(
+            username="basicTech", password=cls.password
+        )
+        cls.staff_technical = create_test_technical_user(
+            username="basicTechStaff",
+            password=cls.password,
+            staff=True,
+            super_user=True,
+        )
+
+    def test_basic_refuses_a_bound_user_with_no_device(self):
+        # The header cannot carry a code and cannot enrol; the same code as
+        # for an enrolled user, since the remedy - the token flow - is the same.
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(AuthenticationFailed) as caught:
+                SecondFactorBasicAuthentication().authenticate(
+                    _basic_request("basicBound", self.password)
+                )
+        self.assertEqual(str(caught.exception.detail), SECOND_FACTOR_REQUIRED)
+
+    def test_basic_admits_a_user_the_policy_leaves_alone(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            user, _auth = SecondFactorBasicAuthentication().authenticate(
+                _basic_request("basicFree", self.password)
+            )
+        self.assertEqual(user.pk, self.free.pk)
+
+    def test_basic_still_admits_a_plain_technical_user_under_mandatory(self):
+        # The integrations HTTP Basic exists for are untouched by any of this,
+        # under the strictest policy there is.
+        with _policy(policy.MANDATORY):
+            user, _auth = SecondFactorBasicAuthentication().authenticate(
+                _basic_request("basicTech", self.password)
+            )
+        self.assertEqual(user.username, "basicTech")
+
+    def test_basic_refuses_a_staff_technical_user_under_mandatory(self):
+        # The deliberate cost of not exempting it: an integration whose account
+        # was made staff stops working over Basic when a policy binds it.
+        with _policy(policy.MANDATORY):
+            with self.assertRaises(AuthenticationFailed) as caught:
+                SecondFactorBasicAuthentication().authenticate(
+                    _basic_request("basicTechStaff", self.password)
+                )
+        self.assertEqual(str(caught.exception.detail), SECOND_FACTOR_REQUIRED)
+
+
+TOKEN_AUTH = """
+    mutation login($username: String!, $password: String!, $otp: String) {
+        tokenAuth(username: $username, password: $password, otp: $otp) { token }
+    }
+"""
+
+
+class TokenAuthEnrolmentRequiredTest(openIMISGraphQLTestCase):
+    """The fourth code reaches the client the way the other three do: HTTP 200,
+    errors[0].message, repeated in extensions.code."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = _password()
+        cls.role = create_test_role(name="Supervisor")
+        cls.user = create_test_interactive_user(
+            username="tokenAuthBound", password=cls.password, roles=[cls.role.id]
+        )
+
+    def test_a_bound_unenrolled_user_is_told_to_enrol(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            response = self.query(
+                TOKEN_AUTH,
+                variables={"username": "tokenAuthBound", "password": self.password},
+            )
+        self.assertEqual(response.status_code, 200)
+        content = json.loads(response.content)
+        self.assertEqual(
+            content["errors"][0]["message"], SECOND_FACTOR_ENROLMENT_REQUIRED
+        )
+        self.assertEqual(
+            content["errors"][0]["extensions"]["code"], SECOND_FACTOR_ENROLMENT_REQUIRED
+        )
+        self.assertIsNone(content["data"]["tokenAuth"])
