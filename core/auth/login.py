@@ -8,9 +8,10 @@ second factor itself, so a new channel or a policy change lands here once.
 
 Nothing here mints a token or opens a session. The caller does both after this
 returns - which is what keeps the second factor ahead of the token and the
-session a login issues. It does not reach the credentials no login flow hands
-out: HTTP Basic, accepted per request on every REST and FHIR view, and the
-Django admin's own form, both of which still take a password on its own.
+session a login issues. The two credentials no login flow hands out are closed
+separately: core.auth.basic asks the same mfa_required before honouring HTTP
+Basic, and the Django admin's own form is gone - core.auth.admin_login sends it
+to the frontend login, whose session open_admin_session then provides.
 """
 
 from django.contrib.auth.signals import user_login_failed
