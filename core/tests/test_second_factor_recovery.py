@@ -6,7 +6,7 @@ administrator whose action is gated, recorded and ends every session.
 """
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -299,6 +299,19 @@ class ReissueRecoveryCodesTest(TestCase):
         self.assertEqual(raised.exception.code, SECOND_FACTOR_REQUIRED)
         device.refresh_from_db()
         self.assertEqual(device.throttling_failure_count, 0)
+
+    def test_a_failure_after_verification_does_not_spend_a_recovery_code(self):
+        # verify consumes the code it matched. If issuing the replacement set
+        # then fails, the user has paid a code and received nothing, so the
+        # two have to stand or fall together.
+        _enrol(self.user)
+        codes = devices.issue_recovery_codes(self.user)
+
+        with patch.object(devices, "issue_recovery_codes", side_effect=RuntimeError):
+            with self.assertRaises(RuntimeError):
+                recovery.reissue_recovery_codes(self.user, codes[0])
+
+        self.assertIn(codes[0], _codes_stored(self.user))
 
     def test_a_throttled_device_reports_when_it_lifts(self):
         device = _enrol(self.user)

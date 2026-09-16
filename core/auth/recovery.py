@@ -77,10 +77,17 @@ def reissue_recovery_codes(user, otp, otp_device=None):
         # budget on every device the user owns.
         raise SecondFactorError(SECOND_FACTOR_REQUIRED)
 
-    result = second_factor.verify(user, otp, device_id=otp_device)
-    if result.outcome == second_factor.THROTTLED:
-        lifted = result.locked_until.isoformat() if result.locked_until else None
-        raise SecondFactorError(SECOND_FACTOR_THROTTLED, lockedUntil=lifted)
-    if not result.ok:
-        raise SecondFactorError(INVALID_SECOND_FACTOR)
-    return devices.issue_recovery_codes(user)
+    # One transaction over both halves. verify consumes the code it matched,
+    # so a failure between the two would charge the user a code and hand back
+    # nothing - and two calls racing on different valid codes would each pass
+    # verify, the second then deleting the set the first had already returned
+    # to its client. The device rows verify selects for update are held until
+    # this commits, so the second caller waits and then finds its code spent.
+    with transaction.atomic():
+        result = second_factor.verify(user, otp, device_id=otp_device)
+        if result.outcome == second_factor.THROTTLED:
+            lifted = result.locked_until.isoformat() if result.locked_until else None
+            raise SecondFactorError(SECOND_FACTOR_THROTTLED, lockedUntil=lifted)
+        if not result.ok:
+            raise SecondFactorError(INVALID_SECOND_FACTOR)
+        return devices.issue_recovery_codes(user)
