@@ -335,6 +335,7 @@ class IssueRecoveryCodesMutationTest(openIMISGraphQLTestCase):
                 codes
                 success
                 error
+                lockedUntil
             }
         }
     """
@@ -376,6 +377,16 @@ class IssueRecoveryCodesMutationTest(openIMISGraphQLTestCase):
         self._issue(_code(self.device))
 
         self.assertEqual(MutationLog.objects.count(), before)
+
+    def test_a_throttled_attempt_says_when_it_lifts(self):
+        devices.issue_recovery_codes(self.user)
+        _throttle(self.device)
+        _throttle(StaticDevice.objects.get(user=self.user))
+
+        payload = self._issue("000000")["data"]["issueRecoveryCodes"]
+
+        self.assertEqual(payload["error"], SECOND_FACTOR_THROTTLED)
+        self.assertIsNotNone(payload["lockedUntil"])
 
     def test_an_anonymous_caller_is_refused(self):
         response = self.query(self.ISSUE % "000000")
