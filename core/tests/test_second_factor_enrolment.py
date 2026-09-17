@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from axes.models import AccessAttempt
 from django.test import TestCase
+from graphql.error import GraphQLError
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -325,6 +326,20 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"], SECOND_FACTOR_ALREADY_ENROLLED)
         self.assertIsNone(payload["totp"])
+
+    def test_a_locked_out_address_is_told_so_and_gets_no_secret(self):
+        # The lockout guards enrolment as it guards the login, or an address
+        # refused at the login could still collect secrets here.
+        with patch(
+            "core.schema.check_lockout",
+            side_effect=GraphQLError("Too many failed attempts.Try again in 5 minutes."),
+        ):
+            payload = self._enrol()
+
+        self.assertFalse(payload["success"])
+        self.assertIn("Too many failed attempts", payload["error"])
+        self.assertIsNone(payload["totp"])
+        self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
 
     def test_nothing_reaches_the_mutation_log(self):
         before = MutationLog.objects.count()
