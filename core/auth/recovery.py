@@ -4,8 +4,7 @@ Two ways, deliberately unequal. A user who still holds a device re-issues
 their own recovery codes in exchange for a current code, so a stolen session
 alone cannot mint a bypass for the factor it stole its way past. A user who
 holds nothing needs an administrator, and that path is gated by a right, ends
-every session, and leaves a record - which is why it lives behind a mutation
-rather than behind the device pages the Django admin would otherwise offer.
+every session, and leaves a record.
 
 Nothing here verifies a login or decides who must present a second factor.
 Both of those stay in core.auth.login, which this module does not change.
