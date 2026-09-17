@@ -8,6 +8,7 @@ in at all until this succeeds. One who does have a device is refused, so a
 password is never enough to add a second.
 """
 
+import logging
 from base64 import b32encode
 
 from django.db import transaction
@@ -21,6 +22,8 @@ from core.auth.login import (
     SecondFactorError,
 )
 from core.services.userServices import user_authentication
+
+logger = logging.getLogger(__name__)
 
 #: A confirmed device exists; a second one is not added on the password alone.
 SECOND_FACTOR_ALREADY_ENROLLED = "SECOND_FACTOR_ALREADY_ENROLLED"
@@ -83,6 +86,10 @@ def complete(request, username, password, otp):
                 lockedUntil=lifted.isoformat() if lifted else None,
             )
         if devices.confirm_totp(device, otp):
+            # The only trace that a factor was bound to this account: these
+            # mutations stay out of the mutation log, which would record the
+            # password alongside whatever it recorded of the event.
+            logger.info("Second factor enrolled for %s", user.username)
             return devices.issue_recovery_codes(user)
         # Not raised inside the block: verify_token has just charged this
         # device a throttle failure, and rolling that back would leave the
