@@ -117,12 +117,56 @@ matching later. Nothing detects that at the moment it happens: the users the
 entry covered simply stop being required to use a second factor. A startup
 check (`core.auth.W002`) reports any configured name that no longer resolves, so
 the next restart says so - but if you rename a role, update this configuration
-in the same change. **Turn on `per_role` or
-`mandatory` only after the users it binds have enrolled** - a bound user with no
-device cannot log in, and enrolment currently needs a login.
+in the same change.
+
+A bound user with no device is refused at login with
+`SECOND_FACTOR_ENROLMENT_REQUIRED` and enrols from that refusal - [Enrolling
+an authenticator](#enrolling-an-authenticator) - so turning on `per_role` or
+`mandatory` locks nobody out. Tell the users it binds first, though: their
+next login is an enrolment.
 
 Delegating the requirement to an identity provider later is a change to
 `mfa_required` alone; nothing else decides.
+
+### Enrolling an authenticator
+
+Two mutations, both authenticated with the password rather than a session,
+because a user the policy binds cannot log in until they have a device. Both
+refuse a user who already has a confirmed device, so a password alone cannot
+add a second one - that takes an administrator's reset first.
+
+    mutation { enrolSecondFactor(input: {username: "...", password: "...", clientMutationId: "x"}) { configUrl secret success error } }
+
+`configUrl` is the `otpauth://` URI to show as a QR code (the issuer is
+`OTP_TOTP_ISSUER`); `secret` is the same key in base32, for typing in by hand.
+The device it describes counts for nothing until it is confirmed, and calling
+this again replaces it.
+
+    mutation { confirmSecondFactor(input: {username: "...", password: "...", otp: "123456", clientMutationId: "x"}) { codes success error lockedUntil } }
+
+`otp` is a current code from the app that scanned it. On success the device is
+confirmed and `codes` is the user's first set of ten recovery codes, returned
+once - from here on `issueRecoveryCodes` is the only way to get more. **No
+token is issued.** The user logs in through `tokenAuth` next, with a *later*
+code: the one that confirmed is spent, and re-sending it reads as
+`INVALID_SECOND_FACTOR`. A client should show the codes, then send the user to
+the login with a hint to wait for the app's next code.
+
+Every refusal is `success: false` with the reason in `error`:
+`INCORRECT_CREDENTIALS` (the password); `SECOND_FACTOR_ALREADY_ENROLLED` (a
+confirmed device exists); `SECOND_FACTOR_ENROLMENT_REQUIRED` (nothing is
+pending - call `enrolSecondFactor` first); `SECOND_FACTOR_REQUIRED` (no code
+sent); `INVALID_SECOND_FACTOR`; `SECOND_FACTOR_THROTTLED`, with `lockedUntil`
+(ISO-8601); and the lockout message when the address has too many failed
+logins. A wrong password counts as a failed login for the `axes` lockout, as
+it does anywhere. A wrong code does not - the caller was just handed the
+secret it derives from, so it is a mistyped code, not a guess - and
+django-otp's per-device back-off slows it down instead.
+
+Under the default `optional` policy this is how a user opts in. Under
+`per_role` or `mandatory` it is how a bound user gets past
+`SECOND_FACTOR_ENROLMENT_REQUIRED`, and the reason that refusal is not a
+lockout: a client that receives it takes the user here.
 
 ### Recovery codes and resetting a user's second factor
 
@@ -158,8 +202,8 @@ be ended and the request is refused rather than half-honoured.
 
 After a reset the user is unenrolled. Under the default `optional` policy they
 log in on the password alone; under `per_role` or `mandatory` they are refused
-with `SECOND_FACTOR_ENROLMENT_REQUIRED` until they enrol again, and enrolment
-currently needs a login. `users { hasSecondFactor }` says whether a user has
+with `SECOND_FACTOR_ENROLMENT_REQUIRED` until they enrol again, which they do from that
+refusal with `enrolSecondFactor` and `confirmSecondFactor`. `users { hasSecondFactor }` says whether a user has
 anything to reset.
 
 The django-otp device models are not exposed on the Django admin. Removing a
@@ -174,15 +218,14 @@ ships with the library). To add such a channel:
 
 1. install the device class;
 2. add one mutation, `requestSecondFactorCode(username, password, otpDevice)`,
-   that verifies the password, checks the device is the user's, and calls
+   that verifies the password the way `enrolSecondFactor` does
+   (`check_lockout`, then `user_authentication`), checks the device is the
+   user's, and calls
    `device.generate_challenge()`;
 3. the client then calls `tokenAuth` with `otp` and the same `otpDevice`.
 
 If the client needs to know which devices the user has in order to pick one,
 that list belongs in the `extensions` of `SECOND_FACTOR_REQUIRED`.
-
-Enrolment - `core.auth.devices.enrol_totp`, `confirm_totp`,
-`issue_recovery_codes` - has no GraphQL surface yet.
 
 ## Generic features
 
