@@ -135,12 +135,20 @@ because a user the policy binds cannot log in until they have a device. Both
 refuse a user who already has a confirmed device, so a password alone cannot
 add a second one - that takes an administrator's reset first.
 
-    mutation { enrolSecondFactor(input: {username: "...", password: "...", clientMutationId: "x"}) { configUrl secret success error } }
+    mutation { enrolSecondFactor(input: {username: "...", password: "...", clientMutationId: "x"}) { method totp { configUrl secret } success error } }
 
-`configUrl` is the `otpauth://` URI to show as a QR code (the issuer is
-`OTP_TOTP_ISSUER`); `secret` is the same key in base32, for typing in by hand.
-The device it describes counts for nothing until it is confirmed, and calling
-this again replaces it.
+`method` says which method was begun — `TOTP` is the only one today — and that
+method's material comes back in the field named after it. `totp.configUrl` is
+the `otpauth://` URI to show as a QR code (the issuer is `OTP_TOTP_ISSUER`);
+`totp.secret` is the same key in base32, for typing in by hand. The device they
+describe counts for nothing until it is confirmed, and calling this again
+replaces it.
+
+The shape is nested rather than flat because what a method hands back is the
+one part that does not generalise: an authenticator is given a secret to scan,
+while a channel that *sends* the code has nothing to show and would report
+where it sent it instead. A client reads `method`, then the field named by it,
+and keeps working unchanged when another is added.
 
     mutation { confirmSecondFactor(input: {username: "...", password: "...", otp: "123456", clientMutationId: "x"}) { codes success error lockedUntil } }
 
@@ -212,9 +220,21 @@ session the lost device opened still running.
 
 ### Adding a channel that sends the code (SMS, WhatsApp, email)
 
-Nothing above changes. A server-sent code is a django-otp `SideChannelDevice`
-whose `generate_challenge()` delivers it (`otp_email.EmailDevice` is one that
-ships with the library). To add such a channel:
+A server-sent code is a django-otp `SideChannelDevice` whose
+`generate_challenge()` delivers it (`otp_email.EmailDevice` is one that ships
+with the library). **Confirming is unchanged** — `confirmSecondFactor` takes a
+username, a password and a code whatever produced the code, and
+`core.auth.devices.confirm_totp` is class-agnostic despite its name. What a new
+channel adds is its own way to *begin*, because that is where the two differ:
+`enrolSecondFactor` returns a secret to scan, while a channel has to be told a
+destination and then sends something. Expect to add, on the enrolment side, a
+value to `method`, a sibling field to `totp` in the payload, an optional
+destination argument, and a lookup beside `core.auth.devices.pending_totp` for
+the new class. Budget for a rate limit of its own too: sending costs money, so
+an endpoint that sends on a password alone needs a limit keyed on the
+destination, which `CooldownMixin` is django-otp's answer to.
+
+To add such a channel:
 
 1. install the device class;
 2. add one mutation, `requestSecondFactorCode(username, password, otpDevice)`,

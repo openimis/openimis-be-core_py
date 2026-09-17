@@ -2256,6 +2256,30 @@ def _refusal_code(exc):
     return exc.message
 
 
+SecondFactorMethodEnum = graphene.Enum(
+    "SecondFactorMethods", [(enrolment.TOTP, enrolment.TOTP)]
+)
+
+
+class TOTPEnrolmentGQLType(graphene.ObjectType):
+    """What an authenticator app needs in order to be enrolled.
+
+    Its own type rather than two fields on the payload, because what a method
+    hands the client is the one thing that does not generalise: an
+    authenticator is given a secret to scan, while a channel that sends the
+    code has nothing to show and would report where it sent it instead. Adding
+    such a channel is then a sibling field beside this one, which costs a
+    client nothing, rather than a change to fields it already reads.
+    """
+
+    config_url = graphene.String(
+        description="otpauth:// URI, to render as a QR code"
+    )
+    secret = graphene.String(
+        description="The same secret in base32, for typing in by hand"
+    )
+
+
 class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
     """Start enrolling an authenticator app: verify the password, hand back
     the secret to scan.
@@ -2272,11 +2296,11 @@ class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
         username = graphene.String(required=True)
         password = graphene.String(required=True)
 
-    config_url = graphene.String(
-        description="otpauth:// URI for the authenticator app to scan"
+    method = SecondFactorMethodEnum(
+        description="Which method was begun; its material is in the field named after it"
     )
-    secret = graphene.String(
-        description="The same secret in base32, for typing in by hand"
+    totp = graphene.Field(
+        TOTPEnrolmentGQLType, description="Set when method is TOTP"
     )
     success = graphene.Boolean()
     error = graphene.String()
@@ -2289,8 +2313,11 @@ class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
             device = enrolment.begin(request, username, password)
             return cls(
                 success=True,
-                config_url=device.config_url,
-                secret=enrolment.secret(device),
+                method=enrolment.TOTP,
+                totp=TOTPEnrolmentGQLType(
+                    config_url=device.config_url,
+                    secret=enrolment.secret(device),
+                ),
             )
         except (GraphQLError, AuthenticationFailed, SecondFactorError) as exc:
             return cls(success=False, error=_refusal_code(exc))
