@@ -61,6 +61,19 @@ def confirmed_devices(user):
     return list(devices_for_user(user, confirmed=True))
 
 
+def pending_totp(user, for_update=False):
+    """The authenticator the user has scanned but not yet confirmed, or None.
+
+    At most one exists: enrol_totp drops any earlier unconfirmed device before
+    creating the next. `for_update` locks the row for the caller's transaction,
+    so two confirmations racing on it serialise instead of both completing.
+    """
+    queryset = TOTPDevice.objects.filter(user=user, confirmed=False)
+    if for_update:
+        queryset = queryset.select_for_update()
+    return queryset.first()
+
+
 def has_second_factor(user):
     return user_has_device(user, confirmed=True)
 
