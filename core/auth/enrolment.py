@@ -30,6 +30,12 @@ from core.services.userServices import user_authentication
 #: A confirmed device exists; a second one is not added on the password alone.
 SECOND_FACTOR_ALREADY_ENROLLED = "SECOND_FACTOR_ALREADY_ENROLLED"
 
+#: The only method that can be enrolled today. A channel that sends the code -
+#: SMS, WhatsApp - is a second value here, a device class, and a gateway; what
+#: it is not is a second confirmation step, since confirming is the same
+#: exchange whatever produced the code.
+TOTP = "TOTP"
+
 
 def begin(request, username, password):
     """Verify the password and hand back a fresh, unconfirmed authenticator.
