@@ -2301,6 +2301,53 @@ class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class ConfirmSecondFactorMutation(graphene.relay.ClientIDMutation):
+    """Finish enrolling: a code from the scanned authenticator confirms it,
+    and the user's first recovery codes come back with the confirmation.
+
+    Same footing as enrolSecondFactor, for the same reasons. No token is
+    issued - the user logs in through tokenAuth next, with a later code; the
+    one that confirmed is spent.
+    """
+
+    class Input:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
+        otp = graphene.String(
+            required=True,
+            description="A current code from the authenticator just scanned",
+        )
+
+    codes = graphene.List(graphene.String)
+    success = graphene.Boolean()
+    error = graphene.String()
+    locked_until = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username, password, otp, **input):
+        request = info.context
+        try:
+            check_lockout(request)
+            codes = enrolment.complete(request, username, password, otp)
+            return cls(success=True, codes=codes)
+        except (GraphQLError, AuthenticationFailed, SecondFactorError) as exc:
+            return cls(
+                success=False,
+                error=_refusal_code(exc),
+                locked_until=(
+                    exc.extensions.get("lockedUntil")
+                    if isinstance(exc, SecondFactorError)
+                    else None
+                ),
+            )
+        except Exception as exc:
+            logger.exception(exc)
+            return cls(
+                success=False,
+                error=gettext_lazy("Failed to confirm the second factor"),
+            )
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2442,6 +2489,7 @@ class Mutation(graphene.ObjectType):
     reset_user_second_factor = ResetUserSecondFactorMutation.Field()
     issue_recovery_codes = IssueRecoveryCodesMutation.Field()
     enrol_second_factor = EnrolSecondFactorMutation.Field()
+    confirm_second_factor = ConfirmSecondFactorMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
