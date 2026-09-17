@@ -5,6 +5,7 @@ token before the device is confirmed - and refuse them to whoever already
 has a device.
 """
 
+import json
 from unittest.mock import patch
 
 from axes.models import AccessAttempt
@@ -22,7 +23,8 @@ from core.auth.login import (
     SecondFactorError,
     authenticate_login,
 )
-from core.models import User
+from core.models import MutationLog, User
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_technical_user,
@@ -213,3 +215,79 @@ class CompleteEnrolmentTest(TestCase):
 
         self.device.refresh_from_db()
         self.assertFalse(self.device.confirmed)
+
+
+ENROL = """
+    mutation enrol($username: String!, $password: String!) {
+        enrolSecondFactor(
+            input: {username: $username, password: $password, clientMutationId: "enrol"}
+        ) {
+            configUrl
+            secret
+            success
+            error
+        }
+    }
+"""
+
+
+class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
+    """The GraphQL surface: the secret comes back, nothing is logged, and a
+    wrong password is a failed login like any other."""
+
+    def setUp(self):
+        super().setUp()
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="enrolMutation", password=self.password, roles=[]
+        )
+
+    def _enrol(self, password=None):
+        response = self.query(
+            ENROL,
+            variables={
+                "username": self.user.username,
+                "password": password or self.password,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.content)["data"]["enrolSecondFactor"]
+
+    def test_the_secret_comes_back_and_the_device_waits_unconfirmed(self):
+        payload = self._enrol()
+
+        self.assertTrue(payload["success"], payload["error"])
+        device = TOTPDevice.objects.get(user=self.user)
+        self.assertFalse(device.confirmed)
+        self.assertEqual(payload["configUrl"], device.config_url)
+        self.assertEqual(payload["secret"], enrolment.secret(device))
+        self.assertFalse(devices.has_second_factor(self.user))
+
+    def test_a_wrong_password_is_incorrect_credentials_and_a_failed_login(self):
+        payload = self._enrol(password="not-the-password")
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], "INCORRECT_CREDENTIALS")
+        self.assertIsNone(payload["configUrl"])
+        self.assertIsNone(payload["secret"])
+        self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
+        # Django's authenticate() sends user_login_failed; axes records it.
+        # Nothing in the mutation does this - the test pins that nothing
+        # undoes it either.
+        self.assertEqual(_failures(self.user.username), 1)
+
+    def test_a_user_with_a_device_is_refused(self):
+        _enrol(self.user)
+
+        payload = self._enrol()
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], SECOND_FACTOR_ALREADY_ENROLLED)
+        self.assertIsNone(payload["secret"])
+
+    def test_nothing_reaches_the_mutation_log(self):
+        before = MutationLog.objects.count()
+
+        self._enrol()
+
+        self.assertEqual(MutationLog.objects.count(), before)
