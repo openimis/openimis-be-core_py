@@ -62,13 +62,19 @@ def confirmed_devices(user):
 
 
 def pending_totp(user, for_update=False):
-    """The authenticator the user has scanned but not yet confirmed, or None.
+    """The authenticator the user has most recently scanned but not confirmed.
 
-    At most one exists: enrol_totp drops any earlier unconfirmed device before
-    creating the next. `for_update` locks the row for the caller's transaction,
-    so two confirmations racing on it serialise instead of both completing.
+    Normally there is only one, since enrol_totp drops any earlier unconfirmed
+    device before creating the next - but it does so in two statements, so two
+    concurrent enrolments can leave two behind. Newest first rather than
+    unordered, because the row the caller wants is the one whose QR code the
+    user is looking at; an arbitrary pick would leave their fresh code
+    confirming nothing.
+
+    `for_update` locks the row for the caller's transaction, so two
+    confirmations racing on it serialise instead of both completing.
     """
-    queryset = TOTPDevice.objects.filter(user=user, confirmed=False)
+    queryset = TOTPDevice.objects.filter(user=user, confirmed=False).order_by("-id")
     if for_update:
         queryset = queryset.select_for_update()
     return queryset.first()
