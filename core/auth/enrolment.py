@@ -15,8 +15,16 @@ a gateway, and the README's login section already says what that takes.
 
 from base64 import b32encode
 
+from django.db import transaction
+
 from core.auth import devices
-from core.auth.login import SecondFactorError
+from core.auth.login import (
+    INVALID_SECOND_FACTOR,
+    SECOND_FACTOR_ENROLMENT_REQUIRED,
+    SECOND_FACTOR_REQUIRED,
+    SECOND_FACTOR_THROTTLED,
+    SecondFactorError,
+)
 from core.services.userServices import user_authentication
 
 #: A confirmed device exists; a second one is not added on the password alone.
@@ -39,3 +47,45 @@ def secret(device):
     """The shared secret as an authenticator app takes it by hand: base32,
     the same encoding config_url carries."""
     return b32encode(device.bin_key).decode()
+
+
+def complete(request, username, password, otp):
+    """Confirm the pending authenticator with a code from it, and return the
+    user's first recovery codes.
+
+    Not a login, so a wrong code here is not reported to the account lockout:
+    the caller was handed the secret the code derives from a moment ago, so a
+    wrong one is mistyped or stale, not a guess - and the lockout budget is
+    per address. django-otp's per-device back-off is the rate limit that fits.
+    """
+    user = user_authentication(request, username, password)
+
+    # One transaction over the lock, the confirmation and the codes. The
+    # pending row is locked first, so two confirmations racing on it
+    # serialise and the second finds a confirmed device rather than replacing
+    # the set the first already returned; and a failure issuing the codes
+    # rolls the confirmation back, so a confirmed device never exists without
+    # them - the user simply retries with the next code.
+    with transaction.atomic():
+        device = devices.pending_totp(user, for_update=True)
+        if devices.has_second_factor(user):
+            raise SecondFactorError(SECOND_FACTOR_ALREADY_ENROLLED)
+        if device is None:
+            raise SecondFactorError(SECOND_FACTOR_ENROLMENT_REQUIRED)
+        if not otp:
+            # Ahead of the device: an empty submission would still charge
+            # its back-off.
+            raise SecondFactorError(SECOND_FACTOR_REQUIRED)
+        allowed, reason = device.verify_is_allowed()
+        if not allowed:
+            # confirm_totp would answer False here too, indistinguishable
+            # from a wrong code; asking first is what lets the client be
+            # told to wait rather than retype.
+            lifted = (reason or {}).get("locked_until")
+            raise SecondFactorError(
+                SECOND_FACTOR_THROTTLED,
+                lockedUntil=lifted.isoformat() if lifted else None,
+            )
+        if not devices.confirm_totp(device, otp):
+            raise SecondFactorError(INVALID_SECOND_FACTOR)
+        return devices.issue_recovery_codes(user)

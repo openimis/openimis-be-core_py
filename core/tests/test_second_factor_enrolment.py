@@ -5,19 +5,37 @@ token before the device is confirmed - and refuse them to whoever already
 has a device.
 """
 
+from unittest.mock import patch
+
+from axes.models import AccessAttempt
 from django.test import TestCase
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
 
 from core.auth import devices, enrolment
 from core.auth.enrolment import SECOND_FACTOR_ALREADY_ENROLLED
-from core.auth.login import SecondFactorError
+from core.auth.login import (
+    INVALID_SECOND_FACTOR,
+    SECOND_FACTOR_ENROLMENT_REQUIRED,
+    SECOND_FACTOR_REQUIRED,
+    SECOND_FACTOR_THROTTLED,
+    SecondFactorError,
+    authenticate_login,
+)
 from core.models import User
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_technical_user,
 )
-from core.tests.test_login_flow import _enrol, _password, _request
+from core.tests.test_login_flow import _enrol, _password, _request, _throttle
+from core.tests.test_second_factor import _code
+from core.tests.test_second_factor_recovery import _codes_stored
+
+
+def _failures(username):
+    """axes' count for the account - the sibling suite's measure."""
+    attempt = AccessAttempt.objects.filter(username=username).first()
+    return attempt.failures_since_start if attempt else 0
 
 
 class BeginEnrolmentTest(TestCase):
@@ -76,3 +94,122 @@ class BeginEnrolmentTest(TestCase):
         device = self._begin(username=core_user.username, password=password)
 
         self.assertEqual(device.user_id, core_user.pk)
+
+
+class CompleteEnrolmentTest(TestCase):
+    """The service: one code confirms, the codes come once, and nothing is a
+    login until tokenAuth."""
+
+    def setUp(self):
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="enrolComplete", password=self.password, roles=[]
+        )
+        self.device = enrolment.begin(_request(), self.user.username, self.password)
+
+    def _complete(self, otp, password=None):
+        return enrolment.complete(
+            _request(), self.user.username, password or self.password, otp
+        )
+
+    def test_the_devices_code_confirms_it_and_issues_the_first_recovery_set(self):
+        codes = self._complete(_code(self.device))
+
+        self.device.refresh_from_db()
+        self.assertTrue(self.device.confirmed)
+        self.assertTrue(devices.has_second_factor(self.user))
+        self.assertEqual(len(codes), 10)
+        self.assertEqual(_codes_stored(self.user), set(codes))
+
+    def test_the_next_code_logs_in_and_the_confirming_one_does_not(self):
+        # Confirmation is not a disguised login: the step it spent is below
+        # the replay floor. The next step's code is what tokenAuth will take.
+        # Order matters - the replay charges a throttle failure, so it goes
+        # last or the valid attempt after it reads THROTTLED.
+        confirming = _code(self.device)
+        self._complete(confirming)
+        self.device.refresh_from_db()
+
+        user = authenticate_login(
+            _request(), self.user.username, self.password,
+            otp=_code(self.device, offset=1),
+        )
+        self.assertEqual(user.pk, self.user.pk)
+        with self.assertRaises(SecondFactorError) as replay:
+            authenticate_login(
+                _request(), self.user.username, self.password, otp=confirming
+            )
+        self.assertEqual(replay.exception.code, INVALID_SECOND_FACTOR)
+
+    def test_a_wrong_code_leaves_it_unconfirmed_and_issues_nothing(self):
+        with self.assertRaises(SecondFactorError) as raised:
+            self._complete("000000")
+
+        self.assertEqual(raised.exception.code, INVALID_SECOND_FACTOR)
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
+        self.assertEqual(_codes_stored(self.user), set())
+
+    def test_a_wrong_code_is_not_a_failed_login(self):
+        with self.assertRaises(SecondFactorError):
+            self._complete("000000")
+
+        self.assertEqual(_failures(self.user.username), 0)
+
+    def test_an_empty_code_asks_for_one_without_charging_the_device(self):
+        with self.assertRaises(SecondFactorError) as raised:
+            self._complete("")
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_REQUIRED)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.throttling_failure_count, 0)
+
+    def test_a_throttled_device_reports_when_it_lifts(self):
+        _throttle(self.device)
+
+        with self.assertRaises(SecondFactorError) as raised:
+            self._complete(_code(self.device))
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_THROTTLED)
+        self.assertTrue(raised.exception.extensions["lockedUntil"])
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
+
+    def test_nothing_pending_means_enrol_first(self):
+        TOTPDevice.objects.filter(user=self.user).delete()
+
+        with self.assertRaises(SecondFactorError) as raised:
+            self._complete("000000")
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ENROLMENT_REQUIRED)
+
+    def test_a_stale_scan_cannot_be_completed_once_a_device_is_confirmed(self):
+        # A confirmed device created outside enrol_totp, so the pending row
+        # from setUp survives beside it - the state a shell, or a begin/confirm
+        # race, can leave. The refusal is what keeps a QR code scanned before
+        # any device existed from adding a second one afterwards.
+        TOTPDevice.objects.create(user=self.user, name="phone", confirmed=True)
+
+        with self.assertRaises(SecondFactorError) as raised:
+            self._complete(_code(self.device))
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_ALREADY_ENROLLED)
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
+
+    def test_a_failure_issuing_codes_leaves_the_device_unconfirmed(self):
+        # One transaction: a confirmed device with no recovery set is the
+        # half-state this rules out. The user retries with the next code.
+        with patch.object(devices, "issue_recovery_codes", side_effect=RuntimeError):
+            with self.assertRaises(RuntimeError):
+                self._complete(_code(self.device))
+
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
+
+    def test_a_wrong_password_confirms_nothing(self):
+        with self.assertRaises(AuthenticationFailed):
+            self._complete(_code(self.device), password="not-the-password")
+
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
