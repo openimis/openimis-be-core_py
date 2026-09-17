@@ -46,10 +46,19 @@ class Command(compilemessages.Command):
             with resources.path(mod_name, "__init__.py") as path:
                 os.chdir(path.parent.parent)
                 print(f'Trying to run makemessages in {mod_name} with locale={locale}')
+
+                # For a non-editable install this directory is site-packages itself, so
+                # makemessages would walk every installed distribution. Keep only the
+                # module and its locale dir, on top of any --ignore given on the command line.
+                skipped = [
+                    entry.name
+                    for entry in os.scandir(".")
+                    if entry.is_dir() and entry.name not in (mod_name, "locale")
+                ]
                 call_command(
                     "makemessages",
                     locale=locale,
-                    ignore_patterns=list(ignore_patterns) + ["*.dist-info", "*.egg-info", "site-packages"],
+                    ignore_patterns=list(ignore_patterns) + skipped,
                 )
                 apps.append(
                     path.parent.parent
