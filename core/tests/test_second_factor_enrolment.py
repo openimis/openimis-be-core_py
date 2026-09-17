@@ -13,7 +13,7 @@ from django.test import TestCase
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
 
-from core.auth import devices, enrolment
+from core.auth import devices, enrolment, policy
 from core.auth.enrolment import SECOND_FACTOR_ALREADY_ENROLLED
 from core.auth.login import (
     INVALID_SECOND_FACTOR,
@@ -29,8 +29,15 @@ from core.test_helpers import (
     create_test_interactive_user,
     create_test_technical_user,
 )
-from core.tests.test_login_flow import _enrol, _password, _request, _throttle
+from core.tests.test_login_flow import (
+    TOKEN_AUTH,
+    _enrol,
+    _password,
+    _request,
+    _throttle,
+)
 from core.tests.test_second_factor import _code
+from core.tests.test_second_factor_policy import _policy
 from core.tests.test_second_factor_recovery import _codes_stored
 
 
@@ -289,5 +296,142 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
         before = MutationLog.objects.count()
 
         self._enrol()
+
+        self.assertEqual(MutationLog.objects.count(), before)
+
+
+CONFIRM = """
+    mutation confirm($username: String!, $password: String!, $otp: String!) {
+        confirmSecondFactor(
+            input: {
+                username: $username
+                password: $password
+                otp: $otp
+                clientMutationId: "confirm"
+            }
+        ) {
+            codes
+            success
+            error
+            lockedUntil
+        }
+    }
+"""
+
+
+class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
+    """The GraphQL surface, and the ticket's round trip: enrol, confirm, log
+    in with the next code - and the same from a binding policy's refusal."""
+
+    def setUp(self):
+        super().setUp()
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="confirmMutation", password=self.password, roles=[]
+        )
+        self.device = enrolment.begin(_request(), self.user.username, self.password)
+
+    def _confirm(self, otp):
+        response = self.query(
+            CONFIRM,
+            variables={
+                "username": self.user.username,
+                "password": self.password,
+                "otp": otp,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.content)["data"]["confirmSecondFactor"]
+
+    def _login(self, **variables):
+        response = self.query(
+            TOKEN_AUTH,
+            variables={
+                "username": self.user.username,
+                "password": self.password,
+                **variables,
+            },
+        )
+        return json.loads(response.content)
+
+    def test_the_code_confirms_and_the_first_recovery_set_comes_with_it(self):
+        payload = self._confirm(_code(self.device))
+
+        self.assertTrue(payload["success"], payload["error"])
+        self.assertEqual(len(payload["codes"]), 10)
+        self.assertEqual(_codes_stored(self.user), set(payload["codes"]))
+        self.assertTrue(devices.has_second_factor(self.user))
+
+    def test_enrol_then_confirm_then_log_in_with_the_next_code(self):
+        payload = self._confirm(_code(self.device))
+        self.assertTrue(payload["success"], payload["error"])
+
+        # Enrolled now, so the password alone is refused - and nothing above
+        # handed out a token to skip this with.
+        refused = self._login()
+        self.assertEqual(refused["errors"][0]["message"], SECOND_FACTOR_REQUIRED)
+
+        self.device.refresh_from_db()
+        content = self._login(otp=_code(self.device, offset=1))
+        self.assertNotIn("errors", content)
+        self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+        content = self._login(otp=payload["codes"][0])
+        self.assertNotIn("errors", content)
+        self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+    def test_a_bound_user_refused_at_login_enrols_from_that_refusal(self):
+        # The case the ticket exists for: under a binding policy the login
+        # refuses a user with no device, and this is the only way past it -
+        # for someone with no token to present.
+        with _policy(policy.MANDATORY):
+            refused = self._login()
+            self.assertEqual(
+                refused["errors"][0]["message"], SECOND_FACTOR_ENROLMENT_REQUIRED
+            )
+
+            payload = self._confirm(_code(self.device))
+            self.assertTrue(payload["success"], payload["error"])
+
+            self.device.refresh_from_db()
+            content = self._login(otp=_code(self.device, offset=1))
+            self.assertNotIn("errors", content)
+            self.assertTrue(content["data"]["tokenAuth"]["token"])
+
+    def test_a_wrong_code_returns_the_code_and_no_codes(self):
+        payload = self._confirm("000000")
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], INVALID_SECOND_FACTOR)
+        self.assertIsNone(payload["codes"])
+        self.assertFalse(devices.has_second_factor(self.user))
+
+    def test_a_throttled_attempt_says_when_it_lifts(self):
+        _throttle(self.device)
+
+        payload = self._confirm(_code(self.device))
+
+        self.assertEqual(payload["error"], SECOND_FACTOR_THROTTLED)
+        self.assertIsNotNone(payload["lockedUntil"])
+
+    def test_nothing_pending_is_told_to_enrol(self):
+        TOTPDevice.objects.filter(user=self.user).delete()
+
+        payload = self._confirm("000000")
+
+        self.assertEqual(payload["error"], SECOND_FACTOR_ENROLMENT_REQUIRED)
+
+    def test_a_user_with_a_device_is_refused(self):
+        TOTPDevice.objects.create(user=self.user, name="phone", confirmed=True)
+
+        payload = self._confirm(_code(self.device))
+
+        self.assertEqual(payload["error"], SECOND_FACTOR_ALREADY_ENROLLED)
+        self.assertIsNone(payload["codes"])
+
+    def test_the_codes_reach_no_mutation_log(self):
+        before = MutationLog.objects.count()
+
+        self._confirm(_code(self.device))
 
         self.assertEqual(MutationLog.objects.count(), before)
