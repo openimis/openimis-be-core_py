@@ -86,6 +86,11 @@ def complete(request, username, password, otp):
                 SECOND_FACTOR_THROTTLED,
                 lockedUntil=lifted.isoformat() if lifted else None,
             )
-        if not devices.confirm_totp(device, otp):
-            raise SecondFactorError(INVALID_SECOND_FACTOR)
-        return devices.issue_recovery_codes(user)
+        if devices.confirm_totp(device, otp):
+            return devices.issue_recovery_codes(user)
+        # Falling out of the block rather than raising inside it. verify_token
+        # has just charged this device a throttle failure, and an exception
+        # here would roll that back along with everything else - leaving the
+        # guessing unmetered, since a wrong code is deliberately not reported
+        # to the account lockout either.
+    raise SecondFactorError(INVALID_SECOND_FACTOR)
