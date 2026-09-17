@@ -125,6 +125,14 @@ an authenticator](#enrolling-an-authenticator) - so turning on `per_role` or
 `mandatory` locks nobody out. Tell the users it binds first, though: their
 next login is an enrolment.
 
+Until a user has enrolled, their account is exactly as strong as their
+password, because enrolling is what the password still buys. Whoever submits
+the first successful enrolment owns the factor from then on, and the rightful
+user has to go to an administrator for a reset. So a binding policy protects
+accounts that have enrolled; it does not protect one whose password leaked
+before anybody enrolled it. Enrol promptly after turning it on, and treat the
+window between the two as the risk it is.
+
 Delegating the requirement to an identity provider later is a change to
 `mfa_required` alone; nothing else decides.
 
@@ -163,11 +171,12 @@ Every refusal is `success: false` with the reason in `error`:
 confirmed device exists); `SECOND_FACTOR_ENROLMENT_REQUIRED` (nothing is
 pending - call `enrolSecondFactor` first); `SECOND_FACTOR_REQUIRED` (no code
 sent); `INVALID_SECOND_FACTOR`; `SECOND_FACTOR_THROTTLED`, with `lockedUntil`
-(ISO-8601); and the lockout message when the address has too many failed
-logins. A wrong password counts as a failed login for the `axes` lockout, as
-it does anywhere. A wrong code does not - the caller was just handed the
-secret it derives from, so it is a mistyped code, not a guess - and
-django-otp's per-device back-off slows it down instead.
+(ISO-8601); the login's own wording when a field is empty; and the lockout
+message when the address has too many failed logins. A wrong password counts
+as a failed login for the `axes` lockout, as it does anywhere. A wrong code
+does not - the caller was just handed the secret it derives from, so it is a
+mistyped code, not a guess - and the device's own back-off limits retries
+against it instead.
 
 Under the default `optional` policy this is how a user opts in. Under
 `per_role` or `mandatory` it is how a bound user gets past
