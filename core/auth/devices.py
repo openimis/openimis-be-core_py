@@ -31,9 +31,8 @@ def enrol_totp(user, name="Authenticator app"):
 def confirm_totp(device, token):
     """Activate `device` if `token` came from it. Returns whether it did.
 
-    Only the name is about authenticator apps: verifying a token and marking
-    the device confirmed is the same for a device that was sent its code, so a
-    channel added later confirms through this rather than through a copy.
+    Only the name is specific to authenticator apps; verifying a token and
+    marking the device confirmed is the same for any device class.
     """
     if not device.verify_token(token):
         return False
@@ -69,21 +68,13 @@ def confirmed_devices(user):
 def pending_totp(user, for_update=False):
     """The authenticator the user has most recently scanned but not confirmed.
 
-    Normally there is only one, since enrol_totp drops any earlier unconfirmed
-    device before creating the next - but it does so in two statements, so two
-    concurrent enrolments can leave two behind. Newest first rather than
-    unordered, because the row the caller wants is the one whose QR code the
-    user is looking at; an arbitrary pick would leave their fresh code
-    confirming nothing.
+    Normally there is only one - enrol_totp drops any earlier unconfirmed
+    device - but it does so in two statements, so concurrent enrolments can
+    leave two behind. Newest wins, because the one the caller means is the one
+    whose QR code the user is looking at.
 
     `for_update` locks the row for the caller's transaction, so two
     confirmations racing on it serialise instead of both completing.
-
-    Authenticators only, and deliberately not widened to every device class
-    ahead of there being a second one: picking between classes needs an
-    ordering the Device base class does not give, so it would be a guess with
-    nothing to test it against. A channel that sends the code adds its own
-    lookup here and a line in core.auth.enrolment.complete to consult it.
     """
     queryset = TOTPDevice.objects.filter(user=user, confirmed=False).order_by("-id")
     if for_update:
