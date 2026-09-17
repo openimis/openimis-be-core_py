@@ -165,6 +165,27 @@ class CompleteEnrolmentTest(TestCase):
 
         self.assertEqual(_failures(self.user.username), 0)
 
+    def test_a_wrong_code_charges_the_device_and_the_back_off_then_bites(self):
+        # The per-device back-off is the only thing metering a guess here - a
+        # wrong code is deliberately not reported to the account lockout - so
+        # the charge has to outlive the refusal that carries it. It would not
+        # if the refusal were raised from inside the transaction.
+        with self.assertRaises(SecondFactorError) as first:
+            self._complete("000000")
+        self.assertEqual(first.exception.code, INVALID_SECOND_FACTOR)
+
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.throttling_failure_count, 1)
+
+        with self.assertRaises(SecondFactorError) as second:
+            self._complete("000000")
+        self.assertEqual(second.exception.code, SECOND_FACTOR_THROTTLED)
+        self.assertTrue(second.exception.extensions["lockedUntil"])
+
+        # Refused without being tried, so the second guess is not charged.
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.throttling_failure_count, 1)
+
     def test_an_empty_code_asks_for_one_without_charging_the_device(self):
         with self.assertRaises(SecondFactorError) as raised:
             self._complete("")
