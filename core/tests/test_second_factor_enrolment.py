@@ -250,8 +250,11 @@ ENROL = """
         enrolSecondFactor(
             input: {username: $username, password: $password, clientMutationId: "enrol"}
         ) {
-            configUrl
-            secret
+            method
+            totp {
+                configUrl
+                secret
+            }
             success
             error
         }
@@ -281,23 +284,33 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
         self.assertEqual(response.status_code, 200)
         return json.loads(response.content)["data"]["enrolSecondFactor"]
 
-    def test_the_secret_comes_back_and_the_device_waits_unconfirmed(self):
+    def test_the_secret_comes_back_under_the_method_that_produced_it(self):
         payload = self._enrol()
 
         self.assertTrue(payload["success"], payload["error"])
         device = TOTPDevice.objects.get(user=self.user)
         self.assertFalse(device.confirmed)
-        self.assertEqual(payload["configUrl"], device.config_url)
-        self.assertEqual(payload["secret"], enrolment.secret(device))
+        self.assertEqual(payload["method"], enrolment.TOTP)
+        self.assertEqual(payload["totp"]["configUrl"], device.config_url)
+        self.assertEqual(payload["totp"]["secret"], enrolment.secret(device))
         self.assertFalse(devices.has_second_factor(self.user))
+
+    def test_a_channel_that_sends_the_code_adds_a_sibling_of_totp(self):
+        """The payload names the method and carries that method's material
+        under it, so a channel with nothing to scan is an added field rather
+        than a changed one."""
+        payload = self._enrol()
+
+        self.assertEqual(set(payload), {"method", "totp", "success", "error"})
+        self.assertEqual(set(payload["totp"]), {"configUrl", "secret"})
 
     def test_a_wrong_password_is_incorrect_credentials_and_a_failed_login(self):
         payload = self._enrol(password="not-the-password")
 
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"], "INCORRECT_CREDENTIALS")
-        self.assertIsNone(payload["configUrl"])
-        self.assertIsNone(payload["secret"])
+        self.assertIsNone(payload["method"])
+        self.assertIsNone(payload["totp"])
         self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
         # Django's authenticate() sends user_login_failed; axes records it.
         # Nothing in the mutation does this - the test pins that nothing
@@ -311,7 +324,7 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
 
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"], SECOND_FACTOR_ALREADY_ENROLLED)
-        self.assertIsNone(payload["secret"])
+        self.assertIsNone(payload["totp"])
 
     def test_nothing_reaches_the_mutation_log(self):
         before = MutationLog.objects.count()
