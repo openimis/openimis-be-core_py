@@ -2244,18 +2244,16 @@ class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
 
 
 def _refusal_code(exc):
-    """What the two enrolment mutations put in `error`.
+    """What the enrolment mutations put in `error`.
 
     Everything a client can act on comes back in the payload rather than as a
-    GraphQL error - the wrong-password code the login uses, the second-factor
-    codes tokenAuth uses, the lockout message - so one field is read.
+    GraphQL error, so one field carries every outcome.
     """
     if isinstance(exc, SecondFactorError):
         return exc.code
     if isinstance(exc, AuthenticationFailed):
         return str(exc.detail)
-    # What is left is check_lockout's GraphQLError, whose message names the
-    # address's remaining lockout.
+    # What remains is check_lockout's GraphQLError.
     return exc.message
 
 
@@ -2267,12 +2265,9 @@ SecondFactorMethodEnum = graphene.Enum(
 class TOTPEnrolmentGQLType(graphene.ObjectType):
     """What an authenticator app needs in order to be enrolled.
 
-    Its own type rather than two fields on the payload, because what a method
-    hands the client is the one thing that does not generalise: an
-    authenticator is given a secret to scan, while a channel that sends the
-    code has nothing to show and would report where it sent it instead. Adding
-    such a channel is then a sibling field beside this one, which costs a
-    client nothing, rather than a change to fields it already reads.
+    A type of its own rather than fields on the payload: what a method hands
+    back is the part that does not generalise, so another method adds a
+    sibling field here instead of changing fields a client already reads.
     """
 
     config_url = graphene.String(
@@ -2284,15 +2279,13 @@ class TOTPEnrolmentGQLType(graphene.ObjectType):
 
 
 class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
-    """Start enrolling an authenticator app: verify the password, hand back
-    the secret to scan.
+    """Begin enrolling an authenticator: verify the password, hand back the
+    secret to scan.
 
-    Password-authenticated rather than session-authenticated, because a user
-    the policy binds cannot log in until they have a device. Not an
-    OpenIMISMutation: that base writes the input - a password - into the
-    mutation log, returns only the log row's id, and needs a signed-in
-    caller. Refused for a user who already has a confirmed device, so a
-    password alone cannot add one.
+    Password-authenticated, because a user the policy binds cannot log in
+    until they have a device. Deliberately not an OpenIMISMutation: that base
+    writes its input - here a password - to the mutation log, returns only a
+    log row id, and expects a signed-in caller.
     """
 
     class Input:
@@ -2333,11 +2326,11 @@ class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
 
 class ConfirmSecondFactorMutation(graphene.relay.ClientIDMutation):
     """Finish enrolling: a code from the scanned authenticator confirms it,
-    and the user's first recovery codes come back with the confirmation.
+    and the user's first recovery codes come back with it.
 
-    Same footing as enrolSecondFactor, for the same reasons. No token is
-    issued - the user logs in through tokenAuth next, with a later code; the
-    one that confirmed is spent.
+    Password-authenticated and outside the mutation log for the same reasons
+    as beginning. No token is issued - the code that confirmed is spent, so
+    the user logs in through tokenAuth with a later one.
     """
 
     class Input:
