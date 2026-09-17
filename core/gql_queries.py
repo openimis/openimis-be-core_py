@@ -249,9 +249,6 @@ class UserGQLType(DjangoObjectType):
         return get_user_types(self)
 
     def resolve_has_second_factor(self, info, **kwargs):
-        # Readable by the user themselves, or by whoever may read users at
-        # all. Yes or no only, never which device: naming it would tell an
-        # attacker which channel to go after.
         caller = info.context.user
         if getattr(caller, "id", None) != self.id and not caller.has_perms(
             CoreConfig.gql_query_users_perms
