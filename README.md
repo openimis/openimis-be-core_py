@@ -170,9 +170,9 @@ with `SECOND_FACTOR_ENROLMENT_REQUIRED` until they enrol again, and enrolment
 currently needs a login. `users { hasSecondFactor }` says whether a user has
 anything to reset.
 
-The django-otp device pages are removed from the Django admin: they would be a
-second way to remove a device, with no right, no record and no end to the
-sessions.
+The django-otp device models are not exposed on the Django admin. Removing a
+device there would need no right of its own, write no record, and leave every
+session the lost device opened still running.
 
 ### Adding a channel that sends the code (SMS, WhatsApp, email)
 
