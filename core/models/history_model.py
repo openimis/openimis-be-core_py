@@ -13,6 +13,7 @@ from django.db.models import (
 from simple_history.models import HistoricalRecords
 from django.apps import apps
 from core.models.openimis_model import ValidityMixin
+from core.models.row_security import RowSecurityMixin
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class HistoryModelManager(CachedManager):
         return super().get(*args, **kwargs)
 
 
-class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
+class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
     history = HistoricalRecords(
         inherit=True,
     )

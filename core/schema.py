@@ -1012,9 +1012,26 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_claim_admins(self, info, search=None, **kwargs):
+        user = info.context.user
         user_health_facility = None
-        if not info.context.user.has_perms(CoreConfig.gql_query_claim_admins_perms):
-            raise PermissionDenied(_("unauthorized"))
+        if not user.has_perms(CoreConfig.gql_query_claim_administrator_perms):
+            # Without the query right, a user is still allowed to see the claim
+            # administrator they are themselves linked to: the frontend relies on
+            # that entry to resolve the health facility of the logged-in user.
+            claim_admin_id = getattr(user, "claim_admin_id", None)
+            if claim_admin_id:
+                own_claim_admin = Q(id=claim_admin_id)
+            else:
+                # tblUsers.ClaimAdminId is not always populated: InteractiveUser
+                # .is_claim_admin resolves the link by login name instead, so fall
+                # back to the same lookup rather than denying a genuine claim admin.
+                login_name = getattr(user, "username", None)
+                if not login_name:
+                    raise PermissionDenied(_("unauthorized"))
+                own_claim_admin = Q(code__iexact=login_name, has_login=True)
+            return ClaimAdmin.objects.filter(
+                *ClaimAdmin.filter_validity(**kwargs), own_claim_admin
+            )
 
         district_uuid = kwargs.get("district_uuid", None)
         region_uuid = kwargs.get("region_uuid", None)
@@ -1027,10 +1044,10 @@ class Query(graphene.ObjectType):
                 hf_filters += [Q(location__parent__uuid=region_uuid)]
 
             if settings.ROW_SECURITY:
-                from locations.models import LocationManager
+                from location.models import LocationManager
 
                 q = LocationManager().build_user_location_filter_query(
-                    info.context.user._u, prefix="location", loc_types=["D"]
+                    user._u, prefix="location", loc_types=["D"]
                 )
                 if q:
                     hf_filters += [q]
@@ -1206,8 +1223,14 @@ class Query(graphene.ObjectType):
         parent_location_level=None,
         **kwargs,
     ):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionError("Unauthorized")
+        user = info.context.user
+        if not user.has_perms(CoreConfig.gql_query_users_perms):
+            # Without the query right, a user is still allowed to see their own
+            # record: the frontend reads the logged-in user profile through this
+            # query. Anything else stays unauthorized.
+            if user.is_anonymous or not getattr(user, "id", None):
+                raise PermissionError("Unauthorized")
+            return User.objects.filter(id=user.id)
 
         user_filters = [Q(t_user__isnull=True)]
         user_query = User.objects
