@@ -54,7 +54,7 @@ from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import APIException
 from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
@@ -2251,7 +2251,9 @@ def _refusal_code(exc):
     """
     if isinstance(exc, SecondFactorError):
         return exc.code
-    if isinstance(exc, AuthenticationFailed):
+    if isinstance(exc, APIException):
+        # The login's own refusals, reported in its own words: a wrong
+        # password is INCORRECT_CREDENTIALS, a missing one says so.
         return str(exc.detail)
     # What remains is check_lockout's GraphQLError.
     return exc.message
@@ -2315,7 +2317,7 @@ class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
                     secret=enrolment.secret(device),
                 ),
             )
-        except (GraphQLError, AuthenticationFailed, SecondFactorError) as exc:
+        except (GraphQLError, APIException, SecondFactorError) as exc:
             return cls(success=False, error=_refusal_code(exc))
         except Exception as exc:
             logger.exception(exc)
@@ -2353,7 +2355,7 @@ class ConfirmSecondFactorMutation(graphene.relay.ClientIDMutation):
             check_lockout(request)
             codes = enrolment.complete(request, username, password, otp)
             return cls(success=True, codes=codes)
-        except (GraphQLError, AuthenticationFailed, SecondFactorError) as exc:
+        except (GraphQLError, APIException, SecondFactorError) as exc:
             return cls(
                 success=False,
                 error=_refusal_code(exc),

@@ -59,7 +59,9 @@ class BeginEnrolmentTest(TestCase):
 
     def _begin(self, password=None, username=None):
         return enrolment.begin(
-            _request(), username or self.user.username, password or self.password
+            _request(),
+            username or self.user.username,
+            self.password if password is None else password,
         )
 
     def test_the_password_buys_an_unconfirmed_authenticator(self):
@@ -119,7 +121,10 @@ class CompleteEnrolmentTest(TestCase):
 
     def _complete(self, otp, password=None):
         return enrolment.complete(
-            _request(), self.user.username, password or self.password, otp
+            _request(),
+            self.user.username,
+            self.password if password is None else password,
+            otp,
         )
 
     def test_the_devices_code_confirms_it_and_issues_the_first_recovery_set(self):
@@ -130,6 +135,16 @@ class CompleteEnrolmentTest(TestCase):
         self.assertTrue(devices.has_second_factor(self.user))
         self.assertEqual(len(codes), 10)
         self.assertEqual(_codes_stored(self.user), set(codes))
+
+    def test_binding_a_factor_leaves_a_trace_in_the_log(self):
+        # Nothing else records it - the mutations write no log row - and an
+        # authenticator appearing on an account is worth being able to find.
+        with self.assertLogs("core.auth.enrolment", level="INFO") as caught:
+            self._complete(_code(self.device))
+
+        self.assertTrue(
+            any(self.user.username in line for line in caught.output), caught.output
+        )
 
     def test_the_next_code_logs_in_and_the_confirming_one_does_not(self):
         # Confirmation is not a disguised login: the step it spent is below
@@ -279,7 +294,9 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
             ENROL,
             variables={
                 "username": self.user.username,
-                "password": password or self.password,
+                # not `password or self.password`: an empty password is a case
+                # under test, and would otherwise be swapped for the real one.
+                "password": self.password if password is None else password,
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -317,6 +334,16 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
         # Nothing in the mutation does this - the test pins that nothing
         # undoes it either.
         self.assertEqual(_failures(self.user.username), 1)
+
+    def test_a_missing_password_answers_the_way_the_login_does(self):
+        # An empty string satisfies String!, so this reaches the service and
+        # must not fall through to the generic handler as an unexpected error.
+        payload = self._enrol(password="")
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], "Missing username or password")
+        self.assertIsNone(payload["totp"])
+        self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
 
     def test_a_user_with_a_device_is_refused(self):
         _enrol(self.user)
