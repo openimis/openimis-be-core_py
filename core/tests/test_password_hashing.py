@@ -3,11 +3,14 @@ from hashlib import sha256
 from secrets import token_hex
 
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
+from rest_framework.exceptions import AuthenticationFailed
 
 from core.apps import CoreConfig
-from core.auth import passwords
-from core.models import ModuleConfiguration
+from core.auth import passwords, revocation
+from core.models import InteractiveUser, ModuleConfiguration
+from core.services import user_authentication
+from core.test_helpers import create_test_interactive_user
 
 
 def _password():
@@ -165,3 +168,113 @@ class ConfigurationTest(_PinnedHasher, TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             _row(password_hasher=passwords.SHA256).save()
         self.assertEqual(CoreConfig.password_hasher, passwords.SHA256)
+
+
+def _stored(user):
+    """The row as the database holds it, not the in-memory instance."""
+    return (
+        InteractiveUser.objects.all()
+        .filter(pk=user.i_user.pk)
+        .values("password", "private_key", "json_ext", "version")
+        .get()
+    )
+
+
+def _make_legacy(user, raw):
+    """Put the user back on the legacy format - the state an upgraded
+    deployment finds every account in.
+
+    .all() first: it returns a plain QuerySet, so this is a real UPDATE even
+    with the model cache on.
+    """
+    salt = _stored(user)["private_key"]
+    InteractiveUser.objects.all().filter(pk=user.i_user.pk).update(
+        password=_legacy(raw, salt)
+    )
+    user.i_user.refresh_from_db()
+
+
+def _not_before(row):
+    return (row["json_ext"] or {}).get(revocation.NOT_BEFORE_KEY)
+
+
+class InteractiveUserPasswordTest(_PinnedHasher, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.configure(passwords.ARGON2)
+        self.raw = _password()
+        self.user = create_test_interactive_user(
+            username="argon2_" + token_hex(4), password=self.raw
+        )
+
+    def test_set_password_writes_argon2_and_still_mints_a_salt(self):
+        row = _stored(self.user)
+        self.assertTrue(row["password"].startswith("argon2$"))
+        self.assertTrue(row["private_key"])
+
+    def test_set_password_writes_the_legacy_format_under_sha256(self):
+        self.configure(passwords.SHA256)
+        self.user.i_user.set_password(self.raw)
+        self.user.i_user.save()
+        row = _stored(self.user)
+        self.assertEqual(row["password"], _legacy(self.raw, row["private_key"]))
+
+    def test_the_check_that_verifies_a_legacy_row_rewrites_it(self):
+        _make_legacy(self.user, self.raw)
+        before = _stored(self.user)
+
+        self.assertTrue(self.user.i_user.check_password(self.raw))
+
+        after = _stored(self.user)
+        self.assertTrue(after["password"].startswith("argon2$"))
+        # Only the hash moved: same salt, same revocation point, one version.
+        self.assertEqual(after["private_key"], before["private_key"])
+        self.assertEqual(_not_before(after), _not_before(before))
+        self.assertEqual(after["version"], before["version"] + 1)
+        # And the rewritten row verifies on its own, without a second rewrite.
+        self.assertTrue(self.user.i_user.check_password(self.raw))
+        self.assertEqual(_stored(self.user), after)
+
+    def test_a_wrong_password_leaves_a_legacy_row_alone(self):
+        _make_legacy(self.user, self.raw)
+        before = _stored(self.user)
+        self.assertFalse(self.user.i_user.check_password(_password()))
+        self.assertEqual(_stored(self.user), before)
+
+    def test_under_sha256_a_verified_legacy_row_is_left_alone(self):
+        _make_legacy(self.user, self.raw)
+        self.configure(passwords.SHA256)
+        before = _stored(self.user)
+        self.assertTrue(self.user.i_user.check_password(self.raw))
+        self.assertEqual(_stored(self.user), before)
+
+    def test_an_unsaved_instance_is_not_written_by_a_check(self):
+        salt = token_hex(128)
+        fresh = InteractiveUser(
+            login_name="never_saved", private_key=salt, password=_legacy(self.raw, salt)
+        )
+        self.assertTrue(fresh.check_password(self.raw))
+        self.assertTrue(fresh.password.startswith("argon2$"))
+        self.assertIsNone(fresh.pk)
+        self.assertFalse(
+            InteractiveUser.objects.filter(login_name="never_saved").exists()
+        )
+
+    def test_the_login_flow_rehashes(self):
+        # authenticate() -> ModelBackend -> User.check_password -> i_user: the
+        # path the GraphQL login, the REST login and HTTP Basic all take.
+        _make_legacy(self.user, self.raw)
+        user = user_authentication(
+            RequestFactory().post("/"), self.user.username, self.raw
+        )
+        self.assertEqual(user.pk, self.user.pk)
+        self.assertTrue(_stored(self.user)["password"].startswith("argon2$"))
+
+    def test_the_login_flow_refuses_a_wrong_password_and_leaves_the_row(self):
+        _make_legacy(self.user, self.raw)
+        before = _stored(self.user)
+        with self.assertRaises(AuthenticationFailed):
+            user_authentication(
+                RequestFactory().post("/"), self.user.username, _password()
+            )
+        self.assertEqual(_stored(self.user), before)
