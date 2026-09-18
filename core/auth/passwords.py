@@ -40,7 +40,18 @@ Verification = namedtuple("Verification", "ok rehash")
 
 
 def configured():
-    return CoreConfig.password_hasher or ARGON2
+    """The hasher in force, falling back to argon2 for anything unrecognised.
+
+    The configuration row is validated on save, but one written by a fixture or
+    by direct SQL is not. Falling back rather than trusting the string keeps an
+    unknown value from quietly disabling every rewrite.
+    """
+    hasher = CoreConfig.password_hasher
+    if hasher not in HASHERS:
+        if hasher is not None:
+            logger.warning("Unknown password_hasher %r; using %s.", hasher, ARGON2)
+        return ARGON2
+    return hasher
 
 
 def _prepared(raw):
