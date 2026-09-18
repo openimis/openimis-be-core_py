@@ -9,4 +9,5 @@ urlpatterns = [
     path("", include(router.urls)),
     path("fetch_export", views.fetch_export),
     path("scheduled_jobs", views.get_scheduled_jobs),
+    path("jwks.json", views.jwks),
 ]
