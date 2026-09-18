@@ -163,6 +163,18 @@ class ConfigurationTest(_PinnedHasher, TestCase):
         self.assertIn("config", caught.exception.message_dict)
         self.assertIn("bcrypt", str(caught.exception))
 
+    def test_an_unvalidated_hasher_value_falls_back_to_argon2(self):
+        # A row written by a fixture or by direct SQL never reaches clean().
+        self.configure("bcrypt")
+        self.assertEqual(passwords.configured(), passwords.ARGON2)
+        raw, salt = _password(), token_hex(128)
+        self.assertTrue(passwords.hash_password(raw, salt).startswith("argon2$"))
+        # And rewriting still happens, rather than being silently disabled.
+        self.assertEqual(
+            passwords.verify(raw, _legacy(raw, salt), salt),
+            passwords.Verification(True, True),
+        )
+
     def test_saving_the_row_applies_the_hasher_without_a_restart(self):
         self.configure(passwords.ARGON2)
         with self.captureOnCommitCallbacks(execute=True):
