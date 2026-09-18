@@ -36,7 +36,7 @@ from core.services import (
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
-from core.auth import recovery, revocation
+from core.auth import enrolment, recovery, revocation
 from core.auth.login import SecondFactorError, authenticate_login
 from django import dispatch
 from django.conf import settings
@@ -54,6 +54,7 @@ from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
+from rest_framework.exceptions import APIException
 from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
@@ -2239,6 +2240,136 @@ class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
             )
 
 
+def _refusal_code(exc):
+    """What the enrolment mutations put in `error`.
+
+    Everything a client can act on comes back in the payload rather than as a
+    GraphQL error, so one field carries every outcome.
+    """
+    if isinstance(exc, SecondFactorError):
+        return exc.code
+    if isinstance(exc, APIException):
+        # The login's own refusals, reported in its own words: a wrong
+        # password is INCORRECT_CREDENTIALS, a missing one says so.
+        return str(exc.detail)
+    # What remains is check_lockout's GraphQLError.
+    return exc.message
+
+
+SecondFactorMethodEnum = graphene.Enum(
+    "SecondFactorMethods", [(enrolment.TOTP, enrolment.TOTP)]
+)
+
+
+class TOTPEnrolmentGQLType(graphene.ObjectType):
+    """What an authenticator app needs in order to be enrolled.
+
+    A type of its own rather than fields on the payload: what a method hands
+    back is the part that does not generalise, so another method adds a
+    sibling field here instead of changing fields a client already reads.
+    """
+
+    config_url = graphene.String(
+        description="otpauth:// URI, to render as a QR code"
+    )
+    secret = graphene.String(
+        description="The same secret in base32, for typing in by hand"
+    )
+
+
+class EnrolSecondFactorMutation(graphene.relay.ClientIDMutation):
+    """Begin enrolling an authenticator: verify the password, hand back the
+    secret to scan.
+
+    Password-authenticated, because a user the policy binds cannot log in
+    until they have a device. Deliberately not an OpenIMISMutation: that base
+    writes its input - here a password - to the mutation log, returns only a
+    log row id, and expects a signed-in caller.
+    """
+
+    class Input:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
+
+    method = SecondFactorMethodEnum(
+        description="Which method was begun; its material is in the field named after it"
+    )
+    totp = graphene.Field(
+        TOTPEnrolmentGQLType, description="Set when method is TOTP"
+    )
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username, password, **input):
+        request = info.context
+        try:
+            check_lockout(request)
+            device = enrolment.begin(request, username, password)
+            return cls(
+                success=True,
+                method=enrolment.TOTP,
+                totp=TOTPEnrolmentGQLType(
+                    config_url=device.config_url,
+                    secret=enrolment.secret(device),
+                ),
+            )
+        except (GraphQLError, APIException, SecondFactorError) as exc:
+            return cls(success=False, error=_refusal_code(exc))
+        except Exception as exc:
+            logger.exception(exc)
+            return cls(
+                success=False, error=gettext_lazy("Failed to enrol a second factor")
+            )
+
+
+class ConfirmSecondFactorMutation(graphene.relay.ClientIDMutation):
+    """Finish enrolling: a code from the scanned authenticator confirms it,
+    and the user's first recovery codes come back with it.
+
+    Password-authenticated and outside the mutation log for the same reasons
+    as beginning. No token is issued - the code that confirmed is spent, so
+    the user logs in through tokenAuth with a later one.
+    """
+
+    class Input:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
+        otp = graphene.String(
+            required=True,
+            description="A current code from the authenticator just scanned",
+        )
+
+    codes = graphene.List(graphene.String)
+    success = graphene.Boolean()
+    error = graphene.String()
+    locked_until = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username, password, otp, **input):
+        request = info.context
+        try:
+            check_lockout(request)
+            codes = enrolment.complete(request, username, password, otp)
+            return cls(success=True, codes=codes)
+        except (GraphQLError, APIException, SecondFactorError) as exc:
+            return cls(
+                success=False,
+                error=_refusal_code(exc),
+                locked_until=(
+                    exc.extensions.get("lockedUntil")
+                    if isinstance(exc, SecondFactorError)
+                    else None
+                ),
+            )
+        except Exception as exc:
+            logger.exception(exc)
+            return cls(
+                success=False,
+                error=gettext_lazy("Failed to confirm the second factor"),
+            )
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2379,6 +2510,8 @@ class Mutation(graphene.ObjectType):
     sign_out_everywhere = SignOutEverywhereMutation.Field()
     reset_user_second_factor = ResetUserSecondFactorMutation.Field()
     issue_recovery_codes = IssueRecoveryCodesMutation.Field()
+    enrol_second_factor = EnrolSecondFactorMutation.Field()
+    confirm_second_factor = ConfirmSecondFactorMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
