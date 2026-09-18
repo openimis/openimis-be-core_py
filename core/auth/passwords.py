@@ -128,9 +128,11 @@ def validate_configuration(instance):
     """
     cfg = instance._cfg
     if not isinstance(cfg, dict):
-        # The body's shape is another validator's to report; a non-object here
-        # would only raise AttributeError out of save().
-        return
+        # clean() guards the JSON syntax but not its shape, so a valid-JSON list
+        # arrives here intact. Merging it over the defaults raises a TypeError
+        # that start-up swallows, silently dropping the whole core
+        # configuration, so refuse it as a field error instead.
+        raise ValidationError({"config": "The configuration must be a JSON object."})
     hasher = cfg.get("password_hasher", ARGON2)
     if hasher not in HASHERS:
         raise ValidationError(
