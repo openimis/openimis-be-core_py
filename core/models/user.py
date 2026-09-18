@@ -24,7 +24,7 @@ from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
-from core.utils import to_list_permissions
+from core.utils import get_cache_key, to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from core.access import evaluate_access_requirements, has_role_perms
 # Safe at module level: core.auth.revocation reaches models through
@@ -439,8 +439,8 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
-        # Still minted under argon2, which carries its own salt: the legacy
-        # format needs this column, and a row keeps it either way.
+        # Minted even under argon2, which carries its own salt: the legacy
+        # format still needs this column to verify.
         self.private_key = private_key or token_hex(128)
         self.password = passwords.hash_password(raw_password, self.private_key)
         # private_key is only a salt now - rotating it ends nothing on its own,
@@ -458,16 +458,27 @@ class InteractiveUser(OpenIMISMigrationModel):
         """Rewrite a verified password in the configured format.
 
         The check that verified it is the only moment the raw password is in
-        hand, so this is where a legacy hash moves to argon2. Only the hash
-        changes: the salt stays, and the revocation point is left alone,
-        because logging in must not end the user's other sessions. An unsaved
-        instance is the caller's to save.
+        hand, so this is where a legacy hash moves to argon2. An unsaved
+        instance is only changed in memory and is the caller's to save.
+
+        Deliberately not `save()`: this runs on the authentication path, where
+        the instance is routinely rebuilt from the per-process object cache and
+        every column but the one being written can be older than the database.
+        A full-row write would put those stale values back, and the revocation
+        point is among them - a login could then undo a sign-out another worker
+        had performed. Writing the one column also leaves the row's version and
+        history alone, which is right: re-encoding a password is not a change
+        to the credential.
         """
         self.password = passwords.hash_password(raw_password, self.private_key)
-        if self.pk is not None:
-            # silent: the row may be otherwise unchanged, and save() raises on
-            # an update with no dirty field.
-            self.save(silent=True)
+        if self.pk is None:
+            return
+        # .all() first: CachedManager.filter can answer from the cache, a plain
+        # QuerySet cannot.
+        type(self).objects.all().filter(pk=self.pk).update(password=self.password)
+        # Drop the cached copy rather than writing this instance over it, for
+        # the same staleness reason. The next read repopulates it.
+        cache.delete(get_cache_key(type(self), self.pk))
 
     @classmethod
     def is_interactive_user(cls, user):

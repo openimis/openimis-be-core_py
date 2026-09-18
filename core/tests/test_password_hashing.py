@@ -250,10 +250,11 @@ class InteractiveUserPasswordTest(_PinnedHasher, TestCase):
 
         after = _stored(self.user)
         self.assertTrue(after["password"].startswith("argon2$"))
-        # Only the hash moved: same salt, same revocation point, one version.
+        # Only the hash moved. The version is untouched too: re-encoding a
+        # password is not a change to the credential.
         self.assertEqual(after["private_key"], before["private_key"])
         self.assertEqual(_not_before(after), _not_before(before))
-        self.assertEqual(after["version"], before["version"] + 1)
+        self.assertEqual(after["version"], before["version"])
         # And the rewritten row verifies on its own, without a second rewrite.
         self.assertTrue(self.user.i_user.check_password(self.raw))
         self.assertEqual(_stored(self.user), after)
@@ -282,6 +283,27 @@ class InteractiveUserPasswordTest(_PinnedHasher, TestCase):
         self.assertFalse(
             InteractiveUser.objects.filter(login_name="never_saved").exists()
         )
+
+    def test_the_rehash_writes_only_the_hash(self):
+        """A stale in-memory row must not put its other columns back.
+
+        On the authentication path the instance can come from the per-process
+        object cache, so anything another worker wrote meanwhile is newer than
+        what this instance holds. The revocation point is the one that matters:
+        putting an old value back would revive sessions someone had ended.
+        """
+        _make_legacy(self.user, self.raw)
+        stale = InteractiveUser.objects.all().get(pk=self.user.i_user.pk)
+        revoked_at = 4102444800
+        InteractiveUser.objects.all().filter(pk=stale.pk).update(
+            json_ext={revocation.NOT_BEFORE_KEY: revoked_at}
+        )
+
+        self.assertTrue(stale.check_password(self.raw))
+
+        row = _stored(self.user)
+        self.assertTrue(row["password"].startswith("argon2$"))
+        self.assertEqual(_not_before(row), revoked_at)
 
     def test_the_login_flow_rehashes(self):
         # authenticate() -> ModelBackend -> User.check_password -> i_user: the
