@@ -1,26 +1,23 @@
-"""Interactive-user password hashing: argon2, with the legacy SHA256 verified
-for as long as a row still holds one.
+"""Password hashing for interactive users.
 
-`tblUsers.StoredPassword` held `SHA256(password + PrivateKey)` in uppercase hex
-for the legacy .NET application, which read the same table. That application is
-no longer supported, so the format is ours to change. New and changed passwords
-are hashed with argon2id; a legacy hash keeps verifying and is rewritten the
-first time it does, which is the only moment the raw password is in hand.
-Nothing rehashes offline, so an account that never logs in again keeps its
-legacy hash and still authenticates with it.
+Passwords are hashed with argon2id. Rows still holding the earlier format, an
+uppercase-hex SHA256 of the password and the salt column, keep verifying and are
+rewritten the first time they do, which is the only moment the raw password is
+in hand. Nothing rehashes offline, so an account that never logs in again keeps
+the old hash and still authenticates with it.
 
 Django's hasher is instantiated here rather than resolved through
-PASSWORD_HASHERS: that setting governs TechnicalUser, a Django user on PBKDF2
-already, and this module must behave the same whatever an assembly puts there.
+PASSWORD_HASHERS, which orders the hashers for TechnicalUser and is an
+assembly's to configure. This module must behave the same whatever it says.
 
-`password_hasher` in the core module configuration keeps the legacy format for
-a deployment that needs it. Both values verify both formats, so changing it
-locks nobody out.
+`password_hasher` in the core module configuration selects the format new
+passwords are written in. Both values verify both formats, so changing it locks
+nobody out.
 """
 
+import hashlib
 import logging
 from collections import namedtuple
-from hashlib import sha256
 
 from django.contrib.auth.hashers import Argon2PasswordHasher
 from django.core.exceptions import ValidationError
@@ -46,22 +43,41 @@ def configured():
     return CoreConfig.password_hasher or ARGON2
 
 
-def legacy_hash(raw, salt):
-    """The legacy application's format.
+def _prepared(raw):
+    """Trailing whitespace is stripped before hashing.
 
-    `salt` is formatted, not coerced: a null salt hashed as the string "None"
-    there, and every existing row has to keep verifying byte for byte.
+    The earlier format did it, so a password that verified against an old row
+    has to hash the same way when that row is rewritten.
     """
-    return sha256(f"{raw.rstrip()}{salt}".encode()).hexdigest().upper()
+    return raw.rstrip()
+
+
+def _legacy_hash(raw, salt):
+    """The earlier format.
+
+    `salt` is interpolated, not coerced: a null salt hashed as the string
+    "None", and existing rows have to keep verifying byte for byte.
+    """
+    return hashlib.sha256(f"{_prepared(raw)}{salt}".encode()).hexdigest().upper()
+
+
+def _verify_argon2(raw, encoded):
+    try:
+        return _argon2.verify(_prepared(raw), encoded)
+    except ValueError:
+        # A string carrying the prefix but not the shape raises rather than
+        # returning False. A corrupt row is a failed login, not a 500.
+        return False
 
 
 def hash_password(raw, salt):
-    """The stored form of `raw` under the configured hasher."""
+    """The stored form of `raw` under the configured hasher.
+
+    `salt` is only used by the legacy format; argon2 carries its own.
+    """
     if configured() == SHA256:
-        return legacy_hash(raw, salt)
-    # rstrip for parity with the legacy format: the password a legacy row
-    # verifies with is the one its rehash has to verify with too.
-    return _argon2.encode(raw.rstrip(), _argon2.salt())
+        return _legacy_hash(raw, salt)
+    return _argon2.encode(_prepared(raw), _argon2.salt())
 
 
 def verify(raw, encoded, salt):
@@ -73,17 +89,12 @@ def verify(raw, encoded, salt):
     """
     if not encoded:
         return Verification(False, False)
-    upgrade = configured() == ARGON2
+    rewrite = configured() == ARGON2
     if encoded.startswith(_ARGON2_PREFIX):
-        try:
-            ok = _argon2.verify(raw.rstrip(), encoded)
-        except ValueError:
-            # A string carrying the prefix but not the shape raises rather than
-            # returning False. A corrupt row is a failed login, not a 500.
-            ok = False
-        return Verification(ok, ok and upgrade and _argon2.must_update(encoded))
-    ok = constant_time_compare(legacy_hash(raw, salt), encoded.upper())
-    return Verification(ok, ok and upgrade)
+        ok = _verify_argon2(raw, encoded)
+        return Verification(ok, ok and rewrite and _argon2.must_update(encoded))
+    ok = constant_time_compare(_legacy_hash(raw, salt), encoded.upper())
+    return Verification(ok, ok and rewrite)
 
 
 def configure(cfg):
@@ -98,7 +109,7 @@ def configure(cfg):
 
 
 def validate_configuration(instance):
-    """Refuse a core configuration row naming a hasher this module lacks.
+    """Refuse a core configuration row this module could not act on.
 
     Registered for the core module; ModuleConfiguration.clean() calls it on
     every save. Only the row's own keys are checked, since the row is merged
