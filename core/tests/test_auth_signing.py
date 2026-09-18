@@ -62,30 +62,6 @@ def _issue(user):
     return get_token(user, DummyContext(user=user))
 
 
-class NoKeyProvisionedTest(TestCase):
-    """Nothing provisioned: every deployment today, and every deployment that
-    upgrades without provisioning a key.
-    """
-
-    def test_tokens_carry_no_kid_and_are_signed_hs256(self):
-        header = pyjwt.get_unverified_header(_issue(_user("signDefault")))
-
-        self.assertIsNone(header.get("kid"))
-        self.assertEqual(header["alg"], "HS256")
-
-    def test_token_still_decodes(self):
-        user = _user("signDefaultDecode")
-
-        self.assertEqual(decode(_issue(user))["username"], user.username)
-
-    def test_iat_is_emitted(self):
-        # On this path too, not only in deployment mode: the per-user
-        # revocation reference compares against it.
-        payload = decode(_issue(_user("signDefaultIat")))
-
-        self.assertIsInstance(payload["iat"], int)
-
-
 @with_signing_key
 class ProvisionedKeyTest(TestCase):
     def test_tokens_carry_the_derived_kid_and_are_signed_rs256(self):
@@ -128,28 +104,13 @@ class ProvisionedKeyTest(TestCase):
         self.assertIn(kid, keys.deployment_keys())
 
 
-class MigrationWindowTest(TestCase):
-    """The acceptance criterion the dual-shape decode exists for: provisioning
-    a key must not log anyone out.
+class KeyRollbackTest(TestCase):
+    """What used to be the migration window. There is no second shape to fall
+    back to now, so unprovisioning is a one-way door unless the public half is
+    kept.
     """
 
-    def test_a_token_issued_before_the_switch_still_decodes_after_it(self):
-        user = _user("signMigration")
-        legacy_token = _issue(user)
-
-        with with_signing_key:
-            self.assertEqual(decode(legacy_token)["username"], user.username)
-
-    def test_both_shapes_decode_while_the_key_is_provisioned(self):
-        legacy_user = _user("signMigrationLegacy")
-        legacy_token = _issue(legacy_user)
-
-        with with_signing_key:
-            new_token = _issue(_user("signMigrationNew"))
-
-            self.assertEqual(decode(legacy_token)["username"], legacy_user.username)
-            self.assertEqual(decode(new_token)["username"], "signMigrationNew")
-
+    @override_settings(JWT_SIGNING_KEY=None)
     def test_backing_the_key_out_needs_its_public_half_kept(self):
         # Unprovisioning takes the verification key with it, so the public half
         # has to reach JWT_DEPLOYMENT_KEYS first or outstanding tokens stop
@@ -238,6 +199,7 @@ class KeyLoadingTest(TestCase):
             pyjwt.get_unverified_header(from_inline)["kid"],
         )
 
+    @override_settings(JWT_SIGNING_KEY=None)
     def test_nothing_provisioned_yields_no_signing_key(self):
         self.assertIsNone(keys.signing_key())
 
@@ -262,9 +224,10 @@ class KeyLoadingTest(TestCase):
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
 
+@override_settings(JWT_SIGNING_KEY=None)
 class EncodeWithoutAKeyTest(TestCase):
-    """`jwt_encode_user_key` never reaches this with nothing provisioned, but
-    an assembly can point JWT_ENCODE_HANDLER straight at `encode`.
+    """The last line of defence behind the core.auth.E001 startup check, for a
+    process that ran with --skip-checks.
     """
 
     def test_encoding_without_a_key_raises_and_names_the_setting(self):
@@ -300,9 +263,9 @@ class CorruptSigningKeyTest(TestCase):
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
     @override_settings(JWT_SIGNING_KEY="-----BEGIN PRIVATE KEY-----\nnope\n")
-    def test_issuing_refuses_rather_than_falling_back_to_the_per_user_key(self):
-        # The operator set the variable, so they believe they are on the
-        # deployment key. Issuing per-user tokens instead would hide that.
+    def test_issuing_refuses_rather_than_signing_with_something_else(self):
+        # The operator set the variable, so they believe their key is in use.
+        # Silently signing with anything else would hide the misconfiguration.
         user = _user("signCorruptIssue")
 
         with self.assertRaises(ValueError) as caught:

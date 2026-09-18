@@ -10,6 +10,7 @@ from django.template import loader
 from django.utils.http import urlencode
 from django.core.cache import cache
 from core.apps import CoreConfig
+from core.auth import revocation
 from core.models.user import User, InteractiveUser, Officer, UserRole, UserManager
 from core.validation.obligatoryFieldValidation import (
     validate_payload_for_obligatory_fields,
@@ -260,6 +261,36 @@ def create_or_update_core_user(
     return user, created
 
 
+def sign_out_everywhere(logged_user, username_to_sign_out=None):
+    """End every outstanding session for a user by moving their revocation point.
+
+    Defaults to the caller's own account. Naming anyone else requires the right
+    to update users, the same rule change_user_password applies.
+
+    Raises ValidationError for a user with no interactive row - a technical user
+    has nowhere to store a revocation point, so the request cannot be honoured
+    and must not appear to have been.
+    """
+    if username_to_sign_out and username_to_sign_out != logged_user.username:
+        if not logged_user.has_perms(CoreConfig.gql_mutation_update_users_perms):
+            raise AuthenticationFailed("unauthorized")
+        user = User.objects.get(username=username_to_sign_out)
+    else:
+        user = logged_user
+
+    if not user.i_user:
+        raise ValidationError(_("core.user.not_interactive"))
+
+    revocation.bump(user.i_user)
+    # silent: bumping twice inside the same second writes the identical epoch
+    # second, and OpenIMISModel.save() raises on a no-op update. Semantically a
+    # no-op is fine here - sessions older than that second are already dead.
+    user.i_user.save(silent=True)
+    # Single-token refresh re-decodes the presented token, so this is belt and
+    # braces; it also covers a deployment that turns long-running refresh on.
+    user.clear_refresh_tokens()
+
+
 def change_user_password(
     logged_user, username_to_update=None, old_password=None, new_password=None
 ):
@@ -306,6 +337,28 @@ def _try_auto_provision(username, password):
     return None
 
 
+def open_admin_session(request, user):
+    """Open a Django session for a staff user, for the routed admin site.
+
+    Deliberately not called from `user_authentication`: a session opened at
+    password-verification time exists before any second factor has been
+    presented. The caller that completes the login flow opens it instead, so the
+    ordering is a property of the flow rather than of each call site.
+    """
+    if not (getattr(user, "is_staff", False) and hasattr(request, "session")):
+        return False
+    backend = next(
+        (
+            b
+            for b in settings.AUTHENTICATION_BACKENDS
+            if b.endswith("ModelBackend")
+        ),
+        settings.AUTHENTICATION_BACKENDS[-1],
+    )
+    login(request, user, backend=backend)
+    return True
+
+
 def user_authentication(request, username, password):
     if not username or not password:
         raise ParseError(_("Missing username or password"))
@@ -320,17 +373,6 @@ def user_authentication(request, username, password):
         logger.debug(f"Authentication failed for username: {username}")
         raise AuthenticationFailed("INCORRECT_CREDENTIALS")
 
-    if getattr(user, "is_staff", False) and hasattr(request, "session"):
-        from django.conf import settings
-        backend = next(
-            (
-                b
-                for b in settings.AUTHENTICATION_BACKENDS
-                if b.endswith("ModelBackend")
-            ),
-            settings.AUTHENTICATION_BACKENDS[-1],
-        )
-        login(request, user, backend=backend)
     return user
 
 

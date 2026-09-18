@@ -208,10 +208,13 @@ def create_test_technical_user(
     password="S\\/pe®Pąßw0rd" "",
     staff=False,
     super_user=False,
-    custom_tech_user_props={},
-    custom_core_user_props={},
+    custom_tech_user_props=None,
+    custom_core_user_props=None,
 ):
-    custom_tech_user_props["password"] = password
+    # Not `={}`: these were mutated in place, so one caller's password leaked
+    # into the next call's lookup through the shared default.
+    custom_tech_user_props = custom_tech_user_props or {}
+    custom_core_user_props = custom_core_user_props or {}
     t_user, t_user_created = TechnicalUser.objects.get_or_create(
         **{
             "username": username,
@@ -221,8 +224,12 @@ def create_test_technical_user(
             **(custom_tech_user_props),
         }
     )
+    # Hashed, not stored raw: passing password= into get_or_create wrote the
+    # plaintext into the column, so check_password failed for every user this
+    # built. save() is what binds the core User.
+    t_user.set_password(password)
+    t_user.save()
     # Just for safety and retrieving the User because TechnicalUser will automatically create its User
-    custom_core_user_props["password"] = password
     core_user, core_user_created = User.objects.get_or_create(
         username=username, t_user=t_user, **(custom_core_user_props)
     )

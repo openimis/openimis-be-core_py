@@ -86,6 +86,27 @@ def deployment_keys():
     return {kid: private_key.public_key(), **configured}
 
 
+def public_verification_key(key):
+    """The RSA public half of a verification key, or None if it has none.
+
+    A verification key reaches the mapping either as a key object or as PEM
+    text, and PyJWT accepts both. A symmetric secret is neither, and publishing
+    one would disclose it. Shared by the JWKS view and the startup check so an
+    operator is told once about the entries the view drops on every request.
+    """
+    if isinstance(key, rsa.RSAPublicKey):
+        return key
+    if not isinstance(key, (str, bytes)):
+        return None
+    try:
+        prepared = RSAAlgorithm(RSAAlgorithm.SHA256).prepare_key(key)
+    except (ValueError, TypeError):
+        return None
+    # A private key here is a misconfiguration; drop it rather than publish its
+    # public half from a mapping that should only ever hold verification keys.
+    return prepared if isinstance(prepared, rsa.RSAPublicKey) else None
+
+
 def algorithm():
     # One algorithm, not a list: accepting several alongside public keys is what
     # makes algorithm confusion possible.
