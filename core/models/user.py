@@ -895,8 +895,41 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             refresh.revoke()
 
     def get_session_auth_hash(self):
+        """An HMAC over the credentials whose change has to end the session.
+
+        `get_user` compares this on every session-authenticated request and
+        flushes on a mismatch, so it is the only point where a revocation reaches
+        the session arm. It used to hash the username, which never changes -
+        hence neither a password change nor `sign_out_everywhere` ever ended a
+        session. A role change moves nothing here, which is deliberate.
+        """
+        return self._get_session_auth_hash()
+
+    def get_session_auth_fallback_hash(self):
+        # `get_user` calls this on every mismatch, a state only reachable since
+        # the hash above started tracking credentials.
+        for fallback_secret in settings.SECRET_KEY_FALLBACKS:
+            yield self._get_session_auth_hash(secret=fallback_secret)
+
+    def _get_session_auth_hash(self, secret=None):
         key_salt = "core.User.get_session_auth_hash"
-        return salted_hmac(key_salt, self.username).hexdigest()
+        # `password` is the stored hash on both user models that can be staff;
+        # the not-before adds the revocations that leave it alone. Read uncached,
+        # or a flushed session survives on every worker but the one that ended it.
+        stored_password = getattr(self._u, "password", "") or ""
+        not_before = revocation.user_not_before(self.username)
+        # Length-prefixed: either component can contain any separator, and a
+        # plain join would let two different triples share one hash.
+        parts = (
+            self.username,
+            stored_password,
+            "" if not_before is None else str(not_before),
+        )
+        payload = "".join(f"{len(part)}:{part}" for part in parts)
+        # sha256 as Django pins for this same hash; salted_hmac defaults to sha1.
+        return salted_hmac(
+            key_salt, payload, secret=secret, algorithm="sha256"
+        ).hexdigest()
 
     def get_health_facility(self):
         if self.claim_admin:
@@ -914,8 +947,6 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             raise ValueError("wrapper has not been initialised")
         elif name == "__name__":
             return self.username
-        elif name == "get_session_auth_hash":
-            return False
         elif hasattr(self._u, name):
             return getattr(self._u, name)
         elif name in self.__dict__:
