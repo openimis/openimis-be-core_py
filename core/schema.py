@@ -29,12 +29,14 @@ from core.services import (
     change_user_password,
     reset_user_password,
     set_user_password,
+    sign_out_everywhere,
     user_authentication,
     wait_for_mutation,
 )
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
+from core.auth import revocation
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -2014,7 +2016,15 @@ def check_email_validity(email):
 def set_user_deleted(user):
     try:
         if user.i_user:
+            # Disabling an account has to end its sessions; nothing else here
+            # does, now that the signing key is no longer per-user.
+            revocation.bump(user.i_user)
             user.i_user.delete_history()
+            # delete_history() writes nothing for an interactive user
+            # (OpenIMISHistoryMixin.delete_history is `pass`), so this is what
+            # persists the revocation point. silent, because a bump inside the
+            # same second changes no field and save() rejects a no-op update.
+            user.i_user.save(silent=True)
         if user.t_user:
             user.t_user.delete_history()
         if user.officer:
@@ -2112,6 +2122,37 @@ class ChangePasswordMutation(graphene.relay.ClientIDMutation):
             return ChangePasswordMutation(
                 success=False,
                 error=gettext_lazy("Failed to change user password"),
+            )
+
+
+class SignOutEverywhereMutation(graphene.relay.ClientIDMutation):
+    """End every outstanding session for a user. Either the user does it to
+    themselves, or someone with the rights to update users does it for anyone.
+    """
+
+    class Input:
+        username = graphene.String(
+            required=False,
+            description="By default this operation works on the logged user; "
+            "only administrators can run it on any user",
+        )
+
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, username=None, **input):
+        try:
+            user = info.context.user
+            if type(user) is AnonymousUser or not user.id:
+                raise PermissionDenied(_("mutation.authentication_required"))
+            sign_out_everywhere(user, username_to_sign_out=username)
+            return SignOutEverywhereMutation(success=True)
+        except Exception as exc:
+            logger.exception(exc)
+            return SignOutEverywhereMutation(
+                success=False,
+                error=gettext_lazy("Failed to sign the user out everywhere"),
             )
 
 
@@ -2228,6 +2269,7 @@ class Mutation(graphene.ObjectType):
     change_password = ChangePasswordMutation.Field()
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
+    sign_out_everywhere = SignOutEverywhereMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()

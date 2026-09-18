@@ -11,6 +11,7 @@ from core.services.userServices import (
     create_or_update_core_user,
     change_user_password,
     set_user_password,
+    sign_out_everywhere,
     reset_user_password,
     user_authentication,
 )
