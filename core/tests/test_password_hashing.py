@@ -163,6 +163,17 @@ class ConfigurationTest(_PinnedHasher, TestCase):
         self.assertIn("config", caught.exception.message_dict)
         self.assertIn("bcrypt", str(caught.exception))
 
+    def test_a_config_body_that_is_not_an_object_is_refused(self):
+        # clean() guards JSON syntax but not shape, so a valid-JSON list reaches
+        # this validator. Merging it over the defaults raises a TypeError that
+        # start-up swallows, dropping the whole core configuration silently.
+        row = ModuleConfiguration(
+            module="core", layer="be", version="1", config="[1, 2]"
+        )
+        with self.assertRaises(ValidationError) as caught:
+            row.clean()
+        self.assertIn("config", caught.exception.message_dict)
+
     def test_an_unvalidated_hasher_value_falls_back_to_argon2(self):
         # A row written by a fixture or by direct SQL never reaches clean().
         self.configure("bcrypt")
