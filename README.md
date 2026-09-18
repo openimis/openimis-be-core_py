@@ -487,17 +487,22 @@ This will make the data appear in the masked way again.
 ## Password hashing
 
 Interactive users' passwords are hashed with argon2id, using Django's
-`Argon2PasswordHasher` and its default parameters. Before this, the stored
-value was a single `SHA256(password + salt)` in uppercase hex, the format the
-legacy .NET application read. That application is no longer supported, so the
-format changed; nothing else reads the column.
+`Argon2PasswordHasher` and its default parameters. Rows written before this
+hold a single `SHA256(password + salt)` in uppercase hex, which has no work
+factor; they keep authenticating and are upgraded as their owners log in.
 
 There is no migration and no offline rehash, because a legacy hash cannot be
 re-derived without the password. A legacy row is rewritten the first time its
 password verifies: at login, at the old-password check of a password change,
-and nowhere else. Only the hash changes. The salt and the user's revocation
-point stay, so logging in ends none of the user's other sessions. An account
-that never logs in again keeps its legacy hash and still authenticates with it.
+and nowhere else. Only the hash column is written, so the salt, the revocation
+point and every other column are left as they are, and tokens already issued
+keep working.
+
+One thing does end: an existing Django admin session for that user. Django's
+session authentication hash covers the stored password, so the session is
+flushed on its next request and the user signs in again. It happens at most
+once per account, since the row is argon2 from then on. An account that never
+logs in again keeps its legacy hash and still authenticates with it.
 
 One key in the `core` module configuration keeps the legacy format for a
 deployment that needs it:
