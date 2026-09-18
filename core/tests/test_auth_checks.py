@@ -5,7 +5,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 
+from core.apps import CoreConfig
 from core.auth import checks
+from core.test_helpers import create_test_role
 
 
 def _keypair():
@@ -120,3 +122,61 @@ class SecondFactorAppsCheckTest(TestCase):
 
     def test_installed_second_factor_apps_report_nothing(self):
         self.assertEqual(checks.second_factor_apps_are_installed(None), [])
+
+
+class SecondFactorPolicyCheckTest(TestCase):
+    """`core.auth.E005` - a policy value the predicate cannot act on, caught at
+    startup rather than at the first login."""
+
+    def test_an_unknown_policy_is_reported(self):
+        with patch.object(CoreConfig, "second_factor_policy", "sometimes"):
+            errors = checks.second_factor_policy_is_known(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E005"])
+
+    def test_a_known_policy_is_not(self):
+        with patch.object(CoreConfig, "second_factor_policy", "per_role"):
+            self.assertEqual(checks.second_factor_policy_is_known(None), [])
+
+
+class SecondFactorRolesCheckTest(TestCase):
+    """`core.auth.W002` - a mandate keyed on a role name that no longer
+    resolves is a security control that is off without saying so. Renaming a
+    role keeps its id and uuid and moves only the name, so the configuration
+    cannot be validated once and trusted."""
+
+    def _configured(self, mode, roles):
+        return patch.multiple(
+            CoreConfig,
+            second_factor_policy=mode,
+            second_factor_mandatory_roles=roles,
+        )
+
+    def test_a_configured_role_that_does_not_exist_is_reported(self):
+        with self._configured("per_role", ["No Such Role"]):
+            warnings = checks.second_factor_roles_exist(None)
+
+        self.assertEqual([warning.id for warning in warnings], ["core.auth.W002"])
+        self.assertIn("No Such Role", warnings[0].msg)
+
+    def test_an_existing_role_is_not_reported(self):
+        create_test_role(name="Supervisor")
+
+        with self._configured("per_role", ["Supervisor"]):
+            self.assertEqual(checks.second_factor_roles_exist(None), [])
+
+    def test_only_the_unknown_names_are_named(self):
+        create_test_role(name="Supervisor")
+
+        with self._configured("per_role", ["Supervisor", "Gone"]):
+            warnings = checks.second_factor_roles_exist(None)
+
+        self.assertIn("Gone", warnings[0].msg)
+        self.assertNotIn("Supervisor", warnings[0].msg)
+
+    def test_a_policy_that_does_not_read_the_list_is_not_checked(self):
+        # Only per_role consults the names, so a stale entry under another
+        # policy weakens nothing and should not nag.
+        for mode in ("optional", "mandatory"):
+            with self.subTest(mode=mode), self._configured(mode, ["No Such Role"]):
+                self.assertEqual(checks.second_factor_roles_exist(None), [])
