@@ -43,6 +43,11 @@ DEFAULT_CFG = {
     "gql_mutation_create_users_perms": ["121702"],
     "gql_mutation_update_users_perms": ["121703"],
     "gql_mutation_delete_users_perms": ["121704"],
+    # A right of its own rather than update-users: resetting the second
+    # factor is the one thing a password reset cannot do - get past it -
+    # so a deployment may want it in fewer hands. Superusers and the IMIS
+    # Administrator role hold it implicitly, like every other right.
+    "gql_mutation_reset_second_factor_perms": ["121705"],
     "gql_query_roles_perms": ["122001"],
     "gql_mutation_create_roles_perms": ["122002"],
     "gql_mutation_update_roles_perms": ["122003"],
@@ -96,6 +101,7 @@ class CoreConfig(AppConfig):
     gql_mutation_create_users_perms = []
     gql_mutation_update_users_perms = []
     gql_mutation_delete_users_perms = []
+    gql_mutation_reset_second_factor_perms = []
     # TODO consider moving that roles related to ClaimAdmin and EnrolmentOfficer
     #  into modules related to that type of user for example
     #  EnrolmentOfficer -> policy module, ClaimAdmin -> claim module etc
@@ -229,6 +235,9 @@ class CoreConfig(AppConfig):
         ]
         CoreConfig.gql_mutation_delete_users_perms = cfg[
             "gql_mutation_delete_users_perms"
+        ]
+        CoreConfig.gql_mutation_reset_second_factor_perms = cfg[
+            "gql_mutation_reset_second_factor_perms"
         ]
         CoreConfig.gql_query_enrolment_officers_perms = cfg[
             "gql_query_enrolment_officers_perms"
