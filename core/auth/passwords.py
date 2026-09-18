@@ -69,6 +69,8 @@ def _legacy_hash(raw, salt):
     `salt` is interpolated, not coerced: a null salt hashed as the string
     "None", and existing rows have to keep verifying byte for byte.
     """
+    # Uppercase is part of the stored format, not cosmetic: readers outside
+    # this code have required it.
     return hashlib.sha256(f"{_prepared(raw)}{salt}".encode()).hexdigest().upper()
 
 
