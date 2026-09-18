@@ -35,6 +35,7 @@ setup(
         "pandas",
         "uuid6",
         "cryptography",
+        "argon2-cffi",
     ],
     classifiers=[
         "Environment :: Web Environment",
