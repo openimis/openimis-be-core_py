@@ -118,7 +118,10 @@ def configure(cfg):
     restart.
     """
     CoreConfig.password_hasher = cfg["password_hasher"]
-    logger.info("Interactive-user password hasher: %s", CoreConfig.password_hasher)
+    # configured(), not the raw value: an unrecognised string is reported by
+    # that function and falls back, so logging the row here would name a hasher
+    # that is not the one in force.
+    logger.info("Interactive-user password hasher: %s", configured())
 
 
 def validate_configuration(instance):
