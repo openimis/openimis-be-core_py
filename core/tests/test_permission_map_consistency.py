@@ -14,9 +14,7 @@ Both are asserted across every installed module, so a new module or a new right 
 covered without touching this file.
 """
 
-import ast
 import json
-import os
 import re
 from pathlib import Path
 
@@ -55,30 +53,16 @@ PERMISSIONS_MAP = Path(settings.BASE_DIR) / "permissions_map.json"
 
 
 def _iter_declared_rights():
-    """(module_label, config_key, [right ids]) for every *_perms in every apps.py."""
     for app_config in django_apps.get_app_configs():
-        apps_py = Path(app_config.path) / "apps.py"
-        if not apps_py.exists():
-            continue
-        try:
-            tree = ast.parse(apps_py.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Dict):
+        for attr in dir(app_config):
+            if not attr.endswith("_perms"):
                 continue
-            for key, value in zip(node.keys, node.values):
-                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
-                    continue
-                if not key.value.endswith("_perms"):
-                    continue
-                if not isinstance(value, ast.List):
-                    continue
-                try:
-                    ids = [str(ast.literal_eval(e)) for e in value.elts]
-                except Exception:
-                    continue
-                yield app_config.label, key.value, ids
+            try:
+                value = getattr(app_config, attr)
+            except Exception:
+                continue
+            if isinstance(value, (list, tuple)):
+                yield app_config.label, attr, [str(v) for v in value]
 
 
 class PermissionDeclarationConsistencyTestCase(TestCase):

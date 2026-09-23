@@ -34,6 +34,7 @@ from core.services import (
     user_authentication,
     wait_for_mutation,
 )
+from core.mutation_log_secrets import contains_secret, scrub_secrets
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
@@ -407,15 +408,20 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             or not getattr(user, "id", None)
         ):
             raise AuthenticationRequired()
+        carries_secret = contains_secret(data)
+        logged_data = scrub_secrets(data) if carries_secret else data
+        logged_details = data.get("client_mutation_details")
+        if carries_secret:
+            logged_details = scrub_secrets(logged_details)
 
         mutation_log = MutationLog.objects.create(
-            json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
+            json_content=json.dumps(logged_data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get("client_mutation_id"),
             client_mutation_label=data.get("client_mutation_label"),
             client_mutation_details=(
-                json.dumps(data.get("client_mutation_details"), cls=OpenIMISJSONEncoder)
-                if data.get("client_mutation_details")
+                json.dumps(logged_details, cls=OpenIMISJSONEncoder)
+                if logged_details
                 else None
             ),
         )
@@ -472,7 +478,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     success=False,
                     error=mutation_log.error,
                     message=mutation_log.client_mutation_label or mutation_log.error,
-                    metadata=data if data else None,
+                    # The front end receives the input echoed back; it must not
+                    # find there the password it has just sent - the response
+                    # travels through access logs, proxies and error reporters.
+                    metadata=scrub_secrets(data) if data else None,
                 )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
@@ -486,7 +495,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             logger.debug(
                 "[OpenIMISMutation %s] before mutate signal sent", mutation_log.id
             )
-            if core.async_mutations:
+            if core.async_mutations and not carries_secret:
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
@@ -616,6 +625,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                     if metadata.get("uuid"):
                                         break
                 if metadata:
+                    # This rewrite happens after the move to a terminal state, so
+                    # after the secrets have been masked (`_secret_free_fields`).
+                    # `metadata` most often comes from the already masked
+                    # `json_content`, but not always: the `elif data` branch above
+                    # starts again from the raw input, and `messages` is merged
+                    # into it. So mask again at write time, so that this path
+                    # cannot reintroduce what the masking has just removed.
+                    metadata = scrub_secrets(metadata)
                     mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
                     MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
         except Exception as exc:
@@ -635,7 +652,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             success=(mutation_log.status == MutationLog.SUCCESS),
             error=mutation_log.error,
             message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
-            metadata=metadata if metadata else None,
+            metadata=scrub_secrets(metadata) if metadata else None,
         )
 
 

@@ -2,7 +2,7 @@ from django.http import Http404, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from isodate import strftime
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -13,21 +13,65 @@ from django.utils.translation import gettext as _
 
 
 def check_user_rights(rights):
+    """Permission class requiring `rights` on top of authentication.
+
+    `rights` may be a list, or a zero-argument callable returning one. The
+    callable form exists for module-level decorators: `CoreConfig` cannot be
+    imported at the top of this file (circular import), and a decorator is
+    evaluated at import time, so the right has to be looked up on each request
+    instead of being captured.
+    """
+
     class UserWithRights(IsAuthenticated):
         def has_permission(self, request, view):
+            wanted = rights() if callable(rights) else rights
             return super().has_permission(request, view) and request.user.has_perms(
-                rights
+                wanted
             )
 
     return UserWithRights
 
 
+def _core_right(attr):
+    """Late lookup of a `CoreConfig` right, for use in module-level decorators."""
+
+    def resolve():
+        from core.apps import CoreConfig
+
+        return getattr(CoreConfig, attr)
+
+    return resolve
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    # If we don't specify the IsAuthenticated, the framework will look for the core.user_view permission and prevent
-    # any access from non-admin users
-    permission_classes = [IsAuthenticated]
+
+    # The right depends on the action. `IsAuthenticated` alone - what used to be
+    # here - opened a full ModelViewSet on `core.User` to every authenticated
+    # account: the list of all accounts for reading, and above all a PATCH on
+    # one's own row, `is_superuser` being serialised as writable. That was a
+    # direct privilege escalation, bypassing what `UpdateUserMutation` protects on
+    # the GraphQL side.
+    #
+    # `current_user` stays open to any authenticated caller: it only returns the
+    # caller's own row, and the frontend uses it on every login.
+    _ACTION_RIGHTS = {
+        "list": "gql_query_users_perms",
+        "retrieve": "gql_query_users_perms",
+        "create": "gql_mutation_create_users_perms",
+        "update": "gql_mutation_update_users_perms",
+        "partial_update": "gql_mutation_update_users_perms",
+        "destroy": "gql_mutation_delete_users_perms",
+    }
+
+    def get_permissions(self):
+        from core.apps import CoreConfig
+
+        right_attr = self._ACTION_RIGHTS.get(getattr(self, "action", None))
+        if right_attr is None:
+            return [IsAuthenticated()]
+        return [check_user_rights(getattr(CoreConfig, right_attr))()]
 
     @action(detail=False)
     def current_user(self, request):
@@ -85,7 +129,12 @@ def _serialize_job(job):
     )
 
 
+# New right (900201). The endpoint had no `permission_classes` at all, and the
+# assembly defines no `DEFAULT_PERMISSION_CLASSES`: so it resolved to `AllowAny`.
+# An anonymous caller got the name, the trigger, the next run and the **handler
+# import path** of every scheduled job.
 @api_view(["GET"])
 @require_GET
+@permission_classes([check_user_rights(_core_right("gql_query_scheduled_jobs_perms"))])
 def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])

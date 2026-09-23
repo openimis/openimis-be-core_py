@@ -19,7 +19,6 @@ from django.apps import apps as django_apps
 from django.test import TestCase
 
 from core.apps import (
-    DEFAULT_CFG,
     DJANGO_PERMS,
     CoreConfig,
     _PERM_CFG,
@@ -57,7 +56,7 @@ class PermissionDeclarationTestCase(TestCase):
     def test_right_ids_unchanged(self):
         """Pins the deployed right ids - see EXPECTED_RIGHTS."""
         self.assertEqual(
-            {key: DEFAULT_CFG[key] for key in EXPECTED_RIGHTS},
+            {key: getattr(CoreConfig, key) for key in EXPECTED_RIGHTS},
             EXPECTED_RIGHTS,
         )
 
@@ -82,14 +81,13 @@ class PermissionDeclarationTestCase(TestCase):
 
     def test_no_right_list_is_empty(self):
         """An empty list is `has_perms` -> True, i.e. granted to everyone."""
-        empty = [key for key in _PERM_CFG if not DEFAULT_CFG[key]]
+        empty = [key for key in _PERM_CFG if not getattr(CoreConfig, key)]
         self.assertEqual(empty, [], f"empty right lists grant access to all: {empty}")
 
-    def test_configured_attributes_are_populated(self):
-        """`ready()` has run, so the attributes carry the config, not the placeholder."""
-        for key in _PERM_CFG:
+    def test_attributes_carry_the_declared_right(self):
+        for key, (entity, action) in _PERM_CFG.items():
             with self.subTest(key=key):
-                self.assertEqual(getattr(CoreConfig, key), DEFAULT_CFG[key])
+                self.assertEqual(getattr(CoreConfig, key), perms(entity, action))
 
     def test_right_ids_are_unique_within_core(self):
         seen = {}

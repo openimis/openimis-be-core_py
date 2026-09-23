@@ -3,6 +3,8 @@ import os
 import importlib
 import logging
 from django.apps import AppConfig
+
+from core.rights_declaration import RightsDeclaration
 from django.conf import settings
 
 from core.bootstrap import (
@@ -73,66 +75,24 @@ DJANGO_PERMS = {
     "maskedData": {
         "query": ("core.view_masked_data", 900101),
     },
+    # Idem: the scheduler is a capability, not a model, hence the 9002xx block next to
+    # maskedData rather than a slot in the user/role blocks.
+    #
+    # New right. `/api/core/scheduled_jobs` had `@api_view(["GET"])` with no
+    # `permission_classes` and the assembly sets no `DEFAULT_PERMISSION_CLASSES`, so it
+    # resolved to `AllowAny`: an anonymous caller read the name, trigger, next run time
+    # and **handler import path** of every scheduled job. Not a right bypassed - a
+    # right that was never asked for, on a reconnaissance endpoint.
+    "scheduledJob": {
+        "query": ("core.view_scheduled_job", 900201),
+    },
 }
 
 
-def _perm_entries(entity, actions):
-    try:
-        entity_perms = DJANGO_PERMS[entity]
-    except KeyError:
-        raise KeyError(f"No permissions declared for '{entity}'")
-    missing = [action for action in actions if action not in entity_perms]
-    if missing:
-        raise KeyError(f"No permission declared for {entity}.{missing}")
-    return [entity_perms[action] for action in actions]
 
 
-def perms(entity, *actions):
-    """
-    The openIMIS rights of those actions, as the list of decimal strings the `_perms`
-    config and `has_perms` expect. This is what is enforced today.
-
-    A multi action call is an **any of** list: `has_perms` ORs by default
-    (`core.access.has_role_perms`), so `perms("role", "update", "replace")` passes for a
-    user holding either. Pass `list_evaluation_or=False` to `has_perms` for "all of".
-    """
-    return [str(right_id) for _, right_id in _perm_entries(entity, actions)]
 
 
-def django_perms(entity, *actions):
-    """
-    The django permission names of those actions. Declared but **not** enforced yet:
-    nothing grants them, so checking one today would deny every non superuser. Kept so
-    that the move to django permissions is a config change rather than an API one.
-
-    Mind the semantics flip: django's own `User.has_perms` requires **all** of the
-    permissions it is given, where openIMIS `has_perms` defaults to any. Do not hand a
-    multi action list to both and expect the same answer.
-    """
-    return [perm for perm, _ in _perm_entries(entity, actions)]
-
-
-def require(user, entity, *actions, match="any"):
-    """
-    Whether `user` holds the rights for those actions - the call site form of `perms`.
-
-    `match="any"` (the default, matching `has_perms`) passes on any one of the actions;
-    `match="all"` demands every one. Keeps an OR rule to a single call instead of a
-    chain of `has_perms`.
-    """
-    if match not in ("any", "all"):
-        raise ValueError("match must be 'any' or 'all'")
-    return user.has_perms(
-        perms(entity, *actions), list_evaluation_or=(match == "any")
-    )
-
-
-# The `_perms` config keys, each mapped to the entity/action it carries. Single source
-# for both the DEFAULT_CFG entries and the `_configure_permissions` assignments below,
-# so a right cannot be declared in one and forgotten in the other - which is how
-# `gql_query_users_profile_perms` came to sit in DEFAULT_CFG with right 122000 while
-# never being assigned to `CoreConfig`, leaving it unreadable and its right
-# unenforceable.
 _PERM_CFG = {
     "gql_query_users_perms": ("user", "query"),
     "gql_query_users_profile_perms": ("user", "profile"),
@@ -154,7 +114,15 @@ _PERM_CFG = {
     "gql_mutation_update_claim_administrator_perms": ("claimAdministrator", "update"),
     "gql_mutation_delete_claim_administrator_perms": ("claimAdministrator", "delete"),
     "gql_query_enable_viewing_masked_data_perms": ("maskedData", "query"),
+    "gql_query_scheduled_jobs_perms": ("scheduledJob", "query"),
 }
+
+RIGHTS = RightsDeclaration(MODULE_NAME, DJANGO_PERMS, _PERM_CFG)
+
+perms = RIGHTS.perms
+django_perms = RIGHTS.django_perm_names
+require = RIGHTS.require
+configured_perms = RIGHTS.configured
 
 DEFAULT_CFG = {
     "username_code_length": "12",  # cannot be bigger than 50 unless modified length limit
@@ -176,10 +144,6 @@ DEFAULT_CFG = {
     ),
     "password_reset_template": "password_reset.txt",
     "currency": "$",
-    # Every `_perms` entry, derived from _PERM_CFG so the right ids live in exactly one
-    # place (DJANGO_PERMS). An unknown entity or action raises here, at import time,
-    # rather than silently yielding [] - which `has_perms` treats as "granted".
-    **{key: perms(*entity_action) for key, entity_action in _PERM_CFG.items()},
     "fields_controls_user": {},
     "fields_controls_eo": {},
     "is_valid_health_facility_contract_required": False,
@@ -201,25 +165,27 @@ class CoreConfig(AppConfig):
     # (and denies nothing by accident) before the config is loaded. Declared explicitly
     # rather than generated, to stay greppable; _test_perm_cfg_matches_attributes keeps
     # the two lists in step.
-    gql_query_roles_perms = []
-    gql_mutation_create_roles_perms = []
-    gql_mutation_update_roles_perms = []
-    gql_mutation_replace_roles_perms = []
-    gql_mutation_duplicate_roles_perms = []
-    gql_mutation_delete_roles_perms = []
-    gql_query_users_perms = []
-    gql_query_users_profile_perms = []
-    gql_mutation_create_users_perms = []
-    gql_mutation_update_users_perms = []
-    gql_mutation_delete_users_perms = []
-    gql_query_enrolment_officers_perms = []
-    gql_mutation_create_enrolment_officers_perms = []
-    gql_mutation_update_enrolment_officers_perms = []
-    gql_mutation_delete_enrolment_officers_perms = []
-    gql_query_claim_administrator_perms = []
-    gql_mutation_create_claim_administrator_perms = []
-    gql_mutation_update_claim_administrator_perms = []
-    gql_mutation_delete_claim_administrator_perms = []
+    # Rights: constants derived from DJANGO_PERMS, no longer overridable. They go
+    # neither through DEFAULT_CFG nor through ready() any more.
+    gql_query_roles_perms = RIGHTS.perms("role", "query")
+    gql_mutation_create_roles_perms = RIGHTS.perms("role", "create")
+    gql_mutation_update_roles_perms = RIGHTS.perms("role", "update")
+    gql_mutation_replace_roles_perms = RIGHTS.perms("role", "replace")
+    gql_mutation_duplicate_roles_perms = RIGHTS.perms("role", "duplicate")
+    gql_mutation_delete_roles_perms = RIGHTS.perms("role", "delete")
+    gql_query_users_perms = RIGHTS.perms("user", "query")
+    gql_query_users_profile_perms = RIGHTS.perms("user", "profile")
+    gql_mutation_create_users_perms = RIGHTS.perms("user", "create")
+    gql_mutation_update_users_perms = RIGHTS.perms("user", "update")
+    gql_mutation_delete_users_perms = RIGHTS.perms("user", "delete")
+    gql_query_enrolment_officers_perms = RIGHTS.perms("enrolmentOfficer", "query")
+    gql_mutation_create_enrolment_officers_perms = RIGHTS.perms("enrolmentOfficer", "create")
+    gql_mutation_update_enrolment_officers_perms = RIGHTS.perms("enrolmentOfficer", "update")
+    gql_mutation_delete_enrolment_officers_perms = RIGHTS.perms("enrolmentOfficer", "delete")
+    gql_query_claim_administrator_perms = RIGHTS.perms("claimAdministrator", "query")
+    gql_mutation_create_claim_administrator_perms = RIGHTS.perms("claimAdministrator", "create")
+    gql_mutation_update_claim_administrator_perms = RIGHTS.perms("claimAdministrator", "update")
+    gql_mutation_delete_claim_administrator_perms = RIGHTS.perms("claimAdministrator", "delete")
     is_valid_health_facility_contract_required = None
     locked_user_password_hash = None
 
@@ -239,8 +205,8 @@ class CoreConfig(AppConfig):
     # instance. Defaults to off when the assembly does not define it.
     impersonation_enabled = getattr(settings, "IMPERSONATION_ENABLED", False)
 
-    gql_query_enable_viewing_masked_data_perms = []
-
+    gql_query_enable_viewing_masked_data_perms = RIGHTS.perms("maskedData", "query")
+    gql_query_scheduled_jobs_perms = RIGHTS.perms("scheduledJob", "query")
     csrf_protect_login = None
 
     def _import_module(self, cfg, k):
@@ -302,7 +268,14 @@ class CoreConfig(AppConfig):
                 # auth's own post_migrate handler creates the Permission, so it
                 # can still be missing the first time this runs on a fresh
                 # database
-                permission = Permission.objects.filter(codename="view_user").first()
+                from django.contrib.contenttypes.models import ContentType
+
+                from core.models import User as CoreUser
+
+                permission = Permission.objects.filter(
+                    codename="view_user",
+                    content_type=ContentType.objects.get_for_model(CoreUser),
+                ).first()
                 if permission:
                     g.permissions.add(permission)
                 else:
@@ -319,24 +292,6 @@ class CoreConfig(AppConfig):
         )
 
     def _configure_permissions(self, cfg):
-        # Driven by _PERM_CFG rather than one assignment per right: adding a right to
-        # DJANGO_PERMS + _PERM_CFG is now enough to have it read from config, and a key
-        # can no longer be declared in DEFAULT_CFG yet never reach CoreConfig.
-        for key in _PERM_CFG:
-            value = cfg[key]
-            if not value:
-                # `has_perms([])` returns True: an empty right list grants the action to
-                # everyone, authenticated or not. That is almost never intended, and a
-                # silent one is how several queries ended up effectively public, so say
-                # so loudly. Raising here instead would be the fail closed option, at
-                # the cost of refusing to start on bad ModuleConfiguration data.
-                logger.warning(
-                    "core: %s resolved to an empty right list - `has_perms` treats that "
-                    "as granted to everyone. Check the ModuleConfiguration override.",
-                    key,
-                )
-            setattr(CoreConfig, key, value)
-
         CoreConfig.csrf_protect_login = cfg["csrf_protect_login"]
 
         CoreConfig.fields_controls_user = cfg["fields_controls_user"]
@@ -368,6 +323,8 @@ class CoreConfig(AppConfig):
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
         self._configure_additional_settings(cfg)
+        from core.rights_sync import install as install_rights_sync
+        install_rights_sync(self)
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]
