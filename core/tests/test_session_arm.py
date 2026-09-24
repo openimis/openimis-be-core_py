@@ -5,6 +5,7 @@ from secrets import token_hex
 from django.conf import settings
 from django.contrib.auth import HASH_SESSION_KEY, SESSION_KEY, get_user
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.core.cache import cache
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
@@ -187,6 +188,70 @@ class SessionAuthHashTest(TestCase):
 
         self.assertNotEqual(before, User.objects.get(
             username="sessionArmTech").get_session_auth_hash())
+
+
+class SessionAuthHashCacheTest(TestCase):
+    """The object cache is off under tests (USE_CACHE = not IS_TESTING); on
+    here. A worker's cached copy of the user has to hash like the row, or a
+    session opened on another worker after a password change is flushed here.
+    """
+
+    def setUp(self):
+        self.user = create_test_interactive_user(
+            username="sessionArmCache", password=_password()
+        )
+        cache.clear()
+        User.USE_CACHE = True
+        InteractiveUser.USE_CACHE = True
+        self.addCleanup(self._restore)
+
+    @staticmethod
+    def _restore():
+        User.USE_CACHE = False
+        InteractiveUser.USE_CACHE = False
+        cache.clear()
+
+    def test_a_cached_copy_hashes_like_the_row(self):
+        InteractiveUser.objects.all().filter(pk=self.user.i_user.pk).first(
+        ).update_cache()
+        User.objects.all().filter(pk=self.user.pk).first().update_cache()
+        cached = User.objects.get(username=self.user.username)
+        # Another worker changes the password: only the hash and salt move, so
+        # the password is the one component that differs.
+        detached = InteractiveUser.objects.all().get(pk=self.user.i_user.pk)
+        detached.set_password(_password())
+        InteractiveUser.objects.all().filter(pk=detached.pk).update(
+            password=detached.password, private_key=detached.private_key
+        )
+
+        cache.clear()
+        from_the_row = User.objects.get(username=self.user.username)
+
+        self.assertEqual(
+            cached.get_session_auth_hash(), from_the_row.get_session_auth_hash()
+        )
+
+
+class TokenAuthAdminSessionTest(openIMISGraphQLTestCase):
+    """tokenAuth is what hands the frontend's staff users their admin session;
+    every other session test calls open_admin_session directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = _password()
+        cls.user = create_test_interactive_user(
+            username="sessionArmTokenAuth", password=cls.password
+        )
+
+    def test_logging_in_opens_the_admin_session(self):
+        response = self.query(
+            'mutation { tokenAuth(username: "%s", password: "%s") { token } }'
+            % (self.user.username, self.password)
+        )
+
+        self.assertResponseNoErrors(response)
+        self.assertEqual(str(self.client.session[SESSION_KEY]), str(self.user.id))
 
 
 class RevokedSessionTest(TestCase):
