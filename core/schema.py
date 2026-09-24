@@ -2016,15 +2016,18 @@ def check_email_validity(email):
 def set_user_deleted(user):
     try:
         if user.i_user:
-            # Disabling an account has to end its sessions; nothing else here
-            # does, now that the signing key is no longer per-user.
-            revocation.bump(user.i_user)
-            user.i_user.delete_history()
-            # delete_history() writes nothing for an interactive user
-            # (OpenIMISHistoryMixin.delete_history is `pass`), so this is what
-            # persists the revocation point. silent, because a bump inside the
-            # same second changes no field and save() rejects a no-op update.
-            user.i_user.save(silent=True)
+            with transaction.atomic():
+                i_user = InteractiveUser.locked_from_database(user.i_user.pk)
+                # Disabling an account has to end its sessions; nothing else
+                # here does, now that the signing key is no longer per-user.
+                revocation.bump(i_user)
+                i_user.delete_history()
+                # delete_history() writes nothing for an interactive user
+                # (OpenIMISHistoryMixin.delete_history is `pass`), so this is
+                # what persists the revocation point. silent, because a bump
+                # inside the same second changes no field and save() rejects a
+                # no-op update.
+                i_user.save(silent=True)
         if user.t_user:
             user.t_user.delete_history()
         if user.officer:
