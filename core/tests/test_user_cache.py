@@ -95,8 +95,8 @@ class UserCacheTestCase(openIMISGraphQLTestCase):
         )
 
     def test_cached_interactive_user_keeps_the_fields_auth_depends_on(self):
-        # jwt_decode_user_key reads i_user.private_key to verify the signature,
-        # so the cached instance has to carry it
+        # check_password salts with i_user.private_key, so the cached instance
+        # has to carry it
         i_user = self.user.i_user
         i_user.private_key = "a-private-signing-key"
         i_user.save()

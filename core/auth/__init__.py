@@ -1,5 +1,5 @@
 def decode(token, context=None):
-    """GRAPHQL_JWT["JWT_DECODE_HANDLER"]. Accepts both token shapes."""
+    """GRAPHQL_JWT["JWT_DECODE_HANDLER"]."""
     # Imported here, not at module level: the providers import core.auth.keys.
     from core.auth import revocation
     from core.auth.registry import resolve
