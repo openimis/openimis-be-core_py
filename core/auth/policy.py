@@ -12,10 +12,13 @@ saved value can be validated against them and re-applied without a restart.
 """
 
 import logging
+from datetime import datetime
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db.models import Q
 
 from core.apps import CoreConfig
+from core.bootstrap import database_expected, unavailability_reason
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,47 @@ def configure(cfg):
             else ""
         ),
     )
+
+
+def _read():
+    """The policy the core configuration row holds, straight from the database.
+
+    Not ModuleConfiguration.get_or_default: that tolerates every error and
+    answers with the defaults, which here would turn an unreadable row into
+    "optional" - everyone exempt.
+    """
+    from core.apps import DEFAULT_CFG, MODULE_NAME
+    from core.models import ModuleConfiguration
+
+    row = ModuleConfiguration.objects.filter(
+        Q(is_disabled_until=None) | Q(is_disabled_until__lt=datetime.now()),
+        layer="be",
+        module=MODULE_NAME,
+    ).first()
+    return {**DEFAULT_CFG, **(row._cfg if row else {})}
+
+
+def load():
+    """Read the policy from the configuration row and apply it.
+
+    Called from CoreConfig.ready() and after a configuration row is saved. A
+    read that fails leaves the policy unknown rather than defaulting it, and
+    mandates() tries again at the next login.
+    """
+    if not database_expected():
+        logger.info("Second-factor policy not loaded: %s", unavailability_reason())
+        CoreConfig.second_factor_policy = None
+        return
+    try:
+        cfg = _read()
+    except Exception:
+        logger.warning(
+            "Second-factor policy could not be read; logins are refused until it can be",
+            exc_info=True,
+        )
+        CoreConfig.second_factor_policy = None
+        return
+    configure(cfg)
 
 
 def _is_privileged(user):
@@ -88,6 +132,13 @@ def mandates(user):
     HTTP Basic stays enabled for. A technical user that is privileged is not
     exempt: it reaches the Django admin like any administrator.
     """
+    if CoreConfig.second_factor_policy is None:
+        load()
+        if CoreConfig.second_factor_policy is None:
+            raise ImproperlyConfigured(
+                "The second-factor policy could not be read; refusing to decide "
+                "who needs a second factor until it can be."
+            )
     mode = CoreConfig.second_factor_policy
     if mode not in POLICIES:
         # A typo in the configuration must not quietly become "optional"
@@ -173,7 +224,4 @@ def reload_configuration(instance):
     instance: a row disabled with is_disabled_until, or a second row, resolves
     exactly as it will at the next start.
     """
-    from core.apps import DEFAULT_CFG, MODULE_NAME
-    from core.models import ModuleConfiguration
-
-    configure(ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG))
+    load()

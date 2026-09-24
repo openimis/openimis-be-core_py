@@ -111,8 +111,11 @@ privileged technical account normally takes.
 The row is validated when saved: an unknown policy value, or a role name that
 matches no existing role, is refused rather than silently exempting anyone. A
 change saved from inside the application - the Django admin, a mutation -
-applies without a restart; one made by direct SQL or from a separate `manage.py
-shell` reaches the running server only when it restarts.
+applies without a restart in the process that saved it. Other worker processes
+of a multi-process server, and a change made by direct SQL or from a separate
+`manage.py shell`, pick it up only when they restart. If the configuration
+cannot be read when a process starts, that process refuses logins until a
+later read succeeds; it never falls back to `optional`.
 
 **Renaming a role that the mandate names takes those users out of it.** The
 mandate matches on the role's name, and renaming a role keeps its id and moves

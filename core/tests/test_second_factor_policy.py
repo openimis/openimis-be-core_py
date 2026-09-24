@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from axes.models import AccessAttempt
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.db import DatabaseError
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.test import RequestFactory, TestCase
 from django_otp.plugins.otp_totp.models import TOTPDevice
@@ -507,4 +508,50 @@ class PolicyConfigurationReloadTest(TestCase):
                     second_factor_mandatory_roles=["Supervisor"],
                 ).save()
             self.assertEqual(CoreConfig.second_factor_policy, "per_role")
+            self.assertEqual(CoreConfig.second_factor_mandatory_roles, ["Supervisor"])
+
+
+class PolicyLoadTest(TestCase):
+    """The policy is read at start straight from the row, and a read that
+    fails leaves it unknown and refuses logins rather than defaulting to
+    "optional" - everyone exempt."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = create_test_interactive_user(
+            username="policyLoad", password=_password(), roles=[]
+        )
+
+    def test_a_failed_read_leaves_the_policy_unknown_not_optional(self):
+        with _policy(policy.OPTIONAL):
+            with patch.object(policy, "_read", side_effect=DatabaseError("down")):
+                policy.load()
+            self.assertIsNone(CoreConfig.second_factor_policy)
+
+    def test_logins_are_refused_while_the_row_cannot_be_read(self):
+        with _policy(None):
+            with patch.object(policy, "_read", side_effect=DatabaseError("down")):
+                with self.assertRaises(ImproperlyConfigured):
+                    policy.mandates(self.user)
+
+    def test_the_first_login_after_the_row_becomes_readable_loads_it(self):
+        ModuleConfiguration.objects.bulk_create(
+            [_row(second_factor_policy="mandatory")]
+        )
+        with _policy(None):
+            self.assertTrue(policy.mandates(self.user))
+            self.assertEqual(CoreConfig.second_factor_policy, policy.MANDATORY)
+
+    def test_load_applies_the_row(self):
+        ModuleConfiguration.objects.bulk_create(
+            [
+                _row(
+                    second_factor_policy="per_role",
+                    second_factor_mandatory_roles=["Supervisor"],
+                )
+            ]
+        )
+        with _policy(policy.OPTIONAL):
+            policy.load()
+            self.assertEqual(CoreConfig.second_factor_policy, policy.PER_ROLE)
             self.assertEqual(CoreConfig.second_factor_mandatory_roles, ["Supervisor"])
