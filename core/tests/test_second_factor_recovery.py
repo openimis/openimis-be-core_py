@@ -270,6 +270,25 @@ class ReissueRecoveryCodesTest(TestCase):
         self.assertEqual(raised.exception.code, INVALID_SECOND_FACTOR)
         self.assertEqual(_codes_stored(self.user), old)
 
+    def test_a_wrong_code_charges_the_devices_and_the_back_off_then_bites(self):
+        # The per-device back-off is the only thing metering a guess here - a
+        # wrong code is deliberately not reported to the account lockout - so
+        # the charge has to outlive the refusal that carries it.
+        device = _enrol(self.user)
+        devices.issue_recovery_codes(self.user)
+
+        with self.assertRaises(SecondFactorError) as first:
+            recovery.reissue_recovery_codes(self.user, "000000")
+        self.assertEqual(first.exception.code, INVALID_SECOND_FACTOR)
+
+        device.refresh_from_db()
+        self.assertEqual(device.throttling_failure_count, 1)
+
+        with self.assertRaises(SecondFactorError) as second:
+            recovery.reissue_recovery_codes(self.user, "000000")
+        self.assertEqual(second.exception.code, SECOND_FACTOR_THROTTLED)
+        self.assertTrue(second.exception.extensions["lockedUntil"])
+
     def test_a_recovery_code_can_refill_the_set_and_is_spent_doing_it(self):
         _enrol(self.user)
         old = devices.issue_recovery_codes(self.user)
