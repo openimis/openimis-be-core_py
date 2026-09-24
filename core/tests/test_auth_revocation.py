@@ -7,7 +7,6 @@ from unittest.mock import patch
 import jwt as pyjwt
 from django.core.cache import cache
 from django.test import TestCase, override_settings
-from graphql_jwt.settings import jwt_settings
 
 from core.apps import CoreConfig
 from core.auth import decode
@@ -500,27 +499,30 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         self.assertGreaterEqual(_stored_not_before(self.user), before)
 
     def test_a_token_older_than_the_sign_out_stops_working(self):
-        # Signed the way the encoder signs today - the per-user salt, no kid -
-        # so this goes through the real HTTP authentication path rather than
-        # calling decode directly.
-        #
         # Deliberately not the token that called the mutation. The check rejects
         # tokens issued strictly before the revocation point, and both happen
         # inside the same second here, so that one survives by design; see
         # test_a_token_issued_in_the_same_second_survives below.
+        #
+        # Creating the user stamped a not-before this second, which a token
+        # issued a minute ago already fails. Backdated first, so the control
+        # below shows the older token working and only the sign-out ends it.
+        _set_not_before(self.user, _now() - 120)
+        with with_deployment_key:
+            older = _sign(self.user.username, issued_at=_now() - 60)
+            before = self.client.get(
+                "/api/core/users/current_user/", HTTP_AUTHORIZATION=f"Bearer {older}"
+            )
+        self.assertEqual(before.status_code, 200)
+
         token = BaseTestContext(user=self.user).get_jwt()
         self.query(self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
 
-        older = pyjwt.encode(
-            {"username": self.user.username, "exp": _exp(), "nbf": _now() - 60},
-            self.user.i_user.private_key,
-            algorithm=jwt_settings.JWT_ALGORITHM,
-        )
-        response = self.client.get(
-            "/api/core/users/current_user/", HTTP_AUTHORIZATION=f"Bearer {older}"
-        )
-
-        self.assertEqual(response.status_code, 401)
+        with with_deployment_key:
+            after = self.client.get(
+                "/api/core/users/current_user/", HTTP_AUTHORIZATION=f"Bearer {older}"
+            )
+        self.assertEqual(after.status_code, 401)
 
     def test_a_token_issued_after_the_sign_out_works(self):
         token = BaseTestContext(user=self.user).get_jwt()
