@@ -22,6 +22,9 @@ with_deployment_key = override_settings(
     JWT_DEPLOYMENT_KEYS={DEPLOYMENT_KID: DEPLOYMENT_KEY},
     JWT_DEPLOYMENT_ALGORITHM="HS256",
 )
+# An assembly can provision a key for the whole test run, so a test that
+# means "nothing provisioned" has to say so.
+without_signing_key = override_settings(JWT_SIGNING_KEY=None)
 
 
 @dataclass
@@ -47,6 +50,7 @@ def _sign(key, kid=None, algorithm="HS256", **claims):
     )
 
 
+@without_signing_key
 class LegacyTokenDecodeTest(TestCase):
     """Tokens signed with the per-user salt - what every deployment issues
     today. They carry no kid.
@@ -139,6 +143,7 @@ class DeploymentKeyDecodeTest(TestCase):
             decode(token)
 
 
+@without_signing_key
 class NoDeploymentKeyConfiguredTest(TestCase):
     """The default state: no keypair provisioned, so no kid resolves."""
 
