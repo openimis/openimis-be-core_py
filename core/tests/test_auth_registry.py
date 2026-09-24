@@ -59,6 +59,9 @@ class StubProvider(IdentityProvider):
 with_stub_provider = override_settings(
     AUTH_TOKEN_PROVIDERS=["core.tests.test_auth_registry.StubProvider"]
 )
+# An assembly can provision a key for the whole test run, so a test that
+# means "nothing provisioned" has to say so.
+without_signing_key = override_settings(JWT_SIGNING_KEY=None)
 
 
 def _exp(days=1):
@@ -71,6 +74,7 @@ def _stub_token(subject="federatedUser"):
     )
 
 
+@without_signing_key
 class ProviderRoutingTest(TestCase):
     def setUp(self):
         StubProvider.verify_calls = 0
