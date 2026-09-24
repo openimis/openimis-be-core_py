@@ -10,7 +10,7 @@ from django.test import TestCase, override_settings
 
 from core.apps import CoreConfig
 from core.auth import decode
-from core.auth import revocation
+from core.auth import keys, revocation
 from core.auth.claims import claims_from_payload, issued_at_from
 from core.models import InteractiveUser, User
 from core.models.openimis_graphql_test_case import (
@@ -569,6 +569,16 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         refused = "errors" in body or (payload and payload["success"] is False)
         self.assertTrue(refused, body)
 
+    def _refresh(self, token):
+        return self.query(
+            """
+            mutation refresh($token: String!) {
+                refreshToken(token: $token) { token }
+            }
+            """,
+            variables={"token": token},
+        )
+
     def test_a_revoked_token_cannot_be_refreshed(self):
         # Single-token refresh re-decodes what it is handed, so the revocation
         # check covers it and there is no way to mint a fresh token from a dead
@@ -578,23 +588,26 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         # a token minted in the same second would survive by design and prove
         # nothing either way.
         _set_not_before(self.user, _now() - 120)
-        older = _sign(self.user.username, issued_at=_now() - 60, origIat=_now() - 60)
-        with with_deployment_key:
-            self.assertEqual(decode(older)["username"], self.user.username)
+        # Signed with the provisioned key, as the encoder signs, and refreshed
+        # outside any override: re-issuing has to succeed here, or a refused
+        # refresh below would prove nothing about revocation.
+        private_key, kid = keys.signing_key()
+        older = pyjwt.encode(
+            {
+                "username": self.user.username,
+                "exp": _exp(),
+                "iat": _now() - 60,
+                "origIat": _now() - 60,
+            },
+            private_key,
+            algorithm=keys.algorithm(),
+            headers={"kid": kid},
+        )
+        self.assertNotIn("errors", json.loads(self._refresh(older).content))
 
         token = BaseTestContext(user=self.user).get_jwt()
         self.query(self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
 
-        with with_deployment_key:
-            response = self.query(
-                """
-                mutation refresh($token: String!) {
-                    refreshToken(token: $token) { token }
-                }
-                """,
-                variables={"token": older},
-            )
-            with self.assertRaises(pyjwt.InvalidTokenError):
-                decode(older)
-
-        self.assertIn("errors", json.loads(response.content))
+        self.assertIn("errors", json.loads(self._refresh(older).content))
+        with self.assertRaises(pyjwt.InvalidTokenError):
+            decode(older)
