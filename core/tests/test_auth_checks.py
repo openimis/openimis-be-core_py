@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 
-from core.auth import checks
+from core.auth import checks, keys
 
 
 def _keypair():
@@ -67,16 +67,26 @@ class SigningKeyCheckTest(TestCase):
 class DeploymentKeysCheckTest(TestCase):
     """`core.auth.W001` - the JWKS view skips what it cannot publish, silently
     and on every request. Saying so once at startup is where it belongs.
+    `core.auth.W003` - an entry keyed by a name no token carries.
     """
 
-    def test_a_publishable_key_set_passes(self):
-        public_pem = SIGNING_KEY.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        ).decode()
+    PUBLIC_PEM = SIGNING_KEY.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
 
-        with override_settings(JWT_DEPLOYMENT_KEYS={"retiring": public_pem}):
+    def test_a_publishable_key_set_passes(self):
+        kid = keys.derive_kid(SIGNING_KEY.public_key())
+
+        with override_settings(JWT_DEPLOYMENT_KEYS={kid: self.PUBLIC_PEM}):
             self.assertEqual(checks.deployment_keys_are_publishable(None), [])
+
+    def test_an_entry_keyed_by_a_name_warns_with_the_thumbprint(self):
+        with override_settings(JWT_DEPLOYMENT_KEYS={"retiring": self.PUBLIC_PEM}):
+            warnings = checks.deployment_keys_are_publishable(None)
+
+        self.assertEqual([warning.id for warning in warnings], ["core.auth.W003"])
+        self.assertIn(keys.derive_kid(SIGNING_KEY.public_key()), warnings[0].msg)
 
     def test_a_symmetric_entry_warns_and_names_its_kid(self):
         with override_settings(JWT_DEPLOYMENT_KEYS={"shared": token_hex(32)}):
