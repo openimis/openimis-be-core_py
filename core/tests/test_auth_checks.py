@@ -96,3 +96,22 @@ class DeploymentKeysCheckTest(TestCase):
             errors = checks.deployment_keys_are_publishable(None)
 
         self.assertEqual([error.id for error in errors], ["core.auth.E003"])
+
+
+class DeploymentAlgorithmCheckTest(TestCase):
+    """`core.auth.E006` - an algorithm the RSA signing key cannot sign with
+    turns every login into a server error, so it fails the start instead."""
+
+    def test_the_default_passes(self):
+        self.assertEqual(checks.deployment_algorithm_fits_the_signing_key(None), [])
+
+    @override_settings(JWT_DEPLOYMENT_ALGORITHM="PS256")
+    def test_another_rsa_algorithm_passes(self):
+        self.assertEqual(checks.deployment_algorithm_fits_the_signing_key(None), [])
+
+    @override_settings(JWT_DEPLOYMENT_ALGORITHM="HS256")
+    def test_a_symmetric_algorithm_is_an_error(self):
+        errors = checks.deployment_algorithm_fits_the_signing_key(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E006"])
+        self.assertIn("HS256", errors[0].msg)
