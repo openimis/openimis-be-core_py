@@ -215,6 +215,10 @@ class SecondFactorVerifyTest(TestCase):
         self.totp.refresh_from_db()
         self.assertEqual(self.totp.throttling_failure_count, 0)
 
+    def test_an_empty_device_id_tries_every_device(self):
+        result = second_factor.verify(self.user, _code(self.totp), device_id="")
+        self.assertTrue(result.ok)
+
     def test_a_device_belonging_to_someone_else_is_refused(self):
         create_test_interactive_user(username="otp_other")
         other = User.objects.get(username="otp_other")
@@ -233,7 +237,6 @@ class SecondFactorVerifyTest(TestCase):
             "core.user/abc",     # same, and an unparseable pk
             "nosuchapp.model/1",  # LookupError, already suppressed upstream
             "nodelimiter",       # ValueError, already suppressed upstream
-            "",
             12345,               # not a string at all
         ]:
             with self.subTest(device_id=bad):

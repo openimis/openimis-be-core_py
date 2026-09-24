@@ -77,7 +77,9 @@ def _earliest_lift(blocked):
 
 
 def _candidates(user, device_id):
-    if device_id is None:
+    # Empty counts as unset: clients send "" for a field they leave blank, and
+    # treating it as a device id would refuse a correct code.
+    if not device_id:
         return list(devices_for_user(user, confirmed=True, for_verify=True))
     try:
         device = Device.from_persistent_id(device_id, for_verify=True)
