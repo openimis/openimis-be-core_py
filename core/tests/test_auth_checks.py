@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 
 from core.apps import CoreConfig
-from core.auth import checks, keys
+from core.auth import checks, keys, policy
 from core.test_helpers import create_test_role
 
 
@@ -170,8 +170,18 @@ class SecondFactorPolicyCheckTest(TestCase):
     def test_a_policy_not_read_yet_is_not(self):
         # No schema during migrate, or the database down at start: the login
         # path refuses until the policy is read, so this must not fail the run.
-        with patch.object(CoreConfig, "second_factor_policy", None):
+        with patch.object(CoreConfig, "second_factor_policy", None), patch.object(
+            policy, "_unread", True
+        ):
             self.assertEqual(checks.second_factor_policy_is_known(None), [])
+
+    def test_a_null_read_from_the_row_is_reported(self):
+        with patch.object(CoreConfig, "second_factor_policy", None), patch.object(
+            policy, "_unread", False
+        ):
+            errors = checks.second_factor_policy_is_known(None)
+
+        self.assertEqual([error.id for error in errors], ["core.auth.E005"])
 
 
 class SecondFactorRolesCheckTest(TestCase):
