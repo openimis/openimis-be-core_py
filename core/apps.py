@@ -65,6 +65,11 @@ DEFAULT_CFG = {
     "is_valid_health_facility_contract_required": False,
     "secondary_calendar": None,
     "locked_user_password_hash": "locked",
+    # How interactive users' passwords are stored. "argon2" (the default)
+    # also rewrites a legacy SHA256 row the first time its password
+    # verifies; "sha256" keeps the legacy format and rewrites nothing.
+    # Both values verify both formats.
+    "password_hasher": "argon2",
     "gql_query_enable_viewing_masked_data_perms": ["900101"],
     "csrf_protect_login": True,
 }
@@ -102,6 +107,7 @@ class CoreConfig(AppConfig):
     gql_mutation_delete_claim_administrator_perms = []
     is_valid_health_facility_contract_required = None
     locked_user_password_hash = None
+    password_hasher = None
 
     fields_controls_user = {}
     fields_controls_eo = {}
@@ -285,6 +291,16 @@ class CoreConfig(AppConfig):
         self._configure_currency(cfg)
         self._configure_permissions(cfg)
         self._configure_additional_settings(cfg)
+
+        from core.auth import passwords
+        from core.module_config_registry import (
+            register_reloader,
+            register_validator,
+        )
+
+        passwords.configure(cfg)
+        register_validator(MODULE_NAME, passwords.validate_configuration)
+        register_reloader(MODULE_NAME, passwords.reload_configuration)
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]

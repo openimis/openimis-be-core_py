@@ -18,19 +18,19 @@ from django.db import models
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
 import core
-from hashlib import sha256
 from secrets import token_hex
 from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
-from core.utils import to_list_permissions
+from core.utils import get_cache_key, to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from core.access import evaluate_access_requirements, has_role_perms
 # Safe at module level: core.auth.revocation reaches models through
-# apps.get_model, so importing it here is not a cycle.
-from core.auth import revocation
+# apps.get_model and core.auth.passwords reaches only CoreConfig, so neither
+# import is a cycle.
+from core.auth import passwords, revocation
 
 logger = logging.getLogger(__name__)
 
@@ -439,27 +439,51 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
+        # Minted even under argon2, which carries its own salt: the legacy
+        # format still needs this column to verify.
         self.private_key = private_key or token_hex(128)
-        pwd_hash = sha256()
-        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        self.password = (
-            pwd_hash.hexdigest().upper()
-        )  # Legacy requires this to be uppercase
+        self.password = passwords.hash_password(raw_password, self.private_key)
         # private_key is only a salt now - rotating it ends nothing on its own,
         # because the deployment key signs every token. The not-before is what
         # ends outstanding sessions.
         revocation.bump(self)
 
     def check_password(self, raw_password):
-        from hashlib import sha256
+        result = passwords.verify(raw_password, self.password, self.private_key)
+        if result.rehash:
+            self._rehash_password(raw_password)
+        return result.ok
 
-        pwd_hash = sha256()
-        pwd_hash.update(f"{raw_password.rstrip()}{self.private_key}".encode())
-        pwd_hash = pwd_hash.hexdigest()
-        # logger.debug("pwd_hash %s -> %s, stored: %s",
-        # f"{raw_password.rstrip()}{self.private_key}", pwd_hash, self.password)
-        # hashlib gives a lowercase digest while the legacy gives an uppercase one
-        return pwd_hash == self.password.lower()
+    def _rehash_password(self, raw_password):
+        """Rewrite a verified password in the configured format.
+
+        The check that verified it is the only moment the raw password is in
+        hand, so this is where a legacy hash moves to argon2. An unsaved
+        instance is only changed in memory and is the caller's to save.
+
+        Deliberately not `save()`: this runs on the authentication path, where
+        the instance is routinely rebuilt from the per-process object cache and
+        every column but the one being written can be older than the database.
+        A full-row write would put those stale values back, and the revocation
+        point is among them - a login could then undo a sign-out another worker
+        had performed. Writing the one column also leaves the row's version and
+        history alone, which is right: re-encoding a password is not a change
+        to the credential.
+        """
+        verified = self.password
+        self.password = passwords.hash_password(raw_password, self.private_key)
+        if self.pk is None:
+            return
+        # .all() first: CachedManager.filter can answer from the cache, a plain
+        # QuerySet cannot. Only where the row still holds the hash that just
+        # verified: a password change committed meanwhile must win, rather than
+        # be replaced by the old password re-encoded.
+        type(self).objects.all().filter(pk=self.pk, password=verified).update(
+            password=self.password
+        )
+        # Drop the cached copy rather than writing this instance over it, for
+        # the same staleness reason. The next read repopulates it.
+        cache.delete(get_cache_key(type(self), self.pk))
 
     @classmethod
     def is_interactive_user(cls, user):
