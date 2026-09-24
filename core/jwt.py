@@ -3,6 +3,7 @@ from calendar import timegm
 import jwt
 from graphql_jwt.settings import jwt_settings
 from graphql_jwt.signals import token_issued
+from django.db import transaction
 from django.utils import timezone
 from django.dispatch import receiver
 import logging
@@ -18,8 +19,10 @@ logger = logging.getLogger(__file__)
 def on_token_issued(sender, request, user, **kwargs):
     # Store the date on which the user got the auth token
     if user.i_user:
-        user.i_user.last_login = timezone.now()
-        user.i_user.save()
+        with transaction.atomic():
+            i_user = InteractiveUser.locked_from_database(user.i_user.pk)
+            i_user.last_login = timezone.now()
+            i_user.save()
 
 
 def jwt_encode_user_key(payload, context=None):
