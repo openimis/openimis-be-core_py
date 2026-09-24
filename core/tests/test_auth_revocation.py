@@ -180,7 +180,7 @@ class NotBeforeCheckTest(TestCase):
 
     def test_technical_user_token_is_unaffected(self):
         # No interactive row, so no not-before can exist and nothing is
-        # revoked. Issuing such a token still raises upstream; not fixed here.
+        # revoked.
         create_test_technical_user(username="revokeTech")
         token = _sign("revokeTech", issued_at=_now() - 3600)
 
