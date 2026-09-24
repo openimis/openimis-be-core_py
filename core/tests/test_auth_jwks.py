@@ -85,15 +85,37 @@ class PemVerificationKeyTest(TestCase):
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ).decode()
 
+        # Keyed by its thumbprint: the kid the tokens it signed carry.
+        kid = keys.derive_kid(retiring.public_key())
         with override_settings(
             JWT_SIGNING_KEY=SIGNING_PEM,
-            JWT_DEPLOYMENT_KEYS={"retiring": retiring_pem},
+            JWT_DEPLOYMENT_KEYS={kid: retiring_pem},
         ):
             response = APIClient().get(JWKS_URL)
 
         published = {jwk["kid"]: jwk for jwk in response.json()["keys"]}
-        self.assertIn("retiring", published)
-        self.assertEqual(published["retiring"]["kty"], "RSA")
+        self.assertIn(kid, published)
+        self.assertEqual(published[kid]["kty"], "RSA")
+
+
+class PrivateKeyEntryTest(TestCase):
+    """A private key in `JWT_DEPLOYMENT_KEYS` is a misconfiguration. The one
+    line that drops it is all that stands between that and publishing its
+    private members, so it is pinned for both forms a settings file can hold.
+    """
+
+    def test_a_private_key_entry_is_not_published(self):
+        stray = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        for form, value in (("pem", _pem(stray)), ("object", stray)):
+            with self.subTest(form=form):
+                with override_settings(
+                    JWT_SIGNING_KEY=SIGNING_PEM, JWT_DEPLOYMENT_KEYS={"stray": value}
+                ):
+                    published = APIClient().get(JWKS_URL).json()["keys"]
+
+                self.assertNotIn("stray", [jwk["kid"] for jwk in published])
+                for jwk in published:
+                    self.assertNotIn("d", jwk)
 
 
 class SymmetricKeyTest(TestCase):
