@@ -99,9 +99,9 @@ class PemVerificationKeyTest(TestCase):
 
 
 class PrivateKeyEntryTest(TestCase):
-    """A private key in `JWT_DEPLOYMENT_KEYS` is a misconfiguration. The one
-    line that drops it is all that stands between that and publishing its
-    private members, so it is pinned for both forms a settings file can hold.
+    """A private key in `JWT_DEPLOYMENT_KEYS` is a misconfiguration. The lines
+    that drop it - one per form a settings file can hold it in - are all that
+    stand between that and publishing its private members, so both are pinned.
     """
 
     def test_a_private_key_entry_is_not_published(self):
