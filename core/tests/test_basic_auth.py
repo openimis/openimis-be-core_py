@@ -102,7 +102,7 @@ class SecondFactorBasicAuthenticationTest(TestCase):
 
 
 class TechnicalUserBasicAuthenticationTest(TestCase):
-    """Criterion 3: the integrations are why Basic stays enabled at all."""
+    """The integrations are why Basic stays enabled at all."""
 
     @classmethod
     def setUpTestData(cls):
