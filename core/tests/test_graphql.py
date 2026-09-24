@@ -118,6 +118,49 @@ class gqlTest(openIMISGraphQLTestCase):
         )
         self.assertEqual(wrong_password_data["errors"][0]["message"], "INCORRECT_CREDENTIALS")
 
+    def test_change_password_reports_success_when_persisted(self):
+        create_test_interactive_user(username="pwd_gql_target", password=self.admin_password)
+        query = """
+            mutation {
+                changePassword(input: {username: "pwd_gql_target", newPassword: "NewEdfmD3!12@#"}) {
+                    success
+                    error
+                }
+            }
+        """
+
+        response = self.query(
+            query, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertEqual(content["data"]["changePassword"], {"success": True, "error": None})
+        self.assertTrue(
+            User.objects.get(username="pwd_gql_target").check_password("NewEdfmD3!12@#")
+        )
+
+    def test_change_password_reports_failure_on_wrong_old_password(self):
+        user = create_test_interactive_user(username="pwd_gql_own", password=self.admin_password)
+        token = BaseTestContext(user=user).get_jwt()
+        query = """
+            mutation {
+                changePassword(input: {oldPassword: "not-it", newPassword: "NewEdfmD3!12@#"}) {
+                    success
+                    error
+                }
+            }
+        """
+
+        response = self.query(query, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertFalse(content["data"]["changePassword"]["success"])
+        self.assertTrue(
+            User.objects.get(username="pwd_gql_own").check_password(self.admin_password)
+        )
+
     def test_change_langue(self):
         query = f"""
             mutation {{
