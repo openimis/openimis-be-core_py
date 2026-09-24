@@ -84,7 +84,13 @@ class LegacyTokenDecodeTest(TestCase):
         # two regimes that already coexist.
         user = create_test_interactive_user(username="authNoSalt", password=_password())
         InteractiveUser.objects.filter(pk=user.i_user.pk).update(private_key=None)
-        token = _sign(jwt_settings.JWT_SECRET_KEY, username="authNoSalt")
+        # iat because creating a user stamps a revocation not-before, and a
+        # token carrying no issue time to compare against it fails closed. Every
+        # real openIMIS token carries nbf, so this only makes the fixture match
+        # what the encoder actually emits.
+        token = _sign(
+            jwt_settings.JWT_SECRET_KEY, username="authNoSalt", iat=_exp(days=0)
+        )
 
         self.assertEqual(decode(token)["username"], "authNoSalt")
 
@@ -103,10 +109,12 @@ class DeploymentKeyDecodeTest(TestCase):
     InvalidTokenError reaches the client as a 500, not an auth failure.
     """
 
-    def test_deployment_token_decodes_without_touching_the_database(self):
+    def test_deployment_token_needs_one_query_for_the_revocation_check(self):
+        # Key selection still touches no database. The single query is the
+        # revocation check reading the user's not-before.
         token = _sign(DEPLOYMENT_KEY, kid=DEPLOYMENT_KID, username="noSuchUser")
 
-        with self.assertNumQueries(0):
+        with self.assertNumQueries(1):
             payload = decode(token)
 
         self.assertEqual(payload["username"], "noSuchUser")
