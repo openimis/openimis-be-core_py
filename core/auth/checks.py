@@ -48,16 +48,29 @@ def deployment_keys_are_publishable(app_configs, **kwargs):
                 id="core.auth.E003",
             )
         ]
-    return [
-        Warning(
-            f"JWT_DEPLOYMENT_KEYS entry {kid!r} is not an RSA verification key. "
-            "It cannot be published at the JWKS endpoint, so consumers reading "
-            "that document will not verify tokens signed with it.",
-            id="core.auth.W001",
-        )
-        for kid, key in configured.items()
-        if keys.public_verification_key(key) is None
-    ]
+    found = []
+    for kid, key in configured.items():
+        public = keys.public_verification_key(key)
+        if public is None:
+            found.append(
+                Warning(
+                    f"JWT_DEPLOYMENT_KEYS entry {kid!r} is not an RSA verification "
+                    "key. It cannot be published at the JWKS endpoint, so consumers "
+                    "reading that document will not verify tokens signed with it.",
+                    id="core.auth.W001",
+                )
+            )
+        elif keys.derive_kid(public) != kid:
+            found.append(
+                Warning(
+                    f"JWT_DEPLOYMENT_KEYS entry {kid!r} is keyed by a name, not by "
+                    f"its thumbprint {keys.derive_kid(public)!r}. Tokens the key "
+                    "signed carry the thumbprint as their kid, so neither openIMIS "
+                    "nor a JWKS consumer will find this key for them.",
+                    id="core.auth.W003",
+                )
+            )
+    return found
 
 
 #: What an RSA key can sign with. JWT_SIGNING_KEY is always one (E001, E002).
