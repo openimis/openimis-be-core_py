@@ -414,7 +414,7 @@ CONFIRM = """
 
 
 class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
-    """The GraphQL surface, and the ticket's round trip: enrol, confirm, log
+    """The GraphQL surface, and the whole round trip: enrol, confirm, log
     in with the next code - and the same from a binding policy's refusal."""
 
     def setUp(self):
@@ -476,7 +476,7 @@ class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
         self.assertTrue(content["data"]["tokenAuth"]["token"])
 
     def test_a_bound_user_refused_at_login_enrols_from_that_refusal(self):
-        # The case the ticket exists for: under a binding policy the login
+        # The case enrolment exists for: under a binding policy the login
         # refuses a user with no device, and this is the only way past it -
         # for someone with no token to present.
         with _policy(policy.MANDATORY):
