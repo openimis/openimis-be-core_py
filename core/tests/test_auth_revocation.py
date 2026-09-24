@@ -2,6 +2,7 @@ import json
 from calendar import timegm
 from datetime import datetime, timedelta
 from secrets import token_hex
+from unittest.mock import patch
 
 import jwt as pyjwt
 from django.core.cache import cache
@@ -522,7 +523,15 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         # reject the fresh token a user receives right after changing their own
         # password, which is the worse failure.
         token = BaseTestContext(user=self.user).get_jwt()
-        self.query(self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+        # The same second by construction: a sign-out that happened to land in
+        # the next second would make the token older and this test flaky.
+        # iat first, then nbf: the order the revocation check reads them in.
+        claims = pyjwt.decode(token, options={"verify_signature": False})
+        issued = claims.get("iat", claims.get("nbf"))
+        with patch.object(revocation, "_now", return_value=issued):
+            self.query(
+                self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
+            )
 
         response = self.client.get(
             "/api/core/users/current_user/", HTTP_AUTHORIZATION=f"Bearer {token}"
@@ -542,16 +551,28 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         # Single-token refresh re-decodes what it is handed, so the revocation
         # check covers it and there is no way to mint a fresh token from a dead
         # one. This is the property that makes the check complete.
+        #
+        # Strictly older than the sign-out by construction, and valid until it:
+        # a token minted in the same second would survive by design and prove
+        # nothing either way.
+        _set_not_before(self.user, _now() - 120)
+        older = _sign(self.user.username, issued_at=_now() - 60, origIat=_now() - 60)
+        with with_deployment_key:
+            self.assertEqual(decode(older)["username"], self.user.username)
+
         token = BaseTestContext(user=self.user).get_jwt()
         self.query(self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
 
-        response = self.query(
-            """
-            mutation refresh($token: String!) {
-                refreshToken(token: $token) { token }
-            }
-            """,
-            variables={"token": token},
-        )
+        with with_deployment_key:
+            response = self.query(
+                """
+                mutation refresh($token: String!) {
+                    refreshToken(token: $token) { token }
+                }
+                """,
+                variables={"token": older},
+            )
+            with self.assertRaises(pyjwt.InvalidTokenError):
+                decode(older)
 
         self.assertIn("errors", json.loads(response.content))
