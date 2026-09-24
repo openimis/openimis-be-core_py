@@ -136,7 +136,9 @@ def second_factor_policy_is_known(app_configs, **kwargs):
     from core.auth import policy
 
     mode = CoreConfig.second_factor_policy
-    if mode in policy.POLICIES:
+    # None is "not read yet" - no schema during migrate, or the database down
+    # at start - and mandates() refuses logins until a read succeeds.
+    if mode is None or mode in policy.POLICIES:
         return []
     return [
         Error(

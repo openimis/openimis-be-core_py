@@ -299,7 +299,7 @@ class CoreConfig(AppConfig):
         from core.auth import policy
         from core.module_config_registry import register_reloader, register_validator
 
-        policy.configure(cfg)
+        policy.load()
         register_validator(MODULE_NAME, policy.validate_configuration)
         register_reloader(MODULE_NAME, policy.reload_configuration)
 

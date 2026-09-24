@@ -167,6 +167,12 @@ class SecondFactorPolicyCheckTest(TestCase):
         with patch.object(CoreConfig, "second_factor_policy", "per_role"):
             self.assertEqual(checks.second_factor_policy_is_known(None), [])
 
+    def test_a_policy_not_read_yet_is_not(self):
+        # No schema during migrate, or the database down at start: the login
+        # path refuses until the policy is read, so this must not fail the run.
+        with patch.object(CoreConfig, "second_factor_policy", None):
+            self.assertEqual(checks.second_factor_policy_is_known(None), [])
+
 
 class SecondFactorRolesCheckTest(TestCase):
     """`core.auth.W002` - a mandate keyed on a role name that no longer
