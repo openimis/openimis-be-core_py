@@ -1,6 +1,5 @@
 import json
 
-from cryptography.hazmat.primitives.asymmetric import rsa
 from django.http import Http404, StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from isodate import strftime
@@ -103,24 +102,6 @@ def get_scheduled_jobs(request):
     return Response([_serialize_job(job) for job in scheduler.get_jobs()])
 
 
-def _public_key(key):
-    """A verification key reaches the mapping either as a key object or as PEM
-    text, and PyJWT accepts both. A symmetric secret is neither, and publishing
-    one here would disclose it.
-    """
-    if isinstance(key, rsa.RSAPublicKey):
-        return key
-    if not isinstance(key, (str, bytes)):
-        return None
-    try:
-        prepared = RSAAlgorithm(RSAAlgorithm.SHA256).prepare_key(key)
-    except (ValueError, TypeError):
-        return None
-    # A private key here is a misconfiguration; drop it rather than publish its
-    # public half from a mapping that should only ever hold verification keys.
-    return prepared if isinstance(prepared, rsa.RSAPublicKey) else None
-
-
 def _jwk(kid, public_key):
     jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
     # to_jwk emits key_ops, which the RFC 7638 thumbprint is not defined over;
@@ -140,7 +121,7 @@ def _jwk(kid, public_key):
 def jwks(request):
     published = []
     for kid, key in keys.deployment_keys().items():
-        public_key = _public_key(key)
+        public_key = keys.public_verification_key(key)
         if public_key is not None:
             published.append(_jwk(kid, public_key))
     return Response({"keys": published})

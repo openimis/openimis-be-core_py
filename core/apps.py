@@ -271,6 +271,10 @@ class CoreConfig(AppConfig):
     def ready(self):
         from .models import ModuleConfiguration
 
+        # Imported for the side effect: @register runs at import time, and this
+        # is the first point at which the app registry is populated.
+        from core.auth import checks  # noqa: F401
+
         self._register_management_commands()
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
         self._configure_calendar(cfg)

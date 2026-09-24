@@ -10,7 +10,7 @@ from graphql_jwt.shortcuts import get_token
 from core.auth import decode
 from core.auth.claims import Claims
 from core.auth.providers.base import IdentityProvider
-from core.auth.providers.legacy import LegacyUserKeyProvider
+from core.auth.providers.local import LocalProvider
 from core.auth.registry import resolve
 from core.models import User
 from core.test_helpers import create_test_interactive_user
@@ -59,9 +59,6 @@ class StubProvider(IdentityProvider):
 with_stub_provider = override_settings(
     AUTH_TOKEN_PROVIDERS=["core.tests.test_auth_registry.StubProvider"]
 )
-# An assembly can provision a key for the whole test run, so a test that
-# means "nothing provisioned" has to say so.
-without_signing_key = override_settings(JWT_SIGNING_KEY=None)
 
 
 def _exp(days=1):
@@ -74,7 +71,6 @@ def _stub_token(subject="federatedUser"):
     )
 
 
-@without_signing_key
 class ProviderRoutingTest(TestCase):
     def setUp(self):
         StubProvider.verify_calls = 0
@@ -94,8 +90,8 @@ class ProviderRoutingTest(TestCase):
         with self.assertRaises(pyjwt.InvalidIssuerError):
             resolve(token)
 
-    def test_local_token_routes_to_the_legacy_provider(self):
-        self.assertIsInstance(resolve(self.local_token), LegacyUserKeyProvider)
+    def test_local_token_routes_to_the_local_provider(self):
+        self.assertIsInstance(resolve(self.local_token), LocalProvider)
 
     @with_stub_provider
     def test_registered_provider_handles_its_own_issuer(self):

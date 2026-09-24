@@ -10,8 +10,9 @@ class LocalProvider(IdentityProvider):
     """openIMIS-issued tokens signed with the deployment keypair.
 
     Trusting the unverified `kid` is safe because it only picks from a fixed key
-    set: a forged one selects a key that then fails verification. Contrast
-    providers/legacy.py, where the key is chosen by an unverified *identity*.
+    set: a forged one selects a key that then fails verification. Selecting on
+    anything the token asserts about *who* it belongs to would not be - that is
+    what the deleted per-user-key path did, and why it read the database first.
     """
 
     id = "local"
@@ -19,8 +20,10 @@ class LocalProvider(IdentityProvider):
     def accepts(self, header, unverified):
         if header.get("kid") is None:
             return False
-        issuer = unverified.get("iss")
-        return issuer is None or issuer == keys.issuer()
+        # A token is ours when its issuer is the one we issue under, which with
+        # JWT_ISSUER unset means carrying no iss at all. The claim is unverified
+        # here, so this only routes; the signature still has to hold.
+        return unverified.get("iss") == keys.issuer()
 
     def verify(self, token):
         kid = jwt.get_unverified_header(token).get("kid")
@@ -32,7 +35,7 @@ class LocalProvider(IdentityProvider):
             issuer=keys.issuer(),
             leeway=jwt_settings.JWT_LEEWAY,
             options={
-                "require": ["exp", "username"],
+                "require": ["exp", "username", "iat"],
                 "verify_exp": jwt_settings.JWT_VERIFY_EXPIRATION,
                 "verify_aud": keys.audience() is not None,
                 "verify_signature": jwt_settings.JWT_VERIFY,
