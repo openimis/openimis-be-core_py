@@ -134,8 +134,8 @@ class ProvisionedKeyTest(TestCase):
 
 @without_signing_key
 class MigrationWindowTest(TestCase):
-    """The acceptance criterion the dual-shape decode exists for: provisioning
-    a key must not log anyone out.
+    """Provisioning a key must not log anyone out; this is what the dual-shape
+    decode is for.
     """
 
     def test_a_token_issued_before_the_switch_still_decodes_after_it(self):
