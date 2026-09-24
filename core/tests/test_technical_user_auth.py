@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from datetime import timedelta
 from secrets import token_hex
@@ -13,6 +14,7 @@ from core.access import has_role_perms
 
 from core.auth import decode
 from core.models import User
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.test_helpers import create_test_technical_user
 
 
@@ -88,6 +90,64 @@ class TechnicalUserTokenTest(TestCase):
 
         with self.assertNumQueries(0):
             get_token(user, DummyContext(user=user))
+
+
+class TechnicalUserLoginTest(openIMISGraphQLTestCase):
+    """Through the credentials, the way an integration logs in: tokenAuth, a
+    request authenticated with the token, and refreshToken re-issuing it."""
+
+    TOKEN_AUTH = """
+        mutation login($username: String!, $password: String!) {
+            tokenAuth(username: $username, password: $password) { token }
+        }
+    """
+    REFRESH = """
+        mutation refresh($token: String!) { refreshToken(token: $token) { token } }
+    """
+    # Its resolver refuses an anonymous caller, so an answer proves the token
+    # authenticated the request.
+    PROBE = "query { languages { name } }"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = _password()
+        cls.user = create_test_technical_user(username="techLogin", password=cls.password)
+
+    def _login(self):
+        response = self.query(
+            self.TOKEN_AUTH,
+            variables={"username": self.user.username, "password": self.password},
+        )
+        self.assertResponseNoErrors(response)
+        return json.loads(response.content)["data"]["tokenAuth"]["token"]
+
+    def _refresh(self, token):
+        response = self.query(self.REFRESH, variables={"token": token})
+        self.assertResponseNoErrors(response)
+        return json.loads(response.content)["data"]["refreshToken"]["token"]
+
+    def test_the_credentials_obtain_a_token(self):
+        self.assertEqual(decode(self._login())["username"], "techLogin")
+
+    def test_the_token_authenticates_a_request(self):
+        response = self.query(
+            self.PROBE, headers={"HTTP_AUTHORIZATION": f"Bearer {self._login()}"}
+        )
+
+        self.assertResponseNoErrors(response)
+
+    def test_refresh_token_reissues_it(self):
+        self.assertEqual(decode(self._refresh(self._login()))["username"], "techLogin")
+
+    def test_refresh_still_reissues_after_a_password_change(self):
+        # The accepted boundary below, through the real mutation: nothing
+        # records a revocation point for a technical user.
+        token = self._login()
+        self.user.t_user.set_password(_password())
+        self.user.t_user.save()
+
+        self.assertEqual(decode(self._refresh(token))["username"], "techLogin")
 
 
 class TechnicalUserRevocationBoundaryTest(TestCase):
