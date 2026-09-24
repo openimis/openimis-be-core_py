@@ -147,7 +147,10 @@ Delegating the requirement to an identity provider later is a change to
 ### Enrolling an authenticator
 
 Two mutations, both authenticated with the password rather than a session,
-because a user the policy binds cannot log in until they have a device. Both
+because a user the policy binds cannot log in until they have a device. A user
+the policy leaves free already logs in on the password, so for them the
+request must also carry their own token: otherwise a stolen password could
+bind the thief's authenticator, and a password reset removes no device. Both
 refuse a user who already has a confirmed device, so a password alone cannot
 add a second one - that takes an administrator's reset first.
 
@@ -175,8 +178,9 @@ code: the one that confirmed is spent, and re-sending it reads as
 the login with a hint to wait for the app's next code.
 
 Every refusal is `success: false` with the reason in `error`:
-`INCORRECT_CREDENTIALS` (the password); `SECOND_FACTOR_ALREADY_ENROLLED` (a
-confirmed device exists); `SECOND_FACTOR_ENROLMENT_REQUIRED` (nothing is
+`INCORRECT_CREDENTIALS` (the password); `SECOND_FACTOR_LOGIN_REQUIRED` (the
+policy leaves this user free, and the request carries no token of theirs);
+`SECOND_FACTOR_ALREADY_ENROLLED` (a confirmed device exists); `SECOND_FACTOR_ENROLMENT_REQUIRED` (nothing is
 pending - call `enrolSecondFactor` first); `SECOND_FACTOR_REQUIRED` (no code
 sent); `INVALID_SECOND_FACTOR`; `SECOND_FACTOR_THROTTLED`, with `lockedUntil`
 (ISO-8601); the login's own wording when a field is empty; and the lockout
@@ -186,7 +190,8 @@ does not - the caller was just handed the secret it derives from, so it is a
 mistyped code, not a guess - and the device's own back-off limits retries
 against it instead.
 
-Under the default `optional` policy this is how a user opts in. Under
+Under the default `optional` policy this is how a user opts in, from a
+logged-in session. Under
 `per_role` or `mandatory` it is how a bound user gets past
 `SECOND_FACTOR_ENROLMENT_REQUIRED`, and the reason that refusal is not a
 lockout: a client that receives it takes the user here.
