@@ -426,6 +426,17 @@ class InteractiveUser(OpenIMISMigrationModel):
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
+    @classmethod
+    def locked_from_database(cls, pk):
+        """The row as stored, locked until the enclosing transaction ends.
+
+        The manager can answer from the per-process object cache, and saving
+        that copy writes every column back - including a revocation point or a
+        password another worker has changed since. `.all()` returns a plain
+        QuerySet, which the cache does not answer.
+        """
+        return cls.objects.all().select_for_update().get(pk=pk)
+
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
         self.private_key = private_key or token_hex(128)

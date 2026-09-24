@@ -363,6 +363,46 @@ class NotBeforeCacheTest(TestCase):
             decode(token)
 
 
+@with_deployment_key
+class StaleCopyWriteTest(TestCase):
+    """Writes that start from this process's cached copy of the user, after
+    another process has changed the row. Saving that copy whole would put the
+    older values back.
+    """
+
+    def setUp(self):
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="revokeStale", password=self.password
+        )
+        cache.clear()
+        User.USE_CACHE = True
+        InteractiveUser.USE_CACHE = True
+        self.addCleanup(NotBeforeCacheTest._restore)
+        # Older than this second, so a bump is a real change: bumping to the
+        # value already stored leaves nothing dirty, and save() then writes
+        # nothing either way.
+        _set_not_before(self.user, _now() - 600)
+        # This process's copy, loaded past the cache so it matches the row, as
+        # a request would leave it behind. See NotBeforeCacheTest.
+        InteractiveUser.objects.all().filter(pk=self.user.i_user.pk).first(
+        ).update_cache()
+        User.objects.all().filter(pk=self.user.pk).first().update_cache()
+
+    def _cached_user(self):
+        return User.objects.get(username=self.user.username)
+
+    def test_issuing_a_token_keeps_a_revocation_point_set_elsewhere(self):
+        from core.jwt import on_token_issued
+
+        revoked_at = _now() + 3600
+        _set_not_before(self.user, revoked_at)
+
+        on_token_issued(sender=None, request=None, user=self._cached_user())
+
+        self.assertEqual(_stored_not_before(self.user), revoked_at)
+
+
 class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
     """The GraphQL surface. The service behind it is covered above; what is left
     is the mutation's own authentication check, its payload, and the fact that a
