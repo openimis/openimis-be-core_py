@@ -114,8 +114,9 @@ change saved from inside the application - the Django admin, a mutation -
 applies without a restart in the process that saved it. Other worker processes
 of a multi-process server, and a change made by direct SQL or from a separate
 `manage.py shell`, pick it up only when they restart. If the configuration
-cannot be read when a process starts, that process refuses logins until a
-later read succeeds; it never falls back to `optional`.
+cannot be read, that process refuses the logins of users without a device
+(integration accounts aside) until a later read succeeds; it never falls back
+to `optional`.
 
 **Renaming a role that the mandate names takes those users out of it.** The
 mandate matches on the role's name, and renaming a role keeps its id and moves

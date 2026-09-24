@@ -35,9 +35,9 @@ POLICIES = (OPTIONAL, PER_ROLE, MANDATORY)
 def configure(cfg):
     """Apply the two policy keys of a core configuration to CoreConfig.
 
-    Called from CoreConfig.ready() with the effective configuration, and again
-    when the configuration row is saved, so a policy change takes effect
-    without a restart.
+    Called by load() with the effective configuration: at start, and again when
+    the configuration row is saved, so a policy change takes effect without a
+    restart.
     """
     CoreConfig.second_factor_policy = cfg["second_factor_policy"]
     CoreConfig.second_factor_mandatory_roles = list(
@@ -72,6 +72,15 @@ def _read():
     return {**DEFAULT_CFG, **(row._cfg if row else {})}
 
 
+#: The last read failed, as opposed to the row holding no valid policy: only
+#: the first leaves the policy unknown and waiting for the next read.
+_unread = False
+
+
+def is_unread():
+    return _unread
+
+
 def load():
     """Read the policy from the configuration row and apply it.
 
@@ -79,19 +88,26 @@ def load():
     read that fails leaves the policy unknown rather than defaulting it, and
     mandates() tries again at the next login.
     """
+    global _unread
     if not database_expected():
         logger.info("Second-factor policy not loaded: %s", unavailability_reason())
+        _unread = True
         CoreConfig.second_factor_policy = None
         return
     try:
         cfg = _read()
     except Exception:
+        # The traceback once: every login retries this while the row stays
+        # unreadable.
         logger.warning(
-            "Second-factor policy could not be read; logins are refused until it can be",
-            exc_info=True,
+            "Second-factor policy could not be read; logins of users without a "
+            "device are refused until it can be",
+            exc_info=not _unread,
         )
+        _unread = True
         CoreConfig.second_factor_policy = None
         return
+    _unread = False
     configure(cfg)
 
 
@@ -132,9 +148,13 @@ def mandates(user):
     HTTP Basic stays enabled for. A technical user that is privileged is not
     exempt: it reaches the Django admin like any administrator.
     """
+    if user.i_user is None and not _is_privileged(user):
+        # Outside every policy, so there is nothing to decide - not even while
+        # the policy cannot be read.
+        return False
     if CoreConfig.second_factor_policy is None:
         load()
-        if CoreConfig.second_factor_policy is None:
+        if is_unread():
             raise ImproperlyConfigured(
                 "The second-factor policy could not be read; refusing to decide "
                 "who needs a second factor until it can be."

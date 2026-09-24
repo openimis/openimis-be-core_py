@@ -136,9 +136,10 @@ def second_factor_policy_is_known(app_configs, **kwargs):
     from core.auth import policy
 
     mode = CoreConfig.second_factor_policy
-    # None is "not read yet" - no schema during migrate, or the database down
-    # at start - and mandates() refuses logins until a read succeeds.
-    if mode is None or mode in policy.POLICIES:
+    # Unknown because it could not be read yet - no schema during migrate, or
+    # the database down at start - is not an error here: mandates() refuses
+    # logins until a read succeeds. A null read from the row is.
+    if mode in policy.POLICIES or (mode is None and policy.is_unread()):
         return []
     return [
         Error(

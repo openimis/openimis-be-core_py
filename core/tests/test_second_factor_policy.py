@@ -522,6 +522,11 @@ class PolicyLoadTest(TestCase):
             username="policyLoad", password=_password(), roles=[]
         )
 
+    def setUp(self):
+        patcher = patch.object(policy, "_unread", False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_failed_read_leaves_the_policy_unknown_not_optional(self):
         with _policy(policy.OPTIONAL):
             with patch.object(policy, "_read", side_effect=DatabaseError("down")):
@@ -555,3 +560,32 @@ class PolicyLoadTest(TestCase):
             policy.load()
             self.assertEqual(CoreConfig.second_factor_policy, policy.PER_ROLE)
             self.assertEqual(CoreConfig.second_factor_mandatory_roles, ["Supervisor"])
+
+    def test_a_null_read_from_the_row_is_refused_without_rereading_as_unread(self):
+        ModuleConfiguration.objects.bulk_create([_row(second_factor_policy=None)])
+        with _policy(policy.OPTIONAL):
+            policy.load()
+            self.assertFalse(policy.is_unread())
+            with self.assertRaises(ImproperlyConfigured) as raised:
+                policy.mandates(self.user)
+        self.assertIn("must be one of", str(raised.exception))
+
+    def test_a_plain_technical_user_passes_while_the_row_cannot_be_read(self):
+        technical = create_test_technical_user(
+            username="policyLoadTech", password=_password()
+        )
+        with _policy(None):
+            with patch.object(policy, "_read", side_effect=DatabaseError("down")):
+                self.assertFalse(policy.mandates(technical))
+
+    def test_the_traceback_is_logged_once_while_the_row_stays_unreadable(self):
+        with _policy(None):
+            with patch.object(policy, "_read", side_effect=DatabaseError("down")):
+                with self.assertLogs(policy.logger, level="WARNING") as logs:
+                    for _ in range(3):
+                        with self.assertRaises(ImproperlyConfigured):
+                            policy.mandates(self.user)
+
+        with_traceback = [record for record in logs.records if record.exc_info]
+        self.assertEqual(len(logs.records), 3)
+        self.assertEqual(len(with_traceback), 1)
