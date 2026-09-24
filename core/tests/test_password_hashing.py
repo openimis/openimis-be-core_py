@@ -305,6 +305,23 @@ class InteractiveUserPasswordTest(_PinnedHasher, TestCase):
         self.assertTrue(row["password"].startswith("argon2$"))
         self.assertEqual(_not_before(row), revoked_at)
 
+    def test_a_password_changed_meanwhile_is_not_replaced(self):
+        """The rehash only replaces the hash it verified. A change committed
+        between the check and the write - by another worker, or through the
+        object cache's older copy - keeps the new password."""
+        _make_legacy(self.user, self.raw)
+        stale = InteractiveUser.objects.all().get(pk=self.user.i_user.pk)
+        new_raw = _password()
+        changed = InteractiveUser.objects.all().get(pk=stale.pk)
+        changed.set_password(new_raw)
+        changed.save()
+
+        self.assertTrue(stale.check_password(self.raw))
+
+        current = InteractiveUser.objects.all().get(pk=stale.pk)
+        self.assertTrue(current.check_password(new_raw))
+        self.assertFalse(current.check_password(self.raw))
+
     def test_the_login_flow_rehashes(self):
         # authenticate() -> ModelBackend -> User.check_password -> i_user: the
         # path the GraphQL login, the REST login and HTTP Basic all take.

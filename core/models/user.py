@@ -470,12 +470,17 @@ class InteractiveUser(OpenIMISMigrationModel):
         history alone, which is right: re-encoding a password is not a change
         to the credential.
         """
+        verified = self.password
         self.password = passwords.hash_password(raw_password, self.private_key)
         if self.pk is None:
             return
         # .all() first: CachedManager.filter can answer from the cache, a plain
-        # QuerySet cannot.
-        type(self).objects.all().filter(pk=self.pk).update(password=self.password)
+        # QuerySet cannot. Only where the row still holds the hash that just
+        # verified: a password change committed meanwhile must win, rather than
+        # be replaced by the old password re-encoded.
+        type(self).objects.all().filter(pk=self.pk, password=verified).update(
+            password=self.password
+        )
         # Drop the cached copy rather than writing this instance over it, for
         # the same staleness reason. The next read repopulates it.
         cache.delete(get_cache_key(type(self), self.pk))
