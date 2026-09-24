@@ -1,13 +1,11 @@
 """Enrolling a second factor, for a user who may not be able to log in.
 
 A deployment policy can bind a user who has no device, and every login refuses
-them until they have one - so for that user enrolment cannot sit behind a
-session, and the password is enough. A user the policy leaves free is
-different: the password alone already logs them in, and letting it also bind
-an authenticator would let whoever stole it lock the owner out for good - a
-password reset removes no device. So for them enrolment needs their own login
-as well as the password. One who already has a device is refused either way,
-so a password is never enough to add a second.
+them until they have one - so enrolment cannot sit behind a session. It takes
+the password instead, which grants nothing further: a user with no confirmed
+device either had a password that was already enough on its own, or cannot get
+in at all until this succeeds. One who does have a device is refused, so a
+password is never enough to add a second.
 """
 
 import logging
@@ -22,7 +20,6 @@ from core.auth.login import (
     SECOND_FACTOR_REQUIRED,
     SECOND_FACTOR_THROTTLED,
     SecondFactorError,
-    mfa_required,
 )
 from core.services.userServices import user_authentication
 
@@ -30,30 +27,11 @@ logger = logging.getLogger(__name__)
 
 #: A confirmed device exists; a second one is not added on the password alone.
 SECOND_FACTOR_ALREADY_ENROLLED = "SECOND_FACTOR_ALREADY_ENROLLED"
-#: The policy leaves this user free to log in on the password, so enrolling
-#: needs that login too.
-SECOND_FACTOR_LOGIN_REQUIRED = "SECOND_FACTOR_LOGIN_REQUIRED"
 
 #: The only method enrollable today. Another is a further value here and its
 #: own material to hand back; confirming stays the same exchange whatever
 #: produced the code.
 TOTP = "TOTP"
-
-
-def _enrolling_user(request, username, password):
-    """The user whose password this is, if they may enrol from this request.
-
-    The caller is read before the password is checked: user_authentication
-    clears the JWT cookies from the request.
-    """
-    caller = getattr(request, "user", None)
-    user = user_authentication(request, username, password)
-    signed_in_as_them = bool(
-        caller is not None and caller.is_authenticated and caller.id == user.id
-    )
-    if not mfa_required(user) and not signed_in_as_them:
-        raise SecondFactorError(SECOND_FACTOR_LOGIN_REQUIRED)
-    return user
 
 
 def begin(request, username, password):
@@ -62,7 +40,7 @@ def begin(request, username, password):
     A wrong password raises out of user_authentication, which has already
     reported it to the account lockout; nothing here repeats that.
     """
-    user = _enrolling_user(request, username, password)
+    user = user_authentication(request, username, password)
     if devices.has_second_factor(user):
         raise SecondFactorError(SECOND_FACTOR_ALREADY_ENROLLED)
     return devices.enrol_totp(user)
@@ -83,7 +61,7 @@ def complete(request, username, password, otp):
     than guessed, and the lockout budget is per address. The device's own
     back-off is the rate limit instead.
     """
-    user = _enrolling_user(request, username, password)
+    user = user_authentication(request, username, password)
 
     # One transaction over the lock, the confirmation and the codes: locking
     # the pending row first serialises two racing confirmations, and rolling
