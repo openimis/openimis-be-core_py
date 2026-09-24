@@ -68,6 +68,10 @@ re-checked against the user server-side; a device that is not theirs reads as
 Whether a login needs a second factor is decided by `core.auth.login.mfa_required`,
 in one place. Until a policy exists it is "the user has enrolled a device".
 
+Enrolling a device binds the next login, not the sessions already open: a token
+issued on the password alone before the enrolment stays valid until it expires.
+To end those too, sign the account out everywhere (`signOutEverywhere`).
+
 The same flow serves the REST login `POST /api/api_fhir_r4/login/`: `otp` and
 `otp_device` in the JSON body, the same three codes as `{"detail": <code>}`
 with HTTP 401, `locked_until` alongside when throttled.
