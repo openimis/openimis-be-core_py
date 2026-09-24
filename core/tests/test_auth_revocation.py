@@ -214,9 +214,8 @@ class NotBeforeBumpTest(TestCase):
         self.assertGreaterEqual(_stored_not_before(self.user), before)
 
     def test_role_change_does_not_bump_it_and_still_applies(self):
-        # Acceptance criterion 4 and the second half of 6: rights are read from
-        # the DB per request, so a role edit already applies immediately and
-        # must not end sessions.
+        # Rights are read from the DB per request, so a role edit already
+        # applies immediately and must not end sessions.
         from core.services.userServices import create_or_update_user_roles
 
         _set_not_before(self.user, 1)
