@@ -1,8 +1,9 @@
 """Enrolling an authenticator, for a user who cannot log in yet.
 
-The tests keep both mutations on the password's footing - no session, no
-token before the device is confirmed - and refuse them to whoever already
-has a device.
+Most tests run under a policy that binds the user, which is the situation the
+password-only path exists for: no session, no token before the device is
+confirmed, and a refusal for whoever already has a device. EnrolmentGateTest
+covers a user the policy leaves free, who needs their own login as well.
 """
 
 import json
@@ -15,7 +16,10 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework.exceptions import AuthenticationFailed
 
 from core.auth import devices, enrolment, policy
-from core.auth.enrolment import SECOND_FACTOR_ALREADY_ENROLLED
+from core.auth.enrolment import (
+    SECOND_FACTOR_ALREADY_ENROLLED,
+    SECOND_FACTOR_LOGIN_REQUIRED,
+)
 from core.auth.login import (
     INVALID_SECOND_FACTOR,
     SECOND_FACTOR_ENROLMENT_REQUIRED,
@@ -25,7 +29,10 @@ from core.auth.login import (
     authenticate_login,
 )
 from core.models import MutationLog, User
-from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
+from core.models.openimis_graphql_test_case import (
+    BaseTestContext,
+    openIMISGraphQLTestCase,
+)
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_technical_user,
@@ -42,6 +49,14 @@ from core.tests.test_second_factor_policy import _policy
 from core.tests.test_second_factor_recovery import _codes_stored
 
 
+def _bound(test):
+    """Bind every interactive user for the rest of the test: they cannot log
+    in until they enrol, so the password alone is what enrolment runs on."""
+    patcher = _policy(policy.MANDATORY)
+    patcher.start()
+    test.addCleanup(patcher.stop)
+
+
 def _failures(username):
     """axes' count for the account - the sibling suite's measure."""
     attempt = AccessAttempt.objects.filter(username=username).first()
@@ -52,6 +67,7 @@ class BeginEnrolmentTest(TestCase):
     """The service: what the password buys, and whom it refuses."""
 
     def setUp(self):
+        _bound(self)
         self.password = _password()
         self.user = create_test_interactive_user(
             username="enrolBegin", password=self.password, roles=[]
@@ -113,6 +129,7 @@ class CompleteEnrolmentTest(TestCase):
     login until tokenAuth."""
 
     def setUp(self):
+        _bound(self)
         self.password = _password()
         self.user = create_test_interactive_user(
             username="enrolComplete", password=self.password, roles=[]
@@ -284,6 +301,7 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
 
     def setUp(self):
         super().setUp()
+        _bound(self)
         self.password = _password()
         self.user = create_test_interactive_user(
             username="enrolMutation", password=self.password, roles=[]
@@ -401,6 +419,7 @@ class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
 
     def setUp(self):
         super().setUp()
+        _bound(self)
         self.password = _password()
         self.user = create_test_interactive_user(
             username="confirmMutation", password=self.password, roles=[]
@@ -511,3 +530,113 @@ class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
         self._confirm(_code(self.device))
 
         self.assertEqual(MutationLog.objects.count(), before)
+
+
+class EnrolmentGateTest(TestCase):
+    """A user the policy leaves free already logs in on the password, so the
+    password alone must not also bind an authenticator to them: whoever stole
+    it would lock the owner out, and a password reset removes no device."""
+
+    def setUp(self):
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="enrolGate", password=self.password, roles=[]
+        )
+        self.other = create_test_interactive_user(
+            username="enrolGateOther", password=_password(), roles=[]
+        )
+
+    def _as(self, who):
+        request = _request()
+        request.user = who
+        return request
+
+    def _begin(self, request):
+        return enrolment.begin(request, self.user.username, self.password)
+
+    def test_without_their_login_a_free_user_is_refused_and_nothing_is_made(self):
+        with _policy(policy.OPTIONAL), self.assertRaises(SecondFactorError) as raised:
+            self._begin(_request())
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_LOGIN_REQUIRED)
+        self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
+
+    def test_signed_in_as_themselves_a_free_user_enrols(self):
+        with _policy(policy.OPTIONAL):
+            device = self._begin(self._as(self.user))
+
+        self.assertFalse(device.confirmed)
+
+    def test_signed_in_as_someone_else_is_refused(self):
+        with _policy(policy.OPTIONAL), self.assertRaises(SecondFactorError) as raised:
+            self._begin(self._as(self.other))
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_LOGIN_REQUIRED)
+
+    def test_completing_needs_the_login_too(self):
+        with _policy(policy.OPTIONAL):
+            device = self._begin(self._as(self.user))
+            with self.assertRaises(SecondFactorError) as raised:
+                enrolment.complete(
+                    _request(), self.user.username, self.password, _code(device)
+                )
+            self.assertEqual(raised.exception.code, SECOND_FACTOR_LOGIN_REQUIRED)
+            device.refresh_from_db()
+            self.assertFalse(device.confirmed)
+
+            codes = enrolment.complete(
+                self._as(self.user), self.user.username, self.password, _code(device)
+            )
+
+        self.assertEqual(len(codes), 10)
+
+    def test_a_user_outside_the_named_roles_is_free(self):
+        with _policy(policy.PER_ROLE, ["Supervisor"]):
+            with self.assertRaises(SecondFactorError) as raised:
+                self._begin(_request())
+
+        self.assertEqual(raised.exception.code, SECOND_FACTOR_LOGIN_REQUIRED)
+
+    def test_a_bound_user_needs_no_login(self):
+        with _policy(policy.MANDATORY):
+            device = self._begin(_request())
+
+        self.assertFalse(device.confirmed)
+
+
+class EnrolmentGateMutationTest(openIMISGraphQLTestCase):
+    """The GraphQL surface of the gate: the frontend's profile page sends the
+    user's token, the public enrolment page does not."""
+
+    def setUp(self):
+        super().setUp()
+        self.password = _password()
+        self.user = create_test_interactive_user(
+            username="enrolGateGql", password=self.password, roles=[]
+        )
+
+    def _enrol(self, **headers):
+        response = self.query(
+            ENROL,
+            variables={"username": self.user.username, "password": self.password},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        return json.loads(response.content)["data"]["enrolSecondFactor"]
+
+    def test_a_free_user_without_a_token_is_told_to_log_in(self):
+        with _policy(policy.OPTIONAL):
+            result = self._enrol()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], SECOND_FACTOR_LOGIN_REQUIRED)
+        self.assertIsNone(result["totp"])
+
+    def test_a_free_user_with_their_own_token_gets_the_secret(self):
+        token = BaseTestContext(user=self.user).get_jwt()
+
+        with _policy(policy.OPTIONAL):
+            result = self._enrol(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["totp"]["secret"])
