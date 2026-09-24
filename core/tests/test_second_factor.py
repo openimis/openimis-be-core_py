@@ -121,8 +121,8 @@ class SecondFactorVerifyTest(TestCase):
         self.assertEqual(replay.outcome, second_factor.INVALID)
 
     def test_a_code_one_step_old_is_tolerated_and_the_drift_remembered(self):
-        # tolerance defaults to 1 step, which is the clock-drift allowance the
-        # ticket asks django-otp to provide; OTP_TOTP_SYNC (default True) then
+        # tolerance defaults to 1 step, the clock-drift allowance a phone needs;
+        # OTP_TOTP_SYNC (default True) then
         # records the offset that matched, so a consistently slow phone is not
         # re-tolerated from scratch on every login.
         self.assertTrue(second_factor.verify(self.user, _code(self.totp, -1)).ok)
