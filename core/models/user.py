@@ -925,9 +925,10 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
     def _get_session_auth_hash(self, secret=None):
         key_salt = "core.User.get_session_auth_hash"
         # `password` is the stored hash on both user models that can be staff;
-        # the not-before adds the revocations that leave it alone. Read uncached,
-        # or a flushed session survives on every worker but the one that ended it.
-        stored_password = getattr(self._u, "password", "") or ""
+        # the not-before adds the revocations that leave it alone. Both are read
+        # past the object cache: a worker's older copy would hash differently,
+        # flushing a valid session there or keeping a revoked one.
+        stored_password = self._stored_password()
         not_before = revocation.user_not_before(self.username)
         # Length-prefixed: either component can contain any separator, and a
         # plain join would let two different triples share one hash.
@@ -941,6 +942,16 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         return salted_hmac(
             key_salt, payload, secret=secret, algorithm="sha256"
         ).hexdigest()
+
+    def _stored_password(self):
+        _u = self._u
+        if _u is None or _u.pk is None or getattr(_u, "password", None) is None:
+            return ""
+        # .all() first: a plain QuerySet, which the object cache does not answer.
+        return (
+            type(_u).objects.all().filter(pk=_u.pk).values_list("password", flat=True).first()
+            or ""
+        )
 
     def get_health_facility(self):
         if self.claim_admin:
