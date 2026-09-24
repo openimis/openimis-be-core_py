@@ -73,8 +73,9 @@ def deployment_keys():
 
     The provisioned public half is always here, so a process can verify what it
     signs. `JWT_DEPLOYMENT_KEYS` merges over the top, and is how a key stays
-    verifiable once it stops signing: put the retiring public half there
-    *before* changing `JWT_SIGNING_KEY`, or every token it signed stops
+    verifiable once it stops signing: put the retiring public half there, keyed
+    by its thumbprint (`derive_kid`) - the kid its tokens carry - *before*
+    changing `JWT_SIGNING_KEY`, or every token it signed stops
     verifying at once. That applies to a rotation and to backing the deployment
     key out again - unprovisioning alone takes the verification key with it.
     """
