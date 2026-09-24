@@ -12,6 +12,7 @@ from graphql_jwt.settings import jwt_settings
 from core.apps import CoreConfig
 from core.auth import decode
 from core.auth import revocation
+from core.auth.claims import issued_at_from
 from core.models import InteractiveUser, User
 from core.models.openimis_graphql_test_case import (
     BaseTestContext,
@@ -523,14 +524,16 @@ class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):
         # password, which is the worse failure.
         token = BaseTestContext(user=self.user).get_jwt()
         # The same second by construction: a sign-out that happened to land in
-        # the next second would make the token older and this test flaky.
-        # iat first, then nbf: the order the revocation check reads them in.
-        claims = pyjwt.decode(token, options={"verify_signature": False})
-        issued = claims.get("iat", claims.get("nbf"))
+        # the next second would make the token older and this test flaky. The
+        # issue time is read the way the check reads it.
+        issued = issued_at_from(pyjwt.decode(token, options={"verify_signature": False}))
         with patch.object(revocation, "_now", return_value=issued):
-            self.query(
+            signed_out = self.query(
                 self.SIGN_OUT, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"}
             )
+        payload = json.loads(signed_out.content)["data"]["signOutEverywhere"]
+        self.assertTrue(payload["success"], payload["error"])
+        self.assertEqual(_stored_not_before(self.user), issued)
 
         response = self.client.get(
             "/api/core/users/current_user/", HTTP_AUTHORIZATION=f"Bearer {token}"
