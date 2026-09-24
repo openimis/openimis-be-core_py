@@ -25,7 +25,10 @@ from core.auth.login import (
     authenticate_login,
 )
 from core.models import MutationLog, User
-from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
+from core.models.openimis_graphql_test_case import (
+    BaseTestContext,
+    openIMISGraphQLTestCase,
+)
 from core.test_helpers import (
     create_test_interactive_user,
     create_test_technical_user,
@@ -322,6 +325,19 @@ class EnrolSecondFactorMutationTest(openIMISGraphQLTestCase):
         self.assertEqual(set(payload), {"method", "totp", "success", "error"})
         self.assertEqual(set(payload["totp"]), {"configUrl", "secret"})
 
+    def test_a_token_does_not_stand_in_for_the_password(self):
+        token = BaseTestContext(user=self.user).get_jwt()
+        response = self.query(
+            ENROL,
+            variables={"username": self.user.username, "password": "not-the-password"},
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"},
+        )
+        payload = json.loads(response.content)["data"]["enrolSecondFactor"]
+
+        self.assertEqual(payload["error"], "INCORRECT_CREDENTIALS")
+        self.assertIsNone(payload["totp"])
+        self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
+
     def test_a_wrong_password_is_incorrect_credentials_and_a_failed_login(self):
         payload = self._enrol(password="not-the-password")
 
@@ -406,6 +422,23 @@ class ConfirmSecondFactorMutationTest(openIMISGraphQLTestCase):
             username="confirmMutation", password=self.password, roles=[]
         )
         self.device = enrolment.begin(_request(), self.user.username, self.password)
+
+    def test_a_token_does_not_stand_in_for_the_password(self):
+        token = BaseTestContext(user=self.user).get_jwt()
+        response = self.query(
+            CONFIRM,
+            variables={
+                "username": self.user.username,
+                "password": "not-the-password",
+                "otp": _code(self.device),
+            },
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"},
+        )
+        payload = json.loads(response.content)["data"]["confirmSecondFactor"]
+
+        self.assertEqual(payload["error"], "INCORRECT_CREDENTIALS")
+        self.device.refresh_from_db()
+        self.assertFalse(self.device.confirmed)
 
     def _confirm(self, otp):
         response = self.query(

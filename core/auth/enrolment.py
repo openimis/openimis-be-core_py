@@ -2,10 +2,10 @@
 
 A deployment policy can bind a user who has no device, and every login refuses
 them until they have one - so enrolment cannot sit behind a session. It takes
-the password instead, which grants nothing further: a user with no confirmed
-device either had a password that was already enough on its own, or cannot get
-in at all until this succeeds. One who does have a device is refused, so a
-password is never enough to add a second.
+the password instead. That makes an account without a device exactly as strong
+as its password: whoever holds it can bind an authenticator the owner does not
+have, and only an administrator's reset undoes that. One who does have a device
+is refused, so a password is never enough to add a second.
 """
 
 import logging
@@ -34,13 +34,25 @@ SECOND_FACTOR_ALREADY_ENROLLED = "SECOND_FACTOR_ALREADY_ENROLLED"
 TOTP = "TOTP"
 
 
+def _password_owner(request, username, password):
+    """The user whose password this is, checked on the password alone.
+
+    authenticate() would otherwise answer from a token on the request -
+    graphql_jwt's backend reads it before the password backend runs - and a
+    token would stand in for the password. The flag is the one tokenAuth sets
+    for the same reason.
+    """
+    request._jwt_token_auth = True
+    return user_authentication(request, username, password)
+
+
 def begin(request, username, password):
     """Verify the password and hand back a fresh, unconfirmed authenticator.
 
     A wrong password raises out of user_authentication, which has already
     reported it to the account lockout; nothing here repeats that.
     """
-    user = user_authentication(request, username, password)
+    user = _password_owner(request, username, password)
     if devices.has_second_factor(user):
         raise SecondFactorError(SECOND_FACTOR_ALREADY_ENROLLED)
     return devices.enrol_totp(user)
@@ -61,7 +73,7 @@ def complete(request, username, password, otp):
     than guessed, and the lockout budget is per address. The device's own
     back-off is the rate limit instead.
     """
-    user = user_authentication(request, username, password)
+    user = _password_owner(request, username, password)
 
     # One transaction over the lock, the confirmation and the codes: locking
     # the pending row first serialises two racing confirmations, and rolling
