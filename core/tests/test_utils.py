@@ -107,7 +107,7 @@ class UtilsTestCase(TestCase):
             "admin should always get all permissions regardless of their RoleRight stored in DB"
         )
     CORE_PERMS = [
-        121701, 121702, 121703, 121704,
+        121701, 121702, 121703, 121704, 121705,
         122001, 122002, 122003, 122006, 122005, 122004,
         121501, 121502, 121503, 121504,
         121601, 121602, 121603, 121604,

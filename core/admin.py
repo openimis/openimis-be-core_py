@@ -1,5 +1,7 @@
 from django.contrib import admin, messages
 from django.contrib.auth.models import Group, Permission
+from django_otp.plugins.otp_static.models import StaticDevice
+from django_otp.plugins.otp_totp.models import TOTPDevice
 from .models import FieldControl, ModuleConfiguration, TechnicalUser
 from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
@@ -15,6 +17,15 @@ from core.cache_control import (
 from .forms import TechnicalUserAdmin, GroupAdmin
 
 admin.site.unregister(Group)
+
+# django-otp's plugin apps register both device models unconditionally. Left
+# in place they would be a second way to remove a user's second factor - one
+# that needs no right of its own, writes no record and leaves every session
+# the lost device opened still running. The guard is for import order: the
+# plugin apps load before this module, but nothing here should depend on that.
+for _device_model in (TOTPDevice, StaticDevice):
+    if admin.site.is_registered(_device_model):
+        admin.site.unregister(_device_model)
 
 admin.site.register(FieldControl)
 admin.site.register(ModuleConfiguration)
