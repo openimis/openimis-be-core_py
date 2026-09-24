@@ -139,7 +139,9 @@ the first successful enrolment owns the factor from then on, and the rightful
 user has to go to an administrator for a reset. So a binding policy protects
 accounts that have enrolled; it does not protect one whose password leaked
 before anybody enrolled it. Enrol promptly after turning it on, and treat the
-window between the two as the risk it is.
+window between the two as the risk it is. The same holds under `optional` for
+every user who has not enrolled: their password logs them in, and it also
+enrols.
 
 Delegating the requirement to an identity provider later is a change to
 `mfa_required` alone; nothing else decides.
@@ -147,9 +149,11 @@ Delegating the requirement to an identity provider later is a change to
 ### Enrolling an authenticator
 
 Two mutations, both authenticated with the password rather than a session,
-because a user the policy binds cannot log in until they have a device. Both
-refuse a user who already has a confirmed device, so a password alone cannot
-add a second one - that takes an administrator's reset first.
+because a user the policy binds cannot log in until they have a device. A token
+on the request stands in for nothing: the password is checked whatever the
+request carries. Both refuse a user who already has a confirmed device, so a
+password alone cannot add a second one - that takes an administrator's reset
+first.
 
     mutation { enrolSecondFactor(input: {username: "...", password: "...", clientMutationId: "x"}) { method totp { configUrl secret } success error } }
 
