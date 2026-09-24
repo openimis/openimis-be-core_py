@@ -35,6 +35,9 @@ SIGNING_PEM = _pem(SIGNING_KEY)
 OTHER_PEM = _pem(_keypair())
 
 with_signing_key = override_settings(JWT_SIGNING_KEY=SIGNING_PEM)
+# An assembly can provision a key for the whole test run, so a test that
+# means "nothing provisioned" has to say so.
+without_signing_key = override_settings(JWT_SIGNING_KEY=None)
 
 
 @dataclass
@@ -62,6 +65,7 @@ def _issue(user):
     return get_token(user, DummyContext(user=user))
 
 
+@without_signing_key
 class NoKeyProvisionedTest(TestCase):
     """Nothing provisioned: every deployment today, and every deployment that
     upgrades without provisioning a key.
@@ -128,6 +132,7 @@ class ProvisionedKeyTest(TestCase):
         self.assertIn(kid, keys.deployment_keys())
 
 
+@without_signing_key
 class MigrationWindowTest(TestCase):
     """The acceptance criterion the dual-shape decode exists for: provisioning
     a key must not log anyone out.
@@ -238,6 +243,7 @@ class KeyLoadingTest(TestCase):
             pyjwt.get_unverified_header(from_inline)["kid"],
         )
 
+    @without_signing_key
     def test_nothing_provisioned_yields_no_signing_key(self):
         self.assertIsNone(keys.signing_key())
 
@@ -262,6 +268,7 @@ class KeyLoadingTest(TestCase):
         self.assertIn("JWT_SIGNING_KEY", str(caught.exception))
 
 
+@without_signing_key
 class EncodeWithoutAKeyTest(TestCase):
     """`jwt_encode_user_key` never reaches this with nothing provisioned, but
     an assembly can point JWT_ENCODE_HANDLER straight at `encode`.
