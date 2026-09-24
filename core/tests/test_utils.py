@@ -111,7 +111,9 @@ class UtilsTestCase(TestCase):
         122001, 122002, 122003, 122006, 122005, 122004,
         121501, 121502, 121503, 121504,
         121601, 121602, 121603, 121604,
-        900101, 122000
+        900101, 122000,
+        # 900201: new right for /api/core/scheduled_jobs, which was on AllowAny.
+        900201,
     ]
 
     def test_collect_all_gql_permissions(self):

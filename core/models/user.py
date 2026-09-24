@@ -871,12 +871,19 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        if i_user is not None and (
-            i_user.is_superuser or any(str(right) == str(perm) for right in i_user.rights)
-        ):
-            return True
-        else:
-            return super(User, self).has_perm(perm, obj)
+        if i_user is not None:
+            if i_user.is_superuser:
+                return True
+            wanted = {str(perm)}
+            if not str(perm).isdigit():
+                from core.rights_sync import right_id_for_permission_name
+
+                right_id = right_id_for_permission_name(str(perm))
+                if right_id is not None:
+                    wanted.add(str(right_id))
+            if any(str(right) in wanted for right in i_user.rights):
+                return True
+        return super(User, self).has_perm(perm, obj)
 
     @property
     def rights(self):

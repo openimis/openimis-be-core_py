@@ -884,7 +884,7 @@ def create_role_user(username, role, district_codes=None, officer=None):
 
 
 def create_data_entry_clerk_hf_role():
-    """CSU custom role: Opérateur de saisie FOSA / Data entry clerk HF."""
+    """CSU custom role: Data entry clerk HF ("Opérateur de saisie FOSA")."""
     perms = [
         "gql_query_report_perms",
         "gql_query_insurees_perms",
@@ -912,7 +912,7 @@ def create_data_entry_clerk_hf_role():
 
 
 def create_district_manager_role():
-    """CSU custom role: Gestionnaire de District / District Manager."""
+    """CSU custom role: District Manager ("Gestionnaire de District")."""
     perms = [
         "gql_query_report_perms",
         "gql_query_locations_perms",
@@ -928,7 +928,7 @@ def create_district_manager_role():
 
 
 def create_medical_advisor_role():
-    """CSU custom role: Médecin Conseil / Medical Advisor."""
+    """CSU custom role: Medical Advisor ("Médecin Conseil")."""
     perms = [
         "gql_query_report_perms",
         "gql_query_locations_perms",
@@ -983,7 +983,7 @@ def create_raf_role():
 
 
 def create_monitoring_evaluation_role():
-    """CSU custom role: Suivi & Evaluation / Monitoring and Evaluation."""
+    """CSU custom role: Monitoring and Evaluation ("Suivi & Evaluation")."""
     perms = [
         "gql_query_report_perms",
         "gql_query_locations_perms",

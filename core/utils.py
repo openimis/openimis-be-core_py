@@ -1238,11 +1238,6 @@ def get_cache_key(model, id):
 
 @lru_cache(maxsize=1)
 def collect_all_gql_permissions():
-    """
-    Collect all GQL permission codes from Django app configs into a dict structure:
-    {app: {perm_name: [perm_ids]}}.
-    Scans for attributes in DEFAULT_CFG or DEFAULT_CONFIG ending with '_perms' that are lists.
-    """
     excluded_apps = [
         "health_check.cache",
         "health_check",
@@ -1255,31 +1250,26 @@ def collect_all_gql_permissions():
         "channels",
         "graphql_jwt.refresh_token.apps.RefreshTokenConfig",
     ]
-    all_apps = [
-        app
-        for app in settings.INSTALLED_APPS
-        if not app.startswith("django") and app not in excluded_apps
-    ]
+
+    from django.apps import apps as django_apps
 
     permissions_dict = {}
-    for app in all_apps:
-        try:
-            app_module = __import__(f"{app}.apps")
-            config_dict = None
-            if hasattr(app_module.apps, "DEFAULT_CFG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CFG)
-            elif hasattr(app_module.apps, "DEFAULT_CONFIG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CONFIG)
-
-            if config_dict:
-                app_perms = {}
-                for key, value in config_dict.items():
-                    if key.endswith("_perms") and isinstance(value, list):
-                        app_perms[key] = [str(perm) for perm in value]
-                if app_perms:  # Only add apps with permissions
-                    permissions_dict[app] = app_perms
-        except (ImportError, AttributeError):
+    for app_config in django_apps.get_app_configs():
+        app = app_config.name
+        if app.startswith("django") or app in excluded_apps:
             continue
+        app_perms = {}
+        for attr in dir(app_config):
+            if not attr.endswith("_perms"):
+                continue
+            try:
+                value = getattr(app_config, attr)
+            except Exception:
+                continue
+            if isinstance(value, (list, tuple)):
+                app_perms[attr] = [str(perm) for perm in value]
+        if app_perms:
+            permissions_dict[app] = app_perms
 
     return permissions_dict
 

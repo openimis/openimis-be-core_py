@@ -4,6 +4,7 @@ from django.db import models
 from .base import UUIDModel
 from .user import User, Role
 from .base_mutation import ObjectMutation, MutationLog
+from core.models.row_security import ParentScope
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class RoleMutation(UUIDModel, ObjectMutation):
 
 
 class UserMutation(UUIDModel, ObjectMutation):
+    row_scope = ParentScope("core_user")
+
     core_user = models.ForeignKey(User, models.CASCADE, related_name="mutations")
     mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name="users")
 
