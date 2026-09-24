@@ -392,6 +392,20 @@ class StaleCopyWriteTest(TestCase):
     def _cached_user(self):
         return User.objects.get(username=self.user.username)
 
+    def _change_password_elsewhere(self):
+        """Change the stored password without touching this process's cache."""
+        new_password = _password()
+        detached = InteractiveUser.objects.all().get(pk=self.user.i_user.pk)
+        detached.set_password(new_password)
+        InteractiveUser.objects.all().filter(pk=detached.pk).update(
+            password=detached.password, private_key=detached.private_key
+        )
+        return new_password
+
+    def _stored_password_is(self, raw_password):
+        stored = InteractiveUser.objects.all().get(pk=self.user.i_user.pk)
+        return stored.check_password(raw_password)
+
     def test_issuing_a_token_keeps_a_revocation_point_set_elsewhere(self):
         from core.jwt import on_token_issued
 
@@ -401,6 +415,34 @@ class StaleCopyWriteTest(TestCase):
         on_token_issued(sender=None, request=None, user=self._cached_user())
 
         self.assertEqual(_stored_not_before(self.user), revoked_at)
+
+    def test_signing_out_never_lowers_a_revocation_point_set_elsewhere(self):
+        from core.services import sign_out_everywhere
+
+        revoked_at = _now() + 3600
+        _set_not_before(self.user, revoked_at)
+
+        sign_out_everywhere(self._cached_user())
+
+        self.assertEqual(_stored_not_before(self.user), revoked_at)
+
+    def test_signing_out_keeps_a_password_changed_elsewhere(self):
+        from core.services import sign_out_everywhere
+
+        new_password = self._change_password_elsewhere()
+
+        sign_out_everywhere(self._cached_user())
+
+        self.assertTrue(self._stored_password_is(new_password))
+
+    def test_disabling_keeps_a_password_changed_elsewhere(self):
+        from core.schema import set_user_deleted
+
+        new_password = self._change_password_elsewhere()
+
+        set_user_deleted(self._cached_user())
+
+        self.assertTrue(self._stored_password_is(new_password))
 
 
 class SignOutEverywhereMutationTest(openIMISGraphQLTestCase):

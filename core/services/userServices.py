@@ -17,6 +17,7 @@ from core.validation.obligatoryFieldValidation import (
 )
 from django.contrib.auth import authenticate, login
 from rest_framework.exceptions import AuthenticationFailed, ParseError
+from django.db import transaction
 from django.db.models import Q
 
 logger = logging.getLogger(__file__)
@@ -281,11 +282,14 @@ def sign_out_everywhere(logged_user, username_to_sign_out=None):
     if not user.i_user:
         raise ValidationError(_("core.user.not_interactive"))
 
-    revocation.bump(user.i_user)
-    # silent: bumping twice inside the same second writes the identical epoch
-    # second, and OpenIMISModel.save() raises on a no-op update. Semantically a
-    # no-op is fine here - sessions older than that second are already dead.
-    user.i_user.save(silent=True)
+    with transaction.atomic():
+        i_user = InteractiveUser.locked_from_database(user.i_user.pk)
+        revocation.bump(i_user)
+        # silent: bumping twice inside the same second writes the identical
+        # epoch second, and OpenIMISModel.save() raises on a no-op update.
+        # Semantically a no-op is fine here - sessions older than that second
+        # are already dead.
+        i_user.save(silent=True)
     # Single-token refresh re-decodes the presented token, so this is belt and
     # braces; it also covers a deployment that turns long-running refresh on.
     user.clear_refresh_tokens()
