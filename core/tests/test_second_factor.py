@@ -80,6 +80,25 @@ class SecondFactorDevicesTest(TestCase):
         self.assertFalse(TOTPDevice.objects.filter(user=self.user).exists())
         self.assertFalse(StaticDevice.objects.filter(user=self.user).exists())
 
+    def test_the_newest_scan_wins_when_two_are_somehow_pending(self):
+        # enrol_totp deletes then creates without a transaction, so two
+        # concurrent calls can leave two unconfirmed rows. Whichever is
+        # returned has to be the one the user is currently looking at, or
+        # their freshly scanned code confirms nothing.
+        TOTPDevice.objects.create(user=self.user, name="stale", confirmed=False)
+        newest = TOTPDevice.objects.create(
+            user=self.user, name="scanned", confirmed=False
+        )
+
+        self.assertEqual(devices.pending_totp(self.user).pk, newest.pk)
+
+    def test_the_pending_device_is_the_one_scanned_and_not_yet_confirmed(self):
+        self.assertIsNone(devices.pending_totp(self.user))
+        device = devices.enrol_totp(self.user)
+        self.assertEqual(devices.pending_totp(self.user).pk, device.pk)
+        devices.confirm_totp(device, _code(device))
+        self.assertIsNone(devices.pending_totp(self.user))
+
 
 class SecondFactorVerifyTest(TestCase):
     def setUp(self):
