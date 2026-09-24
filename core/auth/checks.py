@@ -58,3 +58,22 @@ def deployment_keys_are_publishable(app_configs, **kwargs):
         for kid, key in configured.items()
         if keys.public_verification_key(key) is None
     ]
+
+
+#: What an RSA key can sign with. JWT_SIGNING_KEY is always one (E001, E002).
+_RSA_ALGORITHMS = ("RS256", "RS384", "RS512", "PS256", "PS384", "PS512")
+
+
+@register(Tags.security)
+def deployment_algorithm_fits_the_signing_key(app_configs, **kwargs):
+    algorithm = keys.algorithm()
+    if algorithm in _RSA_ALGORITHMS:
+        return []
+    return [
+        Error(
+            f"JWT_DEPLOYMENT_ALGORITHM is {algorithm!r}, which cannot sign with the "
+            "RSA key in JWT_SIGNING_KEY, so every login would fail. Use one of "
+            f"{', '.join(_RSA_ALGORITHMS)}, or leave it unset for RS256.",
+            id="core.auth.E006",
+        )
+    ]
