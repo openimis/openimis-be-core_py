@@ -87,6 +87,9 @@ def reissue_recovery_codes(user, otp, otp_device=None):
         if result.outcome == second_factor.THROTTLED:
             lifted = result.locked_until.isoformat() if result.locked_until else None
             raise SecondFactorError(SECOND_FACTOR_THROTTLED, lockedUntil=lifted)
-        if not result.ok:
-            raise SecondFactorError(INVALID_SECOND_FACTOR)
-        return devices.issue_recovery_codes(user)
+        if result.ok:
+            return devices.issue_recovery_codes(user)
+        # Not raised inside the block: verify has just charged a throttle
+        # failure to every device it tried, and rolling that back would leave
+        # the guessing unmetered.
+    raise SecondFactorError(INVALID_SECOND_FACTOR)
