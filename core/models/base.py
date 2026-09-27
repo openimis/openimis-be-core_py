@@ -15,6 +15,7 @@ from core.bootstrap import (
     unavailability_reason,
 )
 from core.module_config_registry import validate_module_configuration, reload_module_configuration
+from core.models.row_security import RowSecurityMixin
 
 # from core.datetimes.ad_datetime import datetime as py_datetime
 
@@ -22,14 +23,14 @@ from core.module_config_registry import validate_module_configuration, reload_mo
 logger = logging.getLogger(__name__)
 
 
-class ExtendableModel(models.Model):
+class ExtendableModel(RowSecurityMixin, models.Model):
     json_ext = JSONField(db_column="JsonExt", blank=True, null=True)
 
     class Meta:
         abstract = True
 
 
-class UUIDModel(models.Model):
+class UUIDModel(RowSecurityMixin, models.Model):
     """
     Abstract entity, parent of all (new) openIMIS entities.
     Enforces the UUID identifier.
@@ -96,10 +97,43 @@ class ModuleConfiguration(UUIDModel):
                 module=module,
             ).first()
             if qs:
-                configuration = {**defaults, **qs._cfg}
+                configuration = {**defaults, **cls._without_rights(module, qs._cfg)}
             else:
                 logger.info("No %s configuration, using default!" % module)
         return configuration
+    _RIGHTS_SUFFIX = "_perms"
+
+    @classmethod
+    def _strip_rights(cls, value, path, ignored):
+        """Recursively strip the `_perms` keys, at any nesting level."""
+        if not isinstance(value, dict):
+            return value
+        cleaned = {}
+        for key, inner in value.items():
+            where = f"{path}.{key}" if path else key
+            if key.endswith(cls._RIGHTS_SUFFIX):
+                ignored.append(where)
+                continue
+            cleaned[key] = cls._strip_rights(inner, where, ignored)
+        return cleaned
+
+    @classmethod
+    def _without_rights(cls, module, stored_cfg):
+        # Recursive, and not only at the top level: api_fhir_r4 declared its
+        # subscription rights in a nested block, which therefore passed the filter.
+        ignored = []
+        cleaned = cls._strip_rights(stored_cfg, "", ignored)
+        if ignored:
+            # Noisy by design: this is the only way a deployment that had
+            # overridden a right finds out about it other than in production.
+            logger.warning(
+                "%s: %d right(s) overridden in the database are now ignored - rights "
+                "are no longer configurable, they are declared in the module. "
+                "Ignored keys: %s. Carry the intent over to the roles.",
+                module, len(ignored), ", ".join(sorted(ignored)),
+            )
+            return cleaned
+        return stored_cfg
 
     @property
     def _cfg(self):
@@ -115,6 +149,13 @@ class ModuleConfiguration(UUIDModel):
 
         if "_cfg_parsed" not in self.__dict__ or self.__dict__["_cfg_source"] != self.config:
             parsed = json.loads(self.config, object_pairs_hook=collections.OrderedDict)
+            # Rights are stripped here, at the one place where the JSON is decoded:
+            # `get_or_default` is not the only path. The hot reload
+            # (`core.module_config_registry.reload_module_configuration`) hands the
+            # config back to every module after a database write, and a filter
+            # placed only in `get_or_default` let that path reintroduce a stored
+            # `_perms`. Filtering at parse time covers both.
+            parsed = type(self)._without_rights(self.module, parsed)
             # only after a successful parse, so a bad config raises on every
             # access rather than falling back to the last good one
             self.__dict__["_cfg_parsed"] = parsed

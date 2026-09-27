@@ -19,6 +19,48 @@ from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 from .gql import MaxLengthConstraintsGQLType, build_max_length_constraints  # noqa: F401  (re-exported)
 from .utils import prefix_filterset
+from core.gql import ScopedQuerysetMixin
+
+
+def is_own_user_record(user_record, info):
+    """
+    True when the User row being resolved is the logged-in user themselves.
+
+    Reading one's own core User row does not require gql_query_users_perms: see
+    the self fallback in Query.resolve_users.
+    """
+    context_user_id = getattr(info.context.user, "id", None)
+    return (
+        context_user_id is not None
+        and getattr(user_record, "id", None) == context_user_id
+    )
+
+
+def is_own_interactive_user(i_user, info):
+    """Same as is_own_user_record, for the InteractiveUser behind the logged-in User."""
+    context_i_user_id = getattr(info.context.user, "i_user_id", None)
+    return (
+        context_i_user_id is not None
+        and getattr(i_user, "id", None) == context_i_user_id
+    )
+
+
+def check_linked_object_access(is_own_record, info):
+    """
+    Gate an object linked to a user record: health facility, officer, claim
+    admin, roles, districts.
+
+    With gql_query_users_perms, nothing changes. Without it, these are readable
+    on your own record only - reading your own profile needs no right, reading
+    somebody else's does. What the caller may reach from there is left to the
+    module that owns it: location row-secures a walk into the tree in
+    location.gql_queries.check_location_readable, so the objects hanging off
+    your own record cannot become a way around it.
+    """
+    if info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        return
+    if not is_own_record:
+        raise PermissionDenied(_("unauthorized"))
 
 
 class OfficerGQLType(DjangoObjectType):
@@ -140,13 +182,14 @@ class InteractiveUserGQLType(DjangoObjectType):
         connection_class = ExtendedConnection
 
     def resolve_is_superuser(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        if not info.context.user.has_perms(
+            CoreConfig.gql_query_users_perms
+        ) and not is_own_interactive_user(self, info):
             raise PermissionDenied(_("unauthorized"))
         return self.is_superuser
 
     def resolve_health_facility(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        check_linked_object_access(is_own_interactive_user(self, info), info)
         if self.health_facility_id:
             return (
                 HealthFacility.get_queryset(None, info)
@@ -157,8 +200,7 @@ class InteractiveUserGQLType(DjangoObjectType):
             return None
 
     def resolve_roles(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        check_linked_object_access(is_own_interactive_user(self, info), info)
         if self.user_roles:
             return Role.objects.filter(validity_to__isnull=True).filter(
                 user_roles__user_id=self.id, user_roles__validity_to__isnull=True
@@ -169,20 +211,20 @@ class InteractiveUserGQLType(DjangoObjectType):
     def resolve_user_roles(self, info, **kwargs):
         # Same data as `roles`, exposed through the user_roles reverse relation;
         # gate it the same way so it can't be used to bypass resolve_roles.
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        check_linked_object_access(is_own_interactive_user(self, info), info)
         return self.user_roles
 
     def resolve_role_id(self, info, **kwargs):
         # Legacy role_id column is auto-exposed as roleId — a role assignment;
         # gate it like the other role fields.
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        if not info.context.user.has_perms(
+            CoreConfig.gql_query_users_perms
+        ) and not is_own_interactive_user(self, info):
             raise PermissionDenied(_("unauthorized"))
         return self.role_id
 
     def resolve_userdistrict_set(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionDenied(_("unauthorized"))
+        check_linked_object_access(is_own_interactive_user(self, info), info)
         if self.userdistrict_set:
             return self.userdistrict_set.filter(*UserDistrict.filter_validity())
         else:
@@ -231,8 +273,25 @@ class UserGQLType(DjangoObjectType):
     def get_queryset(cls, queryset, info):
         return User.get_queryset(queryset, info)
 
+    # healthFacility, officer and claimAdmin hang off the User row with no right
+    # of their own, so without these guards the self fallback of resolve_users
+    # would hand an entry point into the location module to any logged-in user.
+    def resolve_health_facility(self, info):
+        check_linked_object_access(is_own_user_record(self, info), info)
+        return self.health_facility
+
+    def resolve_officer(self, info):
+        check_linked_object_access(is_own_user_record(self, info), info)
+        return self.officer
+
+    def resolve_claim_admin(self, info):
+        check_linked_object_access(is_own_user_record(self, info), info)
+        return self.claim_admin
+
     def resolve_client_mutation_id(self, info):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        if not info.context.user.has_perms(
+            CoreConfig.gql_query_users_perms
+        ) and not is_own_user_record(self, info):
             raise PermissionDenied(_("unauthorized"))
         user_mutation = (
             self.mutations.select_related("mutation").filter(mutation__status=0).first()
@@ -240,7 +299,9 @@ class UserGQLType(DjangoObjectType):
         return user_mutation.mutation.client_mutation_id if user_mutation else None
 
     def resolve_user_types(self, info, **kwargs):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
+        if not info.context.user.has_perms(
+            CoreConfig.gql_query_users_perms
+        ) and not is_own_user_record(self, info):
             raise PermissionDenied(_("unauthorized"))
         return get_user_types(self)
 
@@ -272,7 +333,7 @@ class CustomFilterGQLType(graphene.ObjectType):
     possible_filters = graphene.List(CustomFilterOptionGQLType)
 
 
-class UserMutationGQLType(DjangoObjectType):
+class UserMutationGQLType(ScopedQuerysetMixin, DjangoObjectType):
     """
     This intermediate object links Mutations to Users. Beware of the confusion between the user performing the mutation
     and the users affected by that mutation, the latter being listed in this object.

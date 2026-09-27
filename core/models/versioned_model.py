@@ -8,11 +8,12 @@ from core.utils import CachedManager, CachedModelMixin
 from ..fields import DateTimeField
 from ..utils import filter_validity as core_filter_validity
 import logging
+from core.models.row_security import RowSecurityMixin
 
 logger = logging.getLogger(__name__)
 
 
-class BaseVersionedModel(CachedModelMixin, models.Model):
+class BaseVersionedModel(RowSecurityMixin, CachedModelMixin, models.Model):
     validity_from = DateTimeField(db_column="ValidityFrom", default=py_datetime.now)
     validity_to = DateTimeField(db_column="ValidityTo", blank=True, null=True)
 

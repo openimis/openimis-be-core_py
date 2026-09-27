@@ -11,7 +11,7 @@ except ImportError:
 
 
 def get_model(model_name):
-    """Récupère un modèle à partir de son nom."""
+    """Look up a model from its name."""
     try:
         return apps.get_model('core', model_name)
     except LookupError:

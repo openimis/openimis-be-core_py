@@ -78,19 +78,6 @@ class RightsCacheInvalidationTest(TestCase):
             [], InteractiveUser.objects.get(id=self.i_user.id).rights
         )
 
-    def test_assigning_admin_role_invalidates_is_admin_cache(self):
-        admin_role = Role.objects.create(
-            name="TestRightsCacheAdminRole",
-            is_system=64,
-            is_blocked=False,
-            audit_user_id=-1,
-        )
-        self.assertFalse(self.i_user.is_imis_admin)
-
-        UserRole.objects.create(user=self.i_user, role=admin_role, audit_user_id=-1)
-
-        self.assertTrue(self.i_user.is_imis_admin)
-
 
 class RecordingCacheStub:
     """Records what the receivers ask the cache to drop."""
@@ -141,7 +128,6 @@ class RoleChangeCacheInvalidationTest(TestCase):
             self.role.save()
 
         self.assertIn(f"rights_{self.i_user.id}", stub.deleted_keys)
-        self.assertIn(f"is_admin_{self.i_user.id}", stub.deleted_keys)
 
     def test_role_right_change_drops_the_keys_of_the_role_members(self):
         stub = RecordingCacheStub()

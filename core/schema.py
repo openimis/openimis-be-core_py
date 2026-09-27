@@ -34,6 +34,7 @@ from core.services import (
     user_authentication,
     wait_for_mutation,
 )
+from core.mutation_log_secrets import contains_secret, scrub_secrets
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
@@ -286,7 +287,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     success = graphene.Field(graphene.Boolean)
     error = graphene.Field(graphene.String)
     message = graphene.Field(graphene.String)
-    metadata = GenericScalar(description="Metadata dictionary containing the mutated entity details or input parameters.")
+    metadata = GenericScalar(
+        description="Metadata dictionary containing the mutated entity details or input parameters."
+    )
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -327,7 +330,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                 coerced_list.append(item)
                         elif (
                             inner_type.__class__
-                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta and getattr(inner_type._meta, 'name', '') != "Int"
+                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta
+                            and getattr(inner_type._meta, 'name', '') != "Int"
                         ):
                             coerced_list.append(
                                 cls.coerce_mutation_data(item, input_class=inner_type)
@@ -407,15 +411,20 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             or not getattr(user, "id", None)
         ):
             raise AuthenticationRequired()
+        carries_secret = contains_secret(data)
+        logged_data = scrub_secrets(data) if carries_secret else data
+        logged_details = data.get("client_mutation_details")
+        if carries_secret:
+            logged_details = scrub_secrets(logged_details)
 
         mutation_log = MutationLog.objects.create(
-            json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
+            json_content=json.dumps(logged_data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get("client_mutation_id"),
             client_mutation_label=data.get("client_mutation_label"),
             client_mutation_details=(
-                json.dumps(data.get("client_mutation_details"), cls=OpenIMISJSONEncoder)
-                if data.get("client_mutation_details")
+                json.dumps(logged_details, cls=OpenIMISJSONEncoder)
+                if logged_details
                 else None
             ),
         )
@@ -472,7 +481,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     success=False,
                     error=mutation_log.error,
                     message=mutation_log.client_mutation_label or mutation_log.error,
-                    metadata=data if data else None,
+                    # The front end receives the input echoed back; it must not
+                    # find there the password it has just sent - the response
+                    # travels through access logs, proxies and error reporters.
+                    metadata=scrub_secrets(data) if data else None,
                 )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
@@ -486,7 +498,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             logger.debug(
                 "[OpenIMISMutation %s] before mutate signal sent", mutation_log.id
             )
-            if core.async_mutations:
+            if core.async_mutations and not carries_secret:
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
@@ -616,6 +628,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                     if metadata.get("uuid"):
                                         break
                 if metadata:
+                    # This rewrite happens after the move to a terminal state, so
+                    # after the secrets have been masked (`_secret_free_fields`).
+                    # `metadata` most often comes from the already masked
+                    # `json_content`, but not always: the `elif data` branch above
+                    # starts again from the raw input, and `messages` is merged
+                    # into it. So mask again at write time, so that this path
+                    # cannot reintroduce what the masking has just removed.
+                    metadata = scrub_secrets(metadata)
                     mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
                     MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
         except Exception as exc:
@@ -634,8 +654,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             status=mutation_log.status,
             success=(mutation_log.status == MutationLog.SUCCESS),
             error=mutation_log.error,
-            message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
-            metadata=metadata if metadata else None,
+            message=mutation_log.client_mutation_label or (
+                mutation_log.error if mutation_log.status == MutationLog.ERROR else None
+            ),
+            metadata=scrub_secrets(metadata) if metadata else None,
         )
 
 
@@ -834,7 +856,7 @@ class MutationLogGQLType(DjangoObjectType):
         user = info.context.user
         if user.is_anonymous:
             return queryset.none()
-        if user.is_superuser or getattr(user, "is_imis_admin", False):
+        if user.is_superuser:
             return queryset
         return queryset.filter(user=user)
 
@@ -1012,9 +1034,26 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_claim_admins(self, info, search=None, **kwargs):
+        user = info.context.user
         user_health_facility = None
-        if not info.context.user.has_perms(CoreConfig.gql_query_claim_admins_perms):
-            raise PermissionDenied(_("unauthorized"))
+        if not user.has_perms(CoreConfig.gql_query_claim_administrator_perms):
+            # Without the query right, a user is still allowed to see the claim
+            # administrator they are themselves linked to: the frontend relies on
+            # that entry to resolve the health facility of the logged-in user.
+            claim_admin_id = getattr(user, "claim_admin_id", None)
+            if claim_admin_id:
+                own_claim_admin = Q(id=claim_admin_id)
+            else:
+                # tblUsers.ClaimAdminId is not always populated: InteractiveUser
+                # .is_claim_admin resolves the link by login name instead, so fall
+                # back to the same lookup rather than denying a genuine claim admin.
+                login_name = getattr(user, "username", None)
+                if not login_name:
+                    raise PermissionDenied(_("unauthorized"))
+                own_claim_admin = Q(code__iexact=login_name, has_login=True)
+            return ClaimAdmin.objects.filter(
+                *ClaimAdmin.filter_validity(**kwargs), own_claim_admin
+            )
 
         district_uuid = kwargs.get("district_uuid", None)
         region_uuid = kwargs.get("region_uuid", None)
@@ -1027,10 +1066,10 @@ class Query(graphene.ObjectType):
                 hf_filters += [Q(location__parent__uuid=region_uuid)]
 
             if settings.ROW_SECURITY:
-                from locations.models import LocationManager
+                from location.models import LocationManager
 
                 q = LocationManager().build_user_location_filter_query(
-                    info.context.user._u, prefix="location", loc_types=["D"]
+                    user._u, prefix="location", loc_types=["D"]
                 )
                 if q:
                     hf_filters += [q]
@@ -1206,8 +1245,14 @@ class Query(graphene.ObjectType):
         parent_location_level=None,
         **kwargs,
     ):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionError("Unauthorized")
+        user = info.context.user
+        if not user.has_perms(CoreConfig.gql_query_users_perms):
+            # Without the query right, a user is still allowed to see their own
+            # record: the frontend reads the logged-in user profile through this
+            # query. Anything else stays unauthorized.
+            if user.is_anonymous or not getattr(user, "id", None):
+                raise PermissionError("Unauthorized")
+            return User.objects.filter(id=user.id)
 
         user_filters = [Q(t_user__isnull=True)]
         user_query = User.objects
@@ -2007,27 +2052,24 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    admin_role_ids = Role.get_system_role_ids(Role.IMIS_ADMINISTRATOR)
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
     incoming_email = data.get("email")
     is_superuser = data.pop("is_superuser", None)
-    # is_imis_admin covers both the stored superuser flag and the IMIS Administrator role,
-    # which already grants every right, hence the ability to escalate any other user
-    if is_superuser is not None and not user.is_imis_admin:
+    # The superuser flag grants every right, hence the ability to escalate any
+    # other user: only a superuser may hand it out.
+    if is_superuser is not None and not user.is_superuser:
         raise PermissionDenied(_("mutation.user_is_superuser_not_grantable"))
     if user_uuid:
-        incoming_roles = data.get("roles") or []
         is_self = uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
+        # Self-demotion is guarded on the flag alone. There used to be a second
+        # guard here, refusing the save when the incoming roles held none whose
+        # IsSystem was 64: it was written when that legacy label still conferred
+        # admin. It no longer does, so the guard protected nothing and only
+        # forced an administrator to keep a role they may not want.
         if is_self and is_superuser is False:
             raise ValidationError(_("mutation.user_cannot_demote_self"))
-        if (
-            is_self
-            and user.is_superuser
-            and not set(admin_role_ids).intersection(incoming_roles)
-        ):
-            raise ValidationError("Administrator cannot deprovision himself.")
         current_user = InteractiveUser.objects.filter(user__id=user_uuid).first()
 
         current_email = current_user.email if current_user else None

@@ -1015,58 +1015,21 @@ def get_first_or_default_language():
         return Language.objects.first()
 
 
+# Role rights are seeded (solution-builder fixtures and the permission maps),
+# never migrated. Both helpers are kept because some forty historical
+# migrations import them, but they do nothing: they looked their role up by
+# `IsSystem`, and a legacy label on a role must not decide which rights that
+# role carries. The insert side has been inert for a while; the remove side
+# followed it, since a reverse that deletes seeded rights the forward never
+# created only takes rights away.
+
+
 def insert_role_right_for_system(system_role, right_id, apps):
-    pass
-    # do not manage the role and right via migrations
-    # RoleRight = apps.get_model("core", "RoleRight")
-    # Role = apps.get_model("core", "Role")
-    # existing_roles = Role.objects.filter(
-    #     is_system=system_role, validity_to__isnull=True
-    # )
-    # if not existing_roles:
-    #     logger.warning(
-    #         "Migration requested a role_right for system role %s but couldn't find that role",
-    #         system_role,
-    #     )
-    # else:
-    #     for existing_role in existing_roles:
-    #         role_rights = RoleRight.objects.filter(
-    #             role=existing_role, right_id=right_id
-    #         ).first()
-    #         if not role_rights:
-    #             RoleRight.objects.create(
-    #                 role=existing_role,
-    #                 right_id=right_id,
-    #                 validity_from=datetime.datetime.now(),
-    #             )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def remove_role_right_for_system(system_role, right_id, apps):
-    RoleRight = apps.get_model("core", "RoleRight")
-    Role = apps.get_model("core", "Role")
-    existing_roles = Role.objects.filter(
-        is_system=system_role, validity_to__isnull=True
-    )
-    if not existing_roles:
-        logger.warning(
-            "Migration requested to remove a role_right for system role %s but couldn't find that role",
-            system_role,
-        )
-    for existing_role in existing_roles:
-        role_rights = RoleRight.objects.filter(role=existing_role, right_id=right_id)
-        if not role_rights:
-            logger.warning(
-                "Role right not found for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
-        for role_right in role_rights:
-            role_right.delete()
-            logger.info(
-                "Role right removed for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def convert_to_python_value(string):
@@ -1238,11 +1201,6 @@ def get_cache_key(model, id):
 
 @lru_cache(maxsize=1)
 def collect_all_gql_permissions():
-    """
-    Collect all GQL permission codes from Django app configs into a dict structure:
-    {app: {perm_name: [perm_ids]}}.
-    Scans for attributes in DEFAULT_CFG or DEFAULT_CONFIG ending with '_perms' that are lists.
-    """
     excluded_apps = [
         "health_check.cache",
         "health_check",
@@ -1255,31 +1213,26 @@ def collect_all_gql_permissions():
         "channels",
         "graphql_jwt.refresh_token.apps.RefreshTokenConfig",
     ]
-    all_apps = [
-        app
-        for app in settings.INSTALLED_APPS
-        if not app.startswith("django") and app not in excluded_apps
-    ]
+
+    from django.apps import apps as django_apps
 
     permissions_dict = {}
-    for app in all_apps:
-        try:
-            app_module = __import__(f"{app}.apps")
-            config_dict = None
-            if hasattr(app_module.apps, "DEFAULT_CFG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CFG)
-            elif hasattr(app_module.apps, "DEFAULT_CONFIG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CONFIG)
-
-            if config_dict:
-                app_perms = {}
-                for key, value in config_dict.items():
-                    if key.endswith("_perms") and isinstance(value, list):
-                        app_perms[key] = [str(perm) for perm in value]
-                if app_perms:  # Only add apps with permissions
-                    permissions_dict[app] = app_perms
-        except (ImportError, AttributeError):
+    for app_config in django_apps.get_app_configs():
+        app = app_config.name
+        if app.startswith("django") or app in excluded_apps:
             continue
+        app_perms = {}
+        for attr in dir(app_config):
+            if not attr.endswith("_perms"):
+                continue
+            try:
+                value = getattr(app_config, attr)
+            except Exception:
+                continue
+            if isinstance(value, (list, tuple)):
+                app_perms[attr] = [str(perm) for perm in value]
+        if app_perms:
+            permissions_dict[app] = app_perms
 
     return permissions_dict
 

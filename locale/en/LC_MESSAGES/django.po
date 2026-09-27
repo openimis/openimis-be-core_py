@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-23 00:45+0000\n"
+"POT-Creation-Date: 2026-09-17 16:48+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,111 +17,332 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: core/gql/gql_mutations/base_mutation.py:84
-#: core/gql/gql_mutations/base_mutation.py:117
-#: core/gql/gql_mutations/base_mutation.py:159
-#: core/gql/gql_mutations/base_mutation.py:180
-#: core/gql/gql_mutations/base_mutation.py:210
-#: core/gql/gql_mutations/base_mutation.py:249
-#: core/gql/gql_mutations/base_mutation.py:292 core/schema.py:1336
-#: core/schema.py:1368 core/schema.py:1451 core/schema.py:1518
-#: core/schema.py:1558 core/schema.py:1621 core/schema.py:1783
+#: core/admin.py:43
+msgid "Select at least one cache to flush."
+msgstr ""
+
+#: core/admin.py:55
+#, python-format
+msgid "Flushed cache(s): %(aliases)s"
+msgstr ""
+
+#: core/admin.py:61
+#, python-format
+msgid "Failed to flush cache '%(alias)s': %(message)s"
+msgstr ""
+
+#: core/admin.py:68 core/admin.py:104
+msgid "Caches"
+msgstr ""
+
+#: core/gql/gql_mutations/base_mutation.py:95
+#: core/gql/gql_mutations/base_mutation.py:128
+#: core/gql/gql_mutations/base_mutation.py:170
+#: core/gql/gql_mutations/base_mutation.py:191
+#: core/gql/gql_mutations/base_mutation.py:221
+#: core/gql/gql_mutations/base_mutation.py:260
+#: core/gql/gql_mutations/base_mutation.py:303 core/schema.py:1695
+#: core/schema.py:1727 core/schema.py:1818 core/schema.py:1892
+#: core/schema.py:1925 core/schema.py:1989 core/schema.py:2018
+#: core/schema.py:2241
 msgid "mutation.authentication_required"
 msgstr ""
 
-#: core/gql_queries.py:128 core/gql_queries.py:136 core/gql_queries.py:146
-#: core/gql_queries.py:188 core/schema.py:530 core/schema.py:771
-#: core/schema.py:806 core/schema.py:820 core/schema.py:826 core/schema.py:834
-#: core/schema.py:1193 core/schema.py:1338 core/utils.py:515 core/utils.py:520
-msgid "unauthorized"
-msgstr "User not authorized for this operation"
+#: core/gql_errors.py:60
+msgid "An unexpected error occurred, please contact your administrator"
+msgstr ""
 
-#: core/gql_errors.py:9
+#: core/gql_errors.py:80 core/tests/test_gql_queries.py:180
 msgid "unauthenticated"
 msgstr "Authentication required"
 
-#: core/schema.py:1340
+#: core/gql_queries.py:63 core/gql_queries.py:188 core/gql_queries.py:223
+#: core/gql_queries.py:295 core/gql_queries.py:305
+#: core/rights_role_test_case.py:49 core/rights_role_test_case.py:91
+#: core/schema.py:1030 core/schema.py:1075 core/schema.py:1089
+#: core/schema.py:1095 core/schema.py:1106 core/schema.py:1697
+#: core/tests/test_gql_queries.py:119
+msgid "unauthorized"
+msgstr "User not authorized for this operation"
+
+# django.po
+#: core/reports/user_activity.py:3100
+msgid "core.user_activity_report.claim"
+msgstr "Claim %(code)s for Health Facility %(hf_code)s"
+
+#: core/reports/user_activity.py:3104 core/reports/user_activity.py:3131
+#: core/reports/user_activity.py:3195 core/reports/user_activity.py:3208
+msgid "core.user_activity_report.location_format"
+msgstr "%(name)s (%(code)s)"
+
+#: core/reports/user_activity.py:3109
+msgid "core.user_activity_report.all_regions_districts"
+msgstr "all regions & districts"
+
+#: core/reports/user_activity.py:3110
+msgid "core.user_activity_report.batch_run"
+msgstr "Batch run for period %(run_month)s/%(run_year)s in %(location)s"
+
+#: core/reports/user_activity.py:3116
+msgid "core.user_activity_report.claim_admin"
+msgstr "Claim admin %(code)s - %(other_names)s %(last_name)s"
+
+#: core/reports/user_activity.py:3122
+msgid "core.user_activity_report.unknown"
+msgstr "Unknown"
+
+#: core/reports/user_activity.py:3123
+msgid "core.user_activity_report.extract"
+msgstr "Extract done on %(date)s - %(direction)s - %(type)s"
+
+#: core/reports/user_activity.py:3136
+msgid "core.user_activity_report.family_no_location"
+msgstr "without any location"
+
+#: core/reports/user_activity.py:3137
+msgid "core.user_activity_report.family"
+msgstr "Family - Head number %(chf_id)s - %(location)s"
+
+#: core/reports/user_activity.py:3146
+msgid "core.user_activity_report.unknown_officer"
+msgstr "unknown Officer"
+
+#: core/reports/user_activity.py:3148
+msgid "core.user_activity_report.claim_prefix"
+msgstr "Claim %(code)s"
+
+#: core/reports/user_activity.py:3150
+msgid "core.user_activity_report.unknown_claim"
+msgstr "unknown Claim"
+
+#: core/reports/user_activity.py:3151
+msgid "core.user_activity_report.feedback"
+msgstr ""
+"Feedback entered on %(feedback_date)s by %(officer_name)s for %(claim_name)s"
+
+#: core/reports/user_activity.py:3157
+msgid "core.user_activity_report.loc_hf"
+msgstr ""
+"Health Facility %(code)s - %(name)s in %(location_name)s (%(location_code)s)"
+
+#: core/reports/user_activity.py:3164
+msgid "core.user_activity_report.insuree"
+msgstr "Insuree %(chf_id)s - %(other_names)s %(last_name)s"
+
+#: core/reports/user_activity.py:3170
+msgid "core.user_activity_report.item"
+msgstr "Item %(code)s - %(name)s"
+
+#: core/reports/user_activity.py:3175
+msgid "core.user_activity_report.officer"
+msgstr "Enrollment Officer %(code)s - %(other_names)s %(last_name)s"
+
+#: core/reports/user_activity.py:3186
+msgid "core.user_activity_report.payer"
+msgstr "Payer %(name)s - type %(displayed_type)s"
+
+#: core/reports/user_activity.py:3191
+msgid "core.user_activity_report.photo"
+msgstr "Insuree Picture for Insuree %(chf_id)s"
+
+#: core/reports/user_activity.py:3200 core/reports/user_activity.py:3213
+msgid "core.user_activity_report.pl_no_location"
+msgstr "without specific location"
+
+#: core/reports/user_activity.py:3201
+msgid "core.user_activity_report.pl_item"
+msgstr "Item Pricelist - %(name)s - %(location)s"
+
+#: core/reports/user_activity.py:3214
+msgid "core.user_activity_report.pl_service"
+msgstr "Service Pricelist - %(name)s - %(location)s"
+
+#: core/reports/user_activity.py:3219
+msgid "core.user_activity_report.pl_item_details"
+msgstr ""
+"Item %(item_code)s - %(item_name)s - in the Price List \"%(pricelist_name)s\""
+
+#: core/reports/user_activity.py:3225
+msgid "core.user_activity_report.pl_service_details"
+msgstr ""
+"Service %(service_code)s - %(service_name)s - in the Price List \"%"
+"(pricelist_name)s\""
+
+#: core/reports/user_activity.py:3231
+msgid "core.user_activity_report.policy"
+msgstr "Policy to Family - Head number %(chf_id)s"
+
+#: core/reports/user_activity.py:3233
+msgid "core.user_activity_report.premium"
+msgstr ""
+"Premium of %(amount)s - Family Head %(chf_id)s - Policy start on %"
+"(start_date)s"
+
+#: core/reports/user_activity.py:3239
+msgid "core.user_activity_report.product"
+msgstr "Product %(code)s - %(name)s"
+
+#: core/reports/user_activity.py:3244
+msgid "core.user_activity_report.product_item"
+msgstr "Item %(item_code)s in Product %(product_code)s"
+
+#: core/reports/user_activity.py:3249
+msgid "core.user_activity_report.product_service"
+msgstr "Service %(service_code)s in Product %(product_code)s"
+
+#: core/reports/user_activity.py:3254
+msgid "core.user_activity_report.relative_distribution"
+msgstr "Relative distribution in Product %(product_code)s - %(product_name)s"
+
+#: core/reports/user_activity.py:3259
+msgid "core.user_activity_report.service"
+msgstr "Service %(code)s - %(name)s"
+
+#: core/reports/user_activity.py:3264
+msgid "core.user_activity_report.user"
+msgstr "User %(other_names)s %(last_name)s - login %(login_name)s"
+
+#: core/reports/user_activity.py:3270
+msgid "core.user_activity_report.user_district"
+msgstr ""
+"User %(login_name)s assigned to District %(location_code)s %(location_name)s"
+
+#: core/reports/user_activity.py:3277
+msgid "core.user_activity_report.location"
+msgstr "%(type)s %(code)s - %(name)s"
+
+#: core/reports/user_activity.py:3284
+msgid "core.user_activity_report.default"
+msgstr "%(id)s - %(legacy_id)s - from %(validity_from)s - to %(validity_to)s"
+
+#: core/schema.py:1699
 msgid "mutation.duplicate_of_role_name"
 msgstr ""
 
-#: core/schema.py:1652
+#: core/schema.py:2042
+msgid "mutation.user_is_superuser_not_grantable"
+msgstr ""
+
+#: core/schema.py:2047
+msgid "mutation.user_cannot_demote_self"
+msgstr ""
+
+#: core/schema.py:2060
 msgid "mutation.user_email_invalid"
 msgstr ""
 
-#: core/schema.py:1655
+#: core/schema.py:2063
 msgid "mutation.user_email_duplicated"
 msgstr ""
 
-#: core/schema.py:1657
+#: core/schema.py:2065
 msgid "mutation.user_no_email_provided"
 msgstr ""
 
-#: core/schema.py:1662
+#: core/schema.py:2070
 msgid "mutation.user_username_too_long"
 msgstr ""
 
-#: core/schema.py:1665
+#: core/schema.py:2073
 msgid "mutation.user_username_not_changeable"
 msgstr ""
 
-#: core/schema.py:1795
+#: core/schema.py:2253
 msgid "Failed to change user password"
 msgstr ""
 
-#: core/schema.py:1807
+#: core/schema.py:2265
 msgid "Username of the account to recover"
 msgstr ""
 
-#: core/schema.py:1822
+#: core/schema.py:2280
 msgid "Failed to reset password."
 msgstr ""
 
-#: core/schema.py:1833
+#: core/schema.py:2291
 msgid "Username of the user"
 msgstr ""
 
-#: core/schema.py:1836
+#: core/schema.py:2294
 msgid "Token used to validate the user"
 msgstr ""
 
-#: core/schema.py:1839
+#: core/schema.py:2297
 msgid "New password for the user"
 msgstr ""
 
-#: core/schema.py:1863
+#: core/schema.py:2321
 msgid "Failed to set password."
 msgstr ""
 
-#: core/services/userServices.py:40 core/services/userServices.py:147
-#: core/services/userServices.py:189
+#: core/services/userServices.py:48 core/services/userServices.py:160
+#: core/services/userServices.py:204
 msgid "core.user.edit_historical_data_error"
 msgstr ""
 
-#: core/services/userServices.py:251
+#: core/services/userServices.py:277
 msgid "core.wrong_old_password"
 msgstr "The old password is incorrect"
 
-#: core/services/userServices.py:269
+#: core/services/userServices.py:309
 msgid "Missing username or password"
 msgstr ""
 
-#: core/utils.py:183
+#: core/templates/admin/core/cache_flush.html:17
+msgid ""
+"Flush one or more Django caches. This immediately drops cached objects, "
+"rights, location data, and anything else stored in the selected backends."
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:26
+msgid "Select all"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:28
+msgid "Alias"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:29
+msgid "Backend"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:30
+msgid "Key prefix"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:31
+msgid "Location"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:47
+msgid "No caches are configured."
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:55
+msgid "Flush selected"
+msgstr ""
+
+#: core/templates/admin/core/cache_flush.html:58
+msgid "Flush all"
+msgstr ""
+
+#: core/utils.py:390
 msgid "core.string.over_max_length"
 msgstr "Value %(value)s is over maximum length: %(max_length)s"
 
-#: core/utils.py:202
+#: core/utils.py:409
 msgid "core.insuree.unknown_gender"
 msgstr "Unknown gender"
 
-#: core/utils.py:204
+#: core/utils.py:411
 msgid "core.insuree.unknown_dob"
 msgstr "Unknown date of birth"
 
-#: core/utils.py:649
+#: core/utils.py:1097
 msgid "core.utils.schema_validation.invalid_schema"
 msgstr "Schema is not valid %(error)"
 
-#: core/utils.py:653
+#: core/utils.py:1104
 msgid "core.utils.schema_validation.invalid_json"
 msgstr "Schema json is not valid %(error)"
 
@@ -134,12 +355,11 @@ msgstr ""
 msgid "core.validation.stringFieldValidationMixin.empty_string"
 msgstr "Field cannot be empty."
 
-#: core/validation/stringFieldValidationMixin.py:7
-msgid ""
-"core.validation.stringFieldValidationMixin.string_starts_with_whitespace"
+#: core/validation/stringFieldValidationMixin.py:8
+msgid "core.validation.stringFieldValidationMixin.string_starts_with_whitespace"
 msgstr "Field cannot start with whitespace."
 
-#: core/validation/stringFieldValidationMixin.py:8
+#: core/validation/stringFieldValidationMixin.py:11
 msgid "core.validation.stringFieldValidationMixin.string_ends_with_whitespace"
 msgstr "Field cannot end with whitespace."
 
@@ -148,7 +368,7 @@ msgstr "Field cannot end with whitespace."
 msgid "Object code %(code)s is not unique."
 msgstr ""
 
-#: core/views.py:45
+#: core/views.py:47
 msgid "Only user requesting export can fetch request"
 msgstr ""
 
@@ -157,149 +377,44 @@ msgstr ""
 #~ msgstr ""
 #~ "User not authorized for this operation due to limited location permissions"
 
-# django.po
-msgid "core.user_activity_report.claim"
-msgstr "Claim %(code)s for Health Facility %(hf_code)s"
+#~ msgid "Enrolment Officer"
+#~ msgstr "Enrolment Officer"
 
-msgid "core.user_activity_report.batch_run"
-msgstr "Batch run for period %(run_month)s/%(run_year)s in %(location)s"
+#~ msgid "Manager"
+#~ msgstr "Manager"
 
-msgid "core.user_activity_report.location_format"
-msgstr "%(name)s (%(code)s)"
+#~ msgid "Accountant"
+#~ msgstr "Accountant"
 
-msgid "core.user_activity_report.all_regions_districts"
-msgstr "all regions & districts"
+#~ msgid "Clerk"
+#~ msgstr "Clerk"
 
-msgid "core.user_activity_report.claim_admin"
-msgstr "Claim admin %(code)s - %(other_names)s %(last_name)s"
+#~ msgid "Medical Officer"
+#~ msgstr "Medical Officer"
 
-msgid "core.user_activity_report.extract"
-msgstr "Extract done on %(date)s - %(direction)s - %(type)s"
+#~ msgid "Scheme Administrator"
+#~ msgstr "Scheme Administrator"
 
-msgid "core.user_activity_report.unknown"
-msgstr "Unknown"
+#~ msgid "IMIS Administrator"
+#~ msgstr "IMIS Administrator"
 
-msgid "core.user_activity_report.family"
-msgstr "Family - Head number %(chf_id)s - %(location)s"
+#~ msgid "Receptionist"
+#~ msgstr "Receptionist"
 
-msgid "core.user_activity_report.family_no_location"
-msgstr "without any location"
+#~ msgid "Claim Administrator"
+#~ msgstr "Claim Administrator"
 
-msgid "core.user_activity_report.feedback"
-msgstr "Feedback entered on %(feedback_date)s by %(officer_name)s for %(claim_name)s"
+#~ msgid "Claim Contributor"
+#~ msgstr "Claim Contributor"
 
-msgid "core.user_activity_report.unknown_officer"
-msgstr "unknown Officer"
+#~ msgid "HF Administrator"
+#~ msgstr "HF Administrator"
 
-msgid "core.user_activity_report.claim_prefix"
-msgstr "Claim %(code)s"
+#~ msgid "Offline Administrator"
+#~ msgstr "Offline Administrator"
 
-msgid "core.user_activity_report.unknown_claim"
-msgstr "unknown Claim"
+#~ msgid "Schema Admin"
+#~ msgstr "Schema Admin"
 
-msgid "core.user_activity_report.loc_hf"
-msgstr "Health Facility %(code)s - %(name)s in %(location_name)s (%(location_code)s)"
-
-msgid "core.user_activity_report.insuree"
-msgstr "Insuree %(chf_id)s - %(other_names)s %(last_name)s"
-
-msgid "core.user_activity_report.item"
-msgstr "Item %(code)s - %(name)s"
-
-msgid "core.user_activity_report.officer"
-msgstr "Enrollment Officer %(code)s - %(other_names)s %(last_name)s"
-
-msgid "core.user_activity_report.payer"
-msgstr "Payer %(name)s - type %(displayed_type)s"
-
-msgid "core.user_activity_report.photo"
-msgstr "Insuree Picture for Insuree %(chf_id)s"
-
-msgid "core.user_activity_report.pl_item"
-msgstr "Item Pricelist - %(name)s - %(location)s"
-
-msgid "core.user_activity_report.pl_service"
-msgstr "Service Pricelist - %(name)s - %(location)s"
-
-msgid "core.user_activity_report.pl_no_location"
-msgstr "without specific location"
-
-msgid "core.user_activity_report.pl_item_details"
-msgstr "Item %(item_code)s - %(item_name)s - in the Price List \"%(pricelist_name)s\""
-
-msgid "core.user_activity_report.pl_service_details"
-msgstr "Service %(service_code)s - %(service_name)s - in the Price List \"%(pricelist_name)s\""
-
-msgid "core.user_activity_report.policy"
-msgstr "Policy to Family - Head number %(chf_id)s"
-
-msgid "core.user_activity_report.premium"
-msgstr "Premium of %(amount)s - Family Head %(chf_id)s - Policy start on %(start_date)s"
-
-msgid "core.user_activity_report.product"
-msgstr "Product %(code)s - %(name)s"
-
-msgid "core.user_activity_report.product_item"
-msgstr "Item %(item_code)s in Product %(product_code)s"
-
-msgid "core.user_activity_report.product_service"
-msgstr "Service %(service_code)s in Product %(product_code)s"
-
-msgid "core.user_activity_report.relative_distribution"
-msgstr "Relative distribution in Product %(product_code)s - %(product_name)s"
-
-msgid "core.user_activity_report.service"
-msgstr "Service %(code)s - %(name)s"
-
-msgid "core.user_activity_report.user"
-msgstr "User %(other_names)s %(last_name)s - login %(login_name)s"
-
-msgid "core.user_activity_report.user_district"
-msgstr "User %(login_name)s assigned to District %(location_code)s %(location_name)s"
-
-msgid "core.user_activity_report.location"
-msgstr "%(type)s %(code)s - %(name)s"
-
-msgid "core.user_activity_report.default"
-msgstr "%(id)s - %(legacy_id)s - from %(validity_from)s - to %(validity_to)s"
-msgid "Enrolment Officer"
-msgstr "Enrolment Officer"
-
-msgid "Manager"
-msgstr "Manager"
-
-msgid "Accountant"
-msgstr "Accountant"
-
-msgid "Clerk"
-msgstr "Clerk"
-
-msgid "Medical Officer"
-msgstr "Medical Officer"
-
-msgid "Scheme Administrator"
-msgstr "Scheme Administrator"
-
-msgid "IMIS Administrator"
-msgstr "IMIS Administrator"
-
-msgid "Receptionist"
-msgstr "Receptionist"
-
-msgid "Claim Administrator"
-msgstr "Claim Administrator"
-
-msgid "Claim Contributor"
-msgstr "Claim Contributor"
-
-msgid "HF Administrator"
-msgstr "HF Administrator"
-
-msgid "Offline Administrator"
-msgstr "Offline Administrator"
-
-msgid "Schema Admin"
-msgstr "Schema Admin"
-
-msgid "Task Triage"
-msgstr "Task Triage"
+#~ msgid "Task Triage"
+#~ msgstr "Task Triage"
