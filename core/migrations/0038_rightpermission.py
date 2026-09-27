@@ -28,7 +28,10 @@ class Migration(migrations.Migration):
                     "right_id",
                     models.IntegerField(
                         db_index=True,
-                        help_text="The openIMIS identifier the roles carry. Not unique: several actions may share one right.",
+                        help_text=(
+                            "The openIMIS identifier the roles carry. "
+                            "Not unique: several actions may share one right."
+                        ),
                     ),
                 ),
                 (

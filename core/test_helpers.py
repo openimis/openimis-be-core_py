@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from core.models import (
     Officer,
     InteractiveUser,
@@ -101,6 +103,22 @@ def create_test_officer(valid=True, custom_props=None, villages=[]):
         return eo
 
 
+ADMIN_ROLE_NAME = "IMIS Administrator"
+
+
+def _is_admin_role(role_ids):
+    """True if any of these role ids is the administrator role.
+
+    Matched on the name, in one query: resolving the role object would build
+    and re-sync its whole right list, on a path every test user goes through.
+    """
+    return Role.objects.filter(
+        id__in=[getattr(r, "id", r) for r in role_ids],
+        name=ADMIN_ROLE_NAME,
+        *Role.filter_validity(),
+    ).exists()
+
+
 def create_test_interactive_user(
     username="TestInteractiveTest",
     password="admin123",
@@ -135,8 +153,13 @@ def create_test_interactive_user(
     if roles is None:
         # Create a test role with default permissions instead of hardcoded role IDs
         roles = [create_admin_role().id]
-        if "is_superuser" not in user_props:
-            user_props["is_superuser"] = True
+    # An administrator is a stored superuser. Asking this helper for the
+    # administrator role used to be enough on its own, because IsSystem=64
+    # made its holder one; the label is inert now, so the flag has to be set
+    # here for the helper to still hand back an administrator. An explicit
+    # `is_superuser` in `custom_props` always wins.
+    if "is_superuser" not in user_props and _is_admin_role(roles):
+        user_props["is_superuser"] = True
     user = None
     i_user = InteractiveUser.objects.filter(login_name=username, *InteractiveUser.filter_validity()).first()
 
@@ -371,6 +394,20 @@ def _sync_role_rights(role, right_ids):
     cache.clear()
 
 
+# The helpers below stand in for the roles the SHI fixture ships. The
+# `is_system` value they carry is the legacy `tblRole.IsSystem` label, kept so
+# the rows look like the fixture's; it grants nothing. Rights come from the
+# declared permissions passed to `create_test_role`, and nothing in the access
+# path reads `is_system` any more - see `InteractiveUser.is_imis_admin`.
+#
+# The fixture's full catalogue, for reference: 1 Enrolment Officer, 2 Manager,
+# 4 Accountant, 8 Clerk, 16 Medical Officer, 32 Scheme Administrator,
+# 64 LOCAL Administrator, 128 Receptionist, 256 Claim Administrator,
+# 512 Claim Contributor, 524288 HF Administrator, 1048576 Offline
+# Administrator. Claim Contributor and Offline Administrator have no helper:
+# no test needed one, and an unused factory is one more thing to keep true.
+
+
 def create_enrolment_officer_role():
     """
     Create the Enrolment Officer role with specific permissions.
@@ -423,7 +460,7 @@ def create_claim_admin_role():
         "gql_query_medical_services_perms",
         "gql_query_medical_items_perms",
     ]
-    return create_test_role(perm_names=claim_admin_perms, name="ClaimAdministrator", is_system=16)
+    return create_test_role(perm_names=claim_admin_perms, name="ClaimAdministrator", is_system=256)
 
 
 def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, custom_props=None):
@@ -470,12 +507,34 @@ def create_test_role(perm_names=[], name=None, is_system=0, is_blocked=False, cu
     return role
 
 
-def create_admin_role(name="IMIS Administrator", is_system=0, is_blocked=False, custom_props=None):
-    existing_role = Role.objects.filter(is_system=64, *Role.filter_validity()).first()
-    if existing_role:
-        return existing_role
-    perm_names = []
-    return create_test_role(perm_names, name=name, is_system=64, is_blocked=is_blocked, custom_props=custom_props)
+@lru_cache(maxsize=1)
+def all_declared_perm_names():
+    """Every ``*_perms`` name the installed modules declare.
+
+    Cached: the declarations are fixed once every ``AppConfig.ready()`` has
+    run, and this is on the path of every test user the helpers build.
+    """
+    names = set()
+    for app_perms in collect_all_gql_permissions().values():
+        names.update(app_perms)
+    return tuple(sorted(names))
+
+
+def create_admin_role(name=ADMIN_ROLE_NAME, is_system=0, is_blocked=False, custom_props=None):
+    """The administrator role, carrying every right the modules declare.
+
+    It used to be created with no right at all and IsSystem=64, which was
+    enough: that label alone made its holders superusers. It no longer does,
+    so the role now declares what a seeded administrator role holds - the
+    rights are what grants the access, as for any other role.
+    """
+    return create_test_role(
+        list(all_declared_perm_names()),
+        name=name,
+        is_system=Role.IMIS_ADMINISTRATOR,
+        is_blocked=is_blocked,
+        custom_props=custom_props,
+    )
 
 
 def create_manager_role():
@@ -732,7 +791,7 @@ def create_imis_admin_role():
     Create the IMIS Administrator role with extensive permissions.
     This role has admin-level access including user and role management.
     """
-    return Role.objects.filter(is_system=64, *Role.filter_validity()).first()
+    return create_admin_role()
 
 
 def create_receptionist_role():
@@ -749,20 +808,6 @@ def create_receptionist_role():
         "gql_query_premiums_perms",
     ]
     return create_test_role(perm_names=receptionist_perms, name="Receptionist", is_system=128)
-
-
-def create_claim_contributor_role():
-    """
-    Create the Claim Contributor role with specific permissions.
-    This role should have permissions for claims and claim feedback.
-    """
-    claim_contributor_perms = [
-        "gql_query_claims_perms",
-        "gql_mutation_create_claims_perms",
-        "gql_mutation_update_claims_perms",
-        "gql_mutation_load_claims_perms",
-    ]
-    return create_test_role(perm_names=claim_contributor_perms, name="ClaimContributor", is_system=512)
 
 
 def create_hf_admin_role():
@@ -795,37 +840,6 @@ def create_hf_admin_role():
         "gql_reports_overview_of_commissions_perms",
     ]
     return create_test_role(perm_names=hf_admin_perms, name="HFAdministrator", is_system=524288)
-
-
-def create_offline_admin_role():
-    """
-    Create the Offline Administrator role with specific permissions.
-    This role has the same permissions as HF Administrator.
-    """
-    offline_admin_perms = [
-        "gql_query_users_perms",
-        "gql_mutation_create_users_perms",
-        "gql_mutation_update_users_perms",
-        "gql_mutation_delete_users_perms",
-        "gql_query_health_facilities_perms",
-        "gql_mutation_edit_health_facilities_perms",
-        "gql_mutation_delete_health_facilities_perms",
-        "gql_query_medical_items_perms",
-        "gql_mutation_medical_items_update_perms",
-        "gql_query_medical_services_perms",
-        "gql_mutation_medical_services_update_perms",
-        "gql_query_pricelists_medical_items_perms",
-        "gql_mutation_pricelists_medical_items_update_perms",
-        "gql_mutation_pricelists_medical_items_delete_perms",
-        "gql_query_pricelists_medical_services_perms",
-        "gql_mutation_pricelists_medical_services_update_perms",
-        "gql_mutation_pricelists_medical_services_delete_perms",
-        "gql_reports_capitation_payment_perms",
-        "gql_reports_user_activity_perms",
-        "gql_reports_status_of_register_perms",
-        "gql_reports_overview_of_commissions_perms",
-    ]
-    return create_test_role(perm_names=offline_admin_perms, name="OfflineAdministrator", is_system=1048576)
 
 
 def create_right_only_user(username, perm_names, district_codes=None):

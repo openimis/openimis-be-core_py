@@ -155,19 +155,15 @@ def cache_delete_many(keys):
 # ---------------------------------------------------------------------------
 # Rights / user flag key space
 #
-# InteractiveUser.rights and .is_imis_admin are cached per user id, but the
-# events that invalidate them happen on *other* models (Role, RoleRight,
-# UserRole). The model cache (core.utils.CachedModelMixin, keyed by model and
-# pk) therefore cannot own these entries: they are read, written and dropped
-# through the helpers below.
+# InteractiveUser.rights is cached per user id, but the events that invalidate
+# it happen on *other* models (Role, RoleRight, UserRole). The model cache
+# (core.utils.CachedModelMixin, keyed by model and pk) therefore cannot own
+# these entries: they are read, written and dropped through the helpers below.
 # ---------------------------------------------------------------------------
 
 RIGHTS_KEY = "rights_{}"
-IS_ADMIN_KEY = "is_admin_{}"
 OFFICER_KEY = "user_eo_{}"
 CLAIM_ADMIN_KEY = "user_ca_{}"
-
-IS_ADMIN_TTL = 600
 
 
 def get_user_rights(user_id):
@@ -178,31 +174,18 @@ def set_user_rights(user_id, rights):
     return cache_set(RIGHTS_KEY.format(user_id), rights, timeout=None)
 
 
-def get_user_is_admin(user_id):
-    return cache_get(IS_ADMIN_KEY.format(user_id))
-
-
-def set_user_is_admin(user_id, is_admin):
-    return cache_set(IS_ADMIN_KEY.format(user_id), is_admin, timeout=IS_ADMIN_TTL)
-
-
 def invalidate_user_rights(user_id):
-    """Drop the cached rights and admin flag of one interactive user."""
+    """Drop the cached rights of one interactive user."""
     if user_id is None:
         return
-    cache_delete_many(
-        [RIGHTS_KEY.format(user_id), IS_ADMIN_KEY.format(user_id)]
-    )
+    cache_delete_many([RIGHTS_KEY.format(user_id)])
 
 
 def invalidate_users_rights(user_ids):
-    """Drop the cached rights and admin flag of several interactive users."""
-    keys = []
-    for user_id in user_ids:
-        if user_id is None:
-            continue
-        keys.append(RIGHTS_KEY.format(user_id))
-        keys.append(IS_ADMIN_KEY.format(user_id))
+    """Drop the cached rights of several interactive users."""
+    keys = [
+        RIGHTS_KEY.format(user_id) for user_id in user_ids if user_id is not None
+    ]
     cache_delete_many(keys)
 
 

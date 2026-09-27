@@ -1015,58 +1015,21 @@ def get_first_or_default_language():
         return Language.objects.first()
 
 
+# Role rights are seeded (solution-builder fixtures and the permission maps),
+# never migrated. Both helpers are kept because some forty historical
+# migrations import them, but they do nothing: they looked their role up by
+# `IsSystem`, and a legacy label on a role must not decide which rights that
+# role carries. The insert side has been inert for a while; the remove side
+# followed it, since a reverse that deletes seeded rights the forward never
+# created only takes rights away.
+
+
 def insert_role_right_for_system(system_role, right_id, apps):
-    pass
-    # do not manage the role and right via migrations
-    # RoleRight = apps.get_model("core", "RoleRight")
-    # Role = apps.get_model("core", "Role")
-    # existing_roles = Role.objects.filter(
-    #     is_system=system_role, validity_to__isnull=True
-    # )
-    # if not existing_roles:
-    #     logger.warning(
-    #         "Migration requested a role_right for system role %s but couldn't find that role",
-    #         system_role,
-    #     )
-    # else:
-    #     for existing_role in existing_roles:
-    #         role_rights = RoleRight.objects.filter(
-    #             role=existing_role, right_id=right_id
-    #         ).first()
-    #         if not role_rights:
-    #             RoleRight.objects.create(
-    #                 role=existing_role,
-    #                 right_id=right_id,
-    #                 validity_from=datetime.datetime.now(),
-    #             )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def remove_role_right_for_system(system_role, right_id, apps):
-    RoleRight = apps.get_model("core", "RoleRight")
-    Role = apps.get_model("core", "Role")
-    existing_roles = Role.objects.filter(
-        is_system=system_role, validity_to__isnull=True
-    )
-    if not existing_roles:
-        logger.warning(
-            "Migration requested to remove a role_right for system role %s but couldn't find that role",
-            system_role,
-        )
-    for existing_role in existing_roles:
-        role_rights = RoleRight.objects.filter(role=existing_role, right_id=right_id)
-        if not role_rights:
-            logger.warning(
-                "Role right not found for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
-        for role_right in role_rights:
-            role_right.delete()
-            logger.info(
-                "Role right removed for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def convert_to_python_value(string):

@@ -287,7 +287,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
     success = graphene.Field(graphene.Boolean)
     error = graphene.Field(graphene.String)
     message = graphene.Field(graphene.String)
-    metadata = GenericScalar(description="Metadata dictionary containing the mutated entity details or input parameters.")
+    metadata = GenericScalar(
+        description="Metadata dictionary containing the mutated entity details or input parameters."
+    )
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -328,7 +330,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                 coerced_list.append(item)
                         elif (
                             inner_type.__class__
-                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta and getattr(inner_type._meta, 'name', '') != "Int"
+                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta
+                            and getattr(inner_type._meta, 'name', '') != "Int"
                         ):
                             coerced_list.append(
                                 cls.coerce_mutation_data(item, input_class=inner_type)
@@ -651,7 +654,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             status=mutation_log.status,
             success=(mutation_log.status == MutationLog.SUCCESS),
             error=mutation_log.error,
-            message=mutation_log.client_mutation_label or (mutation_log.error if mutation_log.status == MutationLog.ERROR else None),
+            message=mutation_log.client_mutation_label or (
+                mutation_log.error if mutation_log.status == MutationLog.ERROR else None
+            ),
             metadata=scrub_secrets(metadata) if metadata else None,
         )
 
@@ -851,7 +856,7 @@ class MutationLogGQLType(DjangoObjectType):
         user = info.context.user
         if user.is_anonymous:
             return queryset.none()
-        if user.is_superuser or getattr(user, "is_imis_admin", False):
+        if user.is_superuser:
             return queryset
         return queryset.filter(user=user)
 
@@ -2047,27 +2052,24 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    admin_role_ids = Role.get_system_role_ids(Role.IMIS_ADMINISTRATOR)
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
     incoming_email = data.get("email")
     is_superuser = data.pop("is_superuser", None)
-    # is_imis_admin covers both the stored superuser flag and the IMIS Administrator role,
-    # which already grants every right, hence the ability to escalate any other user
-    if is_superuser is not None and not user.is_imis_admin:
+    # The superuser flag grants every right, hence the ability to escalate any
+    # other user: only a superuser may hand it out.
+    if is_superuser is not None and not user.is_superuser:
         raise PermissionDenied(_("mutation.user_is_superuser_not_grantable"))
     if user_uuid:
-        incoming_roles = data.get("roles") or []
         is_self = uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
+        # Self-demotion is guarded on the flag alone. There used to be a second
+        # guard here, refusing the save when the incoming roles held none whose
+        # IsSystem was 64: it was written when that legacy label still conferred
+        # admin. It no longer does, so the guard protected nothing and only
+        # forced an administrator to keep a role they may not want.
         if is_self and is_superuser is False:
             raise ValidationError(_("mutation.user_cannot_demote_self"))
-        if (
-            is_self
-            and user.is_superuser
-            and not set(admin_role_ids).intersection(incoming_roles)
-        ):
-            raise ValidationError("Administrator cannot deprovision himself.")
         current_user = InteractiveUser.objects.filter(user__id=user_uuid).first()
 
         current_email = current_user.email if current_user else None

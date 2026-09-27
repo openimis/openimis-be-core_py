@@ -118,7 +118,8 @@ class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
             data_list: List of dicts with instance data (with or without 'id')
             user: User performing the operation
             batch_size: Number of records to process per batch
-            include_deleted: If True, includes soft-deleted records in the lookup and allows updating the `is_deleted` field
+            include_deleted: If True, includes soft-deleted records in the lookup
+                and allows updating the `is_deleted` field
 
         Returns:
             dict with 'created' and 'updated' counts
@@ -184,7 +185,9 @@ class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
                     if not f.startswith('_') and f not in exclude_fields
                 ]
                 update_fields += ['user_updated', 'date_updated', 'version']
-                updated_count = bulk_update_with_history(to_update, cls, update_fields, batch_size=batch_size, default_user=user)
+                updated_count = bulk_update_with_history(
+                    to_update, cls, update_fields, batch_size=batch_size, default_user=user
+                )
                 cls.bulk_update_cache(to_update)
 
         return {'created': created_count, 'updated': updated_count}

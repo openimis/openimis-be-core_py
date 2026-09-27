@@ -8,6 +8,8 @@ from core.user_types import UT_INTERACTIVE
 
 
 class DuplicateSystemRoleUserTest(TestCase):
+    """The user mutation copes with the duplicate role rows migrated data has."""
+
     def setUp(self):
         Language.objects.get_or_create(
             code="en",
@@ -27,12 +29,6 @@ class DuplicateSystemRoleUserTest(TestCase):
             is_blocked=False,
             audit_user_id=-1,
         )
-
-    def test_get_system_role_ids_returns_all_duplicates(self):
-        ids = Role.get_system_role_ids(Role.IMIS_ADMINISTRATOR)
-        self.assertGreaterEqual(len(ids), 2)
-        self.assertIn(self.admin_role.id, ids)
-        self.assertIn(self.duplicate_admin_role.id, ids)
 
     def test_create_user_with_duplicate_imis_admin_roles(self):
         other_role = create_test_role([], name="ClerkRole")
@@ -68,8 +64,8 @@ class DuplicateSystemRoleUserTest(TestCase):
         )
         self.assertEqual(updated.id, self.admin.id)
 
-    def test_admin_cannot_drop_all_admin_roles(self):
-        clerk = create_test_role([], name="ClerkRoleNoAdmin")
+    def test_self_demotion_is_still_refused(self):
+        """The real guard is the stored flag, and it is unchanged."""
         with self.assertRaises(ValidationError) as cm:
             update_or_create_user(
                 {
@@ -79,9 +75,10 @@ class DuplicateSystemRoleUserTest(TestCase):
                     "other_names": self.admin.i_user.other_names,
                     "email": "sysroleadmin@example.com",
                     "language": "en",
-                    "roles": [clerk.id],
+                    "roles": [self.admin_role.id],
                     "user_types": [UT_INTERACTIVE],
+                    "is_superuser": False,
                 },
                 self.admin,
             )
-        self.assertIn("cannot deprovision", str(cm.exception))
+        self.assertIn("demote", str(cm.exception))

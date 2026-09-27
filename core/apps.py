@@ -89,10 +89,6 @@ DJANGO_PERMS = {
 }
 
 
-
-
-
-
 _PERM_CFG = {
     "gql_query_users_perms": ("user", "query"),
     "gql_query_users_profile_perms": ("user", "profile"),

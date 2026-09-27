@@ -286,6 +286,15 @@ class ScrubSecretsUnitTestCase(openIMISGraphQLTestCase):
         payload = {"a": 1, "b": [1, 2], "c": {"d": None}}
         self.assertEqual(scrub_secrets(payload), payload)
 
+    def test_contains_secret_spots_a_sensitive_key_at_any_level(self):
+        self.assertTrue(contains_secret({"password": "p"}))
+        self.assertTrue(contains_secret({"nested": {"apiKey": "k"}}))
+        self.assertTrue(contains_secret([{"plain": "v"}, {"secret": "s"}]))
+
+    def test_contains_secret_is_false_without_a_sensitive_key(self):
+        self.assertFalse(contains_secret({"a": 1, "b": [1, 2], "c": {"d": None}}))
+        self.assertFalse(contains_secret("password"))
+
 
 class ScrubCommandTestCase(openIMISGraphQLTestCase):
     """`scrub_mutation_log_secrets` handles the history predating the fix."""

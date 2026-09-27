@@ -7,11 +7,9 @@ from cached_property import cached_property
 from core.cache_control import (
     get_claim_admin_flag,
     get_officer_flag,
-    get_user_is_admin,
     get_user_rights,
     set_claim_admin_flag,
     set_officer_flag,
-    set_user_is_admin,
     set_user_rights,
 )
 from django.apps import apps
@@ -167,7 +165,9 @@ class TechnicalUser(AbstractBaseUser):
 
 
 class Role(VersionedModel):
-    # Legacy tblRole.IsSystem value for IMIS Administrator.
+    # Legacy tblRole.IsSystem value for IMIS Administrator. IsSystem labels a
+    # role for the fixtures and the role-browsing filters; it confers no right
+    # and no access decision may be taken on it.
     IMIS_ADMINISTRATOR = 64
 
     id = models.AutoField(db_column="RoleID", primary_key=True)
@@ -184,27 +184,6 @@ class Role(VersionedModel):
 
     def natural_key(self):
         return (self.uuid,)
-
-    @classmethod
-    def get_system_role_ids(cls, system_code):
-        """
-        Return ids of currently valid roles with the given IsSystem value.
-
-        System roles are supposed to be unique, but legacy data can contain
-        duplicates. Callers must not use QuerySet.get() on this lookup.
-        """
-        ids = list(
-            cls.objects.filter(is_system=system_code, *cls.filter_validity())
-            .order_by("id")
-            .values_list("id", flat=True)
-        )
-        if len(ids) > 1:
-            logger.warning(
-                "Multiple valid Role rows have is_system=%s (ids=%s)",
-                system_code,
-                ids,
-            )
-        return ids
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -332,11 +311,13 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
+        # The stored flag is the only thing that makes a superuser. It used to
+        # fall back on `is_imis_admin`, which resolved the legacy IsSystem=64
+        # role: holding that role silently granted every right, bypassing the
+        # declared-rights layer entirely.
         # bind once: `user` is a query, and this used to run it twice per call
         user = self.user
-        if user and user.is_superuser:
-            return True
-        return self.is_imis_admin
+        return bool(user and user.is_superuser)
 
     @is_superuser.setter
     def is_superuser(self, value):
@@ -417,18 +398,14 @@ class InteractiveUser(OpenIMISMigrationModel):
     def is_imis_admin(self):
         """
         Deprecated: Use is_superuser instead. This will be removed in a future version.
+
+        It used to answer "does this user hold the role whose IsSystem is 64?".
+        `IsSystem` is a legacy bitmask that labels a role, and labelling a role
+        is not granting a right: the rights a role carries are the ones
+        declared for it. The property now reports the stored superuser flag and
+        nothing else, so no access decision depends on IsSystem any more.
         """
-        # import warnings
-        is_admin = get_user_is_admin(self.id)
-        if is_admin is None:
-            is_admin = Role.objects.filter(
-                *Role.filter_validity(),
-                *UserRole.filter_validity(prefix="user_roles__"),
-                is_system=Role.IMIS_ADMINISTRATOR,
-                user_roles__user=self,
-            ).exists()
-            set_user_is_admin(self.id, is_admin)
-        return is_admin
+        return self.is_superuser
 
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
@@ -846,9 +823,9 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     @property
     def is_imis_admin(self):
+        """Deprecated: use `is_superuser`. Kept while callers migrate."""
         if self.is_superuser:
             return True
-        # Role.IMIS_ADMINISTRATOR (IsSystem=64)
         user = self._u
         if user and isinstance(user, InteractiveUser):
             return user.is_imis_admin
