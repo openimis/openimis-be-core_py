@@ -66,7 +66,7 @@ class RightsNotConfigurableTestCase(TestCase):
         instance.config = json.dumps({"claim_print_perms": ["999998"], "other": 3})
         self.assertNotIn("claim_print_perms", instance._cfg)
         self.assertEqual(instance._cfg["other"], 3)
-claim
+
     def test_nested_stored_rights_are_also_ignored(self):
         """
         The filter is recursive: api_fhir_r4 declared its subscription rights in a
