@@ -132,6 +132,48 @@ device cannot log in, and enrolment currently needs a login.
 Delegating the requirement to an identity provider later is a change to
 `mfa_required` alone; nothing else decides.
 
+### Recovery codes and resetting a user's second factor
+
+Two mutations, for two situations.
+
+**The user still has a device and wants new recovery codes.**
+
+    mutation { issueRecoveryCodes(input: {otp: "123456", clientMutationId: "x"}) { codes success error lockedUntil } }
+
+`otp` is a current code from any confirmed device, a recovery code included.
+`codes` is the new set of ten, returned once and never again; the previous set
+is gone. On failure `success` is false and `error` is the code `tokenAuth`
+would have given: `SECOND_FACTOR_ENROLMENT_REQUIRED` (no confirmed device),
+`SECOND_FACTOR_REQUIRED` (no code sent), `INVALID_SECOND_FACTOR`,
+`SECOND_FACTOR_THROTTLED`, which carries `lockedUntil` (ISO-8601) alongside.
+This is not a login, so a wrong code here does not count towards the `axes`
+lockout; django-otp's per-device back-off is what slows it down.
+
+**The user has lost every device.** An administrator resets them:
+
+    mutation { resetUserSecondFactor(input: {uuid: "<core_User id>", clientMutationId: "x"}) { internalId } }
+
+Every device of every class is removed and the user's sessions are ended
+through the same not-before a password change moves, in one transaction. It
+needs the right `121705` (`gql_mutation_reset_second_factor_perms`), which
+superusers and the IMIS Administrator role hold implicitly; it is deliberately
+not the update-users right, since getting past a second factor is the one
+thing a password reset cannot do. Every attempt, granted or refused, is a row
+in `core_Mutation_Log` with the caller, the target's uuid and the outcome,
+linked to the user through `core_UserMutation`. A technical user cannot be
+reset this way: they have no not-before to move, so their sessions could not
+be ended and the request is refused rather than half-honoured.
+
+After a reset the user is unenrolled. Under the default `optional` policy they
+log in on the password alone; under `per_role` or `mandatory` they are refused
+with `SECOND_FACTOR_ENROLMENT_REQUIRED` until they enrol again, and enrolment
+currently needs a login. `users { hasSecondFactor }` says whether a user has
+anything to reset.
+
+The django-otp device models are not exposed on the Django admin. Removing a
+device there would need no right of its own, write no record, and leave every
+session the lost device opened still running.
+
 ### Adding a channel that sends the code (SMS, WhatsApp, email)
 
 Nothing above changes. A server-sent code is a django-otp `SideChannelDevice`
@@ -621,6 +663,7 @@ This will make the data appear in the masked way again.
 * gql_mutation_update_roles_perms: required rights to call updateRole  GraphQL Mutation (default: ["122003"])
 * gql_mutation_delete_roles_perms: required rights to call deleteRole GraphQL Mutation (default: ["152104"])
 * gql_mutation_duplicate_roles_perms: required rights to call duplicateRole GraphQL Mutation (default: ["152105"])
+* gql_mutation_reset_second_factor_perms: required rights to call resetUserSecondFactor GraphQL Mutation (default: ["121705"])
 
 ## openIMIS Modules Dependencies
 N.A.

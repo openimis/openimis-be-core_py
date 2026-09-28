@@ -14,6 +14,7 @@ from core.models import (
 from graphene_django import DjangoObjectType
 from location.models import HealthFacility, UserDistrict
 from core.apps import CoreConfig
+from core.auth import devices
 from core.user_types import UserTypeEnum, get_user_types
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
@@ -214,6 +215,9 @@ class UserGQLType(DjangoObjectType):
     email = graphene.String()
     phone = graphene.String()
     user_types = graphene.List(UserTypeEnum)
+    has_second_factor = graphene.Boolean(
+        description="Whether the user has a confirmed second-factor device"
+    )
     # is_superuser = graphene.Boolean()
 
     class Meta:
@@ -243,6 +247,14 @@ class UserGQLType(DjangoObjectType):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionDenied(_("unauthorized"))
         return get_user_types(self)
+
+    def resolve_has_second_factor(self, info, **kwargs):
+        caller = info.context.user
+        if getattr(caller, "id", None) != self.id and not caller.has_perms(
+            CoreConfig.gql_query_users_perms
+        ):
+            raise PermissionDenied(_("unauthorized"))
+        return devices.has_second_factor(self)
 
 
 class PermissionOpenImisGQLType(graphene.ObjectType):

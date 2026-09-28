@@ -36,8 +36,8 @@ from core.services import (
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
-from core.auth import revocation
-from core.auth.login import authenticate_login
+from core.auth import recovery, revocation
+from core.auth.login import SecondFactorError, authenticate_login
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -2160,6 +2160,88 @@ class SignOutEverywhereMutation(graphene.relay.ClientIDMutation):
             )
 
 
+class ResetUserSecondFactorMutation(OpenIMISMutation):
+    """Remove every second-factor device a user has and end their sessions.
+
+    An OpenIMISMutation because this one has to leave a record: the base class
+    writes a mutation log row before anything runs and marks its outcome, so a
+    refused attempt is as visible as a granted one. The class name carries
+    "User" and the input is named uuid because that pair is what links the row
+    to the account it was about.
+    """
+
+    _mutation_module = "core"
+    _mutation_class = "ResetUserSecondFactorMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuid = graphene.String(
+            required=True, description="The user whose second factor is reset"
+        )
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if type(user) is AnonymousUser or not user.id:
+                raise PermissionDenied(_("mutation.authentication_required"))
+            recovery.reset_second_factor(user, data["uuid"])
+            return None
+        except Exception as exc:
+            return [
+                {
+                    "message": "core.mutation.failed_to_reset_second_factor",
+                    "detail": str(exc),
+                }
+            ]
+
+
+class IssueRecoveryCodesMutation(graphene.relay.ClientIDMutation):
+    """Hand the signed-in user a fresh set of recovery codes, once.
+
+    Deliberately not an OpenIMISMutation: that base returns only the id of a
+    log row, and these codes have to reach the client - while the log row
+    keeps the mutation's input and result, which is the last place a spare
+    set of credentials should be written. A current code is the price, so a
+    stolen session cannot mint its own way around the factor it got past.
+    """
+
+    class Input:
+        otp = graphene.String(
+            required=True, description="A current code from any confirmed device"
+        )
+        otp_device = graphene.String(
+            required=False,
+            description="A device persistent_id to try instead of all of them",
+        )
+
+    codes = graphene.List(graphene.String)
+    success = graphene.Boolean()
+    error = graphene.String()
+    locked_until = graphene.String()
+
+    @classmethod
+    def mutate_and_get_payload(cls, root, info, otp, otp_device=None, **input):
+        user = info.context.user
+        if type(user) is AnonymousUser or not user.id:
+            raise PermissionDenied(_("mutation.authentication_required"))
+        try:
+            codes = recovery.reissue_recovery_codes(user, otp, otp_device)
+            return IssueRecoveryCodesMutation(success=True, codes=codes)
+        except SecondFactorError as exc:
+            # lockedUntil rides along when the devices are backing off, the
+            # way tokenAuth reports it, so a client knows to wait rather than
+            # reading a back-off as a wrong code.
+            return IssueRecoveryCodesMutation(
+                success=False,
+                error=exc.code,
+                locked_until=exc.extensions.get("lockedUntil"),
+            )
+        except Exception as exc:
+            logger.exception(exc)
+            return IssueRecoveryCodesMutation(
+                success=False, error=gettext_lazy("Failed to issue recovery codes")
+            )
+
+
 class ResetPasswordMutation(graphene.relay.ClientIDMutation):
     """
     Recover a user' account using its username or e-mail address.
@@ -2298,6 +2380,8 @@ class Mutation(graphene.ObjectType):
     reset_password = ResetPasswordMutation.Field()
     set_password = SetPasswordMutation.Field()
     sign_out_everywhere = SignOutEverywhereMutation.Field()
+    reset_user_second_factor = ResetUserSecondFactorMutation.Field()
+    issue_recovery_codes = IssueRecoveryCodesMutation.Field()
 
     token_auth = OpenimisObtainJSONWebToken.Field()
     verify_token = graphql_jwt.mutations.Verify.Field()
