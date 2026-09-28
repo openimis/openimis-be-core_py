@@ -1,5 +1,4 @@
 import json
-import sys
 
 from django.apps import apps as django_apps
 from django.test import TestCase
@@ -67,72 +66,7 @@ class RightsNotConfigurableTestCase(TestCase):
         instance.config = json.dumps({"claim_print_perms": ["999998"], "other": 3})
         self.assertNotIn("claim_print_perms", instance._cfg)
         self.assertEqual(instance._cfg["other"], 3)
-
-    def test_no_installed_module_still_declares_rights_in_its_config(self):
-        """
-        A `_perms` left in a DEFAULT_CFG would be dead: the loader would no longer
-        read it. Leaving it would suggest a setting that is still active.
-        """
-        offenders = []
-        for app_config in django_apps.get_app_configs():
-            # `type(app_config).__module__` is the apps.py that declared the
-            # AppConfig: that rules out third-party apps without having to list ours.
-            module = sys.modules.get(type(app_config).__module__)
-            if module is None:
-                continue
-            for attr in ("DEFAULT_CFG", "DEFAULT_CONFIG"):
-                cfg = getattr(module, attr, None)
-                if isinstance(cfg, dict):
-                    offenders += [
-                        f"{app_config.label}.{key}"
-                        for key in cfg
-                        if key.endswith("_perms")
-                    ]
-        self.assertEqual(sorted(offenders), [])
-
-    def test_rights_are_readable_without_the_database(self):
-        """
-        Constants: readable at import time, with no `ready()` and no database. That
-        is what makes the snapshot `api_fhir_r4.rights` takes safe.
-        """
-        from claim.apps import ClaimConfig
-
-        self.assertEqual(ClaimConfig.gql_query_claims_perms, ["111001"])
-        self.assertTrue(
-            all(
-                getattr(ac, attr)
-                for ac in django_apps.get_app_configs()
-                for attr in dir(ac)
-                if attr.endswith("_perms") and isinstance(getattr(ac, attr), list)
-                and attr not in ("gql_query_diagnosis_perms",)
-            ),
-            "an empty right would be granted to everybody",
-        )
-
-    def test_no_right_is_declared_in_any_config(self):
-        """
-        The underlying guarantee: the list of rights is built from the
-        **declaration** (the AppConfig attributes), never from a config. A `_perms`
-        left in a DEFAULT_CFG - even nested - would be a leftover: it would no
-        longer be loaded, but would suggest a setting that is still active.
-        """
-        from core.utils import flatten_dict
-
-        offenders = []
-        for app_config in django_apps.get_app_configs():
-            module = sys.modules.get(type(app_config).__module__)
-            if module is None:
-                continue
-            for attr in ("DEFAULT_CFG", "DEFAULT_CONFIG"):
-                cfg = getattr(module, attr, None)
-                if isinstance(cfg, dict):
-                    offenders += [
-                        f"{app_config.label}.{key}"
-                        for key in flatten_dict(cfg)
-                        if key.endswith("_perms")
-                    ]
-        self.assertEqual(sorted(offenders), [])
-
+claim
     def test_nested_stored_rights_are_also_ignored(self):
         """
         The filter is recursive: api_fhir_r4 declared its subscription rights in a

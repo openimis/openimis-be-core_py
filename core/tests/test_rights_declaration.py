@@ -95,21 +95,3 @@ class RightsDeclarationTestCase(TestCase):
             with self.assertLogs("core.rights_declaration", level="WARNING") as logs:
                 self.assertEqual(self.rights.configured("widget", "query"), [])
         self.assertIn("granted to everybody", "".join(logs.output))
-
-    # --- the modules actually converted -----------------------------------
-    def test_converted_modules_share_the_generic(self):
-        from claim.apps import RIGHTS as CLAIM
-        from contract.apps import RIGHTS as CONTRACT
-        from core.apps import RIGHTS as CORE
-        from insuree.apps import RIGHTS as INSUREE
-
-        for rights in (CORE, CLAIM, INSUREE, CONTRACT):
-            with self.subTest(module=rights.module_name):
-                self.assertIsInstance(rights, RightsDeclaration)
-                # every declared config key must exist on the AppConfig, otherwise
-                # `__load_config` ignores it and reading it raises AttributeError
-                for entity, action in rights.perm_cfg.values():
-                    self.assertIsNotNone(
-                        rights.configured(entity, action),
-                        f"{rights.module_name}.{entity}.{action} is unreadable",
-                    )

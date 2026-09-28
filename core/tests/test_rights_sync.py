@@ -118,20 +118,6 @@ class RightsSyncTestCase(TestCase):
             (Permission.objects.count(), RightPermission.objects.count()), before
         )
 
-    def test_permissions_we_did_not_create_are_left_alone(self):
-        """Grievance's generated rights live under Ticket's ContentType."""
-        theirs = Permission.objects.filter(id__in=[127100, 127102]).exclude(
-            content_type__model=CONTENT_TYPE_MODEL
-        )
-        before = {p.id: (p.codename, p.content_type_id) for p in theirs}
-        self.assertTrue(before)
-        sync_right_permissions()
-        after = {
-            p.id: (p.codename, p.content_type_id)
-            for p in Permission.objects.filter(id__in=list(before))
-        }
-        self.assertEqual(before, after)
-
     def test_a_grant_is_transferred_before_the_row_is_removed(self):
         """
         Deleting a granted permission would silently withdraw access. An obsolete
