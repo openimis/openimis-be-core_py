@@ -30,8 +30,9 @@ class IdentitySpec:
 
 
 def issued_at_from(payload):
-    # openIMIS tokens carry no iat: graphql_jwt writes origIat only when refresh
-    # is enabled, and core's encoder writes nbf.
+    # openIMIS tokens always carry iat and LocalProvider requires it, so the
+    # fallbacks are only reachable for a provider that does not - they stay for
+    # those, not for anything core issues.
     for claim in ("iat", "origIat", "nbf"):
         value = payload.get(claim)
         if value is not None:

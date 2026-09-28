@@ -69,15 +69,13 @@ def signing_key():
 
 
 def deployment_keys():
-    """`{kid: verification key}`. Empty until a deployment provisions one.
+    """`{kid: verification key}`: the provisioned key's public half, so a
+    process can verify what it signs, with `JWT_DEPLOYMENT_KEYS` merged over it.
 
-    The provisioned public half is always here, so a process can verify what it
-    signs. `JWT_DEPLOYMENT_KEYS` merges over the top, and is how a key stays
-    verifiable once it stops signing: put the retiring public half there, keyed
-    by its thumbprint (`derive_kid`) - the kid its tokens carry - *before*
-    changing `JWT_SIGNING_KEY`, or every token it signed stops
-    verifying at once. That applies to a rotation and to backing the deployment
-    key out again - unprovisioning alone takes the verification key with it.
+    `JWT_DEPLOYMENT_KEYS` is how a key stays verifiable once it stops signing:
+    put the retiring public half there, keyed by its thumbprint (`derive_kid`) -
+    the kid its tokens carry - *before* changing `JWT_SIGNING_KEY`, or every
+    token it signed stops verifying at once.
     """
     configured = getattr(settings, "JWT_DEPLOYMENT_KEYS", None) or {}
     provisioned = signing_key()
@@ -85,6 +83,27 @@ def deployment_keys():
         return dict(configured)
     private_key, kid = provisioned
     return {kid: private_key.public_key(), **configured}
+
+
+def public_verification_key(key):
+    """The RSA public half of a verification key, or None if it has none.
+
+    A verification key reaches the mapping either as a key object or as PEM
+    text, and PyJWT accepts both. A symmetric secret is neither, and publishing
+    one would disclose it. Shared by the JWKS view and the startup check so an
+    operator is told once about the entries the view drops on every request.
+    """
+    if isinstance(key, rsa.RSAPublicKey):
+        return key
+    if not isinstance(key, (str, bytes)):
+        return None
+    try:
+        prepared = RSAAlgorithm(RSAAlgorithm.SHA256).prepare_key(key)
+    except (ValueError, TypeError):
+        return None
+    # A private key here is a misconfiguration; drop it rather than publish its
+    # public half from a mapping that should only ever hold verification keys.
+    return prepared if isinstance(prepared, rsa.RSAPublicKey) else None
 
 
 def algorithm():

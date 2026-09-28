@@ -5,7 +5,6 @@ import jwt
 from django.conf import settings
 from django.utils.module_loading import import_string
 
-from core.auth.providers.legacy import LegacyUserKeyProvider
 from core.auth.providers.local import LocalProvider
 
 
@@ -31,7 +30,6 @@ def _build(_fingerprint):
     # singleton, so an override is not defeated by a list built on first use.
     return (
         LocalProvider(),
-        LegacyUserKeyProvider(),
         *(_instantiate(entry) for entry in _registration()),
     )
 
