@@ -29,7 +29,11 @@ def enrol_totp(user, name="Authenticator app"):
 
 
 def confirm_totp(device, token):
-    """Activate `device` if `token` came from it. Returns whether it did."""
+    """Activate `device` if `token` came from it. Returns whether it did.
+
+    Only the name is specific to authenticator apps; verifying a token and
+    marking the device confirmed is the same for any device class.
+    """
     if not device.verify_token(token):
         return False
     device.confirmed = True
@@ -59,6 +63,23 @@ def issue_recovery_codes(user, count=RECOVERY_CODE_COUNT):
 def confirmed_devices(user):
     """Every confirmed device, of every installed device class."""
     return list(devices_for_user(user, confirmed=True))
+
+
+def pending_totp(user, for_update=False):
+    """The authenticator the user has most recently scanned but not confirmed.
+
+    Normally there is only one - enrol_totp drops any earlier unconfirmed
+    device - but it does so in two statements, so concurrent enrolments can
+    leave two behind. Newest wins, because the one the caller means is the one
+    whose QR code the user is looking at.
+
+    `for_update` locks the row for the caller's transaction, so two
+    confirmations racing on it serialise instead of both completing.
+    """
+    queryset = TOTPDevice.objects.filter(user=user, confirmed=False).order_by("-id")
+    if for_update:
+        queryset = queryset.select_for_update()
+    return queryset.first()
 
 
 def has_second_factor(user):
