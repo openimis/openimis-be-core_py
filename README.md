@@ -484,6 +484,45 @@ If someone wants to grant a role the authority to see masked data, follow these 
 Now, users with this role will be able to see the original values of masked data even if they are marked as masked. To revert this option, simply move this permission from chosen permissions back to available permissions for the given role. 
 This will make the data appear in the masked way again.
 
+## Password hashing
+
+Interactive users' passwords are hashed with argon2id, using Django's
+`Argon2PasswordHasher` and its default parameters. Rows written before this
+hold a single `SHA256(password + salt)` in uppercase hex, which has no work
+factor; they keep authenticating and are upgraded as their owners log in.
+
+There is no migration and no offline rehash, because a legacy hash cannot be
+re-derived without the password. A legacy row is rewritten the first time its
+password verifies: at login, at the old-password check of a password change,
+and nowhere else. Only the hash column is written, so the salt, the revocation
+point and every other column are left as they are, and tokens already issued
+keep working.
+
+One thing does end: an existing Django admin session for that user. Django's
+session authentication hash covers the stored password, so the session is
+flushed on its next request and the user signs in again. It happens at most
+once per account, since the row is argon2 from then on. An account that never
+logs in again keeps its legacy hash and still authenticates with it.
+
+One key in the `core` module configuration keeps the legacy format for a
+deployment that needs it:
+
+```json
+{
+  "password_hasher": "argon2"
+}
+```
+
+| `password_hasher` | writes | rewrites a legacy row on login |
+|---|---|---|
+| `argon2` | argon2id (the default) | yes |
+| `sha256` | the legacy format | no |
+
+Both values verify both formats, so changing the key locks nobody out; an
+argon2 row is never rewritten back to the legacy format. An unknown value is
+refused when the configuration row is saved. Technical users are unaffected:
+they are Django users hashed by `PASSWORD_HASHERS`.
+
 ## Configuration options (can be changed via core.ModuleConfiguration)
 * auto_provisioning_user_group: assigned user group when REMOTE_USER
   user is auto-provisioned(default: "user")
@@ -512,6 +551,7 @@ This will make the data appear in the masked way again.
 * gql_mutation_update_roles_perms: required rights to call updateRole  GraphQL Mutation (default: ["122003"])
 * gql_mutation_delete_roles_perms: required rights to call deleteRole GraphQL Mutation (default: ["152104"])
 * gql_mutation_duplicate_roles_perms: required rights to call duplicateRole GraphQL Mutation (default: ["152105"])
+* password_hasher: how interactive users' passwords are stored - `"argon2"` (default; a legacy SHA256 row is rewritten the first time its password verifies) or `"sha256"` (the legacy format, kept as is; nothing is rewritten). Both values verify both formats. See "Password hashing" above.
 
 ## openIMIS Modules Dependencies
 N.A.
