@@ -2,7 +2,7 @@ import jwt
 from graphql_jwt.settings import jwt_settings
 
 from core.auth import keys
-from core.auth.claims import claims_from_payload
+from core.auth.identity import claims_from_payload
 from core.auth.providers.base import IdentityProvider
 
 

@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from graphql_jwt.shortcuts import get_token
 
 from core.auth import decode
-from core.auth.claims import Claims
+from core.auth.identity import IdentityClaims
 from core.auth.providers.base import IdentityProvider
 from core.auth.providers.legacy import LegacyUserKeyProvider
 from core.auth.registry import resolve
@@ -46,7 +46,7 @@ class StubProvider(IdentityProvider):
         payload = pyjwt.decode(
             token, self.key, algorithms=["HS256"], issuer=self.issuer
         )
-        return Claims(
+        return IdentityClaims(
             raw=payload,
             issuer=payload["iss"],
             subject=payload["sub"],

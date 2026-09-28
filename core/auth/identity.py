@@ -5,7 +5,7 @@ import jwt
 
 
 @dataclass(frozen=True)
-class Claims:
+class IdentityClaims:
     """What a verified token said. Providers return this; nothing else."""
 
     raw: Mapping[str, Any]
@@ -46,7 +46,7 @@ def claims_from_payload(payload):
     for claim in ("username", "exp"):
         if not payload.get(claim):
             raise jwt.MissingRequiredClaimError(claim)
-    return Claims(
+    return IdentityClaims(
         raw=payload,
         issuer=payload.get("iss") or "",
         subject=payload["username"],

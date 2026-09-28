@@ -1,7 +1,7 @@
 import abc
 from typing import Mapping
 
-from core.auth.claims import Claims, IdentitySpec
+from core.auth.identity import IdentityClaims, IdentitySpec
 
 
 class IdentityProvider(abc.ABC):
@@ -20,10 +20,10 @@ class IdentityProvider(abc.ABC):
         """Routing only. Must not be trusted for anything else."""
 
     @abc.abstractmethod
-    def verify(self, token: str) -> Claims:
+    def verify(self, token: str) -> IdentityClaims:
         """Raise jwt.InvalidTokenError on any failure."""
 
-    def to_identity(self, claims: Claims) -> IdentitySpec:
+    def to_identity(self, claims: IdentityClaims) -> IdentitySpec:
         return IdentitySpec(
             username=claims.username, subject=claims.subject, provider_id=self.id
         )
