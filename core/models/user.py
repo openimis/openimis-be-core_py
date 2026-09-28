@@ -28,6 +28,9 @@ from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , Op
 from core.utils import to_list_permissions
 from rest_framework.exceptions import AuthenticationFailed
 from core.access import evaluate_access_requirements, has_role_perms
+# Safe at module level: core.auth.revocation reaches models through
+# apps.get_model, so importing it here is not a cycle.
+from core.auth import revocation
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +426,17 @@ class InteractiveUser(OpenIMISMigrationModel):
             cache.set("is_admin_" + str(self.id), is_admin, 600)
         return is_admin
 
+    @classmethod
+    def locked_from_database(cls, pk):
+        """The row as stored, locked until the enclosing transaction ends.
+
+        The manager can answer from the per-process object cache, and saving
+        that copy writes every column back - including a revocation point or a
+        password another worker has changed since. `.all()` returns a plain
+        QuerySet, which the cache does not answer.
+        """
+        return cls.objects.all().select_for_update().get(pk=pk)
+
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
         self.private_key = private_key or token_hex(128)
@@ -431,6 +445,10 @@ class InteractiveUser(OpenIMISMigrationModel):
         self.password = (
             pwd_hash.hexdigest().upper()
         )  # Legacy requires this to be uppercase
+        # Rotating private_key ends outstanding sessions only for as long as
+        # that value is also the token signing key. The not-before is what ends
+        # them once a deployment-wide key signs instead.
+        revocation.bump(self)
 
     def check_password(self, raw_password):
         from hashlib import sha256

@@ -66,12 +66,18 @@ class UserCacheTestCase(openIMISGraphQLTestCase):
         alias = cache.get(get_cache_key(User, self.user.username))
         self.assertIsNotNone(alias, "no cache alias written for the username")
 
-    def test_repeated_authentication_stops_querying_the_user_tables(self):
+    def test_repeated_authentication_queries_the_user_tables_once(self):
+        # Warm authentication used to reach zero. It is one now: the token
+        # revocation check reads the per-user not-before straight from the
+        # database on every request, deliberately past this cache, because the
+        # cache is per-process and a cached read would leave a revoked token
+        # working on every worker but the one that revoked it. Everything else
+        # authentication needs still comes from the cache.
         token = BaseTestContext(user=self.user).get_jwt()
 
         first, first_queries = self._get_current_user(token)
         self.assertEqual(first.status_code, 200)
-        self.assertGreater(first_queries, 0, "the cold request should hit the database")
+        self.assertGreater(first_queries, 1, "the cold request should hit the database")
 
         # a couple of requests to let both the alias and the FK settle
         self._get_current_user(token)
@@ -79,7 +85,10 @@ class UserCacheTestCase(openIMISGraphQLTestCase):
 
         self.assertEqual(warm.status_code, 200)
         self.assertEqual(
-            warm_queries, 0, "a warm authentication must not query the user tables"
+            warm_queries,
+            1,
+            "a warm authentication must query the user tables only for the "
+            "revocation not-before",
         )
         self.assertEqual(
             warm.json(), first.json(), "cached payload differs from the cold one"
