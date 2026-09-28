@@ -10,6 +10,8 @@ import logging
 import uuid
 from datetime import datetime
 from core.auth import decode as auth_decode
+from core.auth import keys
+from core.auth.encode import encode as auth_encode
 from core.models import InteractiveUser
 
 logger = logging.getLogger(__file__)
@@ -26,8 +28,17 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
+    # Provisioning the key is the switch; there is no mode setting. Material
+    # that will not parse raises here rather than falling through to the
+    # per-user path.
+    if keys.signing_key() is not None:
+        return auth_encode(payload, context)
+
+    now = timegm(datetime.utcnow().utctimetuple())
     payload["jti"] = str(uuid.uuid4())
-    payload["nbf"] = timegm(datetime.utcnow().utctimetuple())
+    payload["nbf"] = now
+    # Here too, so claims.issued_at_from stops falling back to origIat.
+    payload["iat"] = now
 
     token = jwt.encode(
         payload,

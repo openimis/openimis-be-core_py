@@ -34,6 +34,7 @@ setup(
         "django-ratelimit",
         "pandas",
         "uuid6",
+        "cryptography",
     ],
     classifiers=[
         "Environment :: Web Environment",
