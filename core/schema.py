@@ -31,13 +31,13 @@ from core.services import (
     set_user_password,
     sign_out_everywhere,
     open_admin_session,
-    user_authentication,
     wait_for_mutation,
 )
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
 from core.data_masking import anonymize_gql
 from core.auth import revocation
+from core.auth.login import authenticate_login
 from django import dispatch
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -2231,6 +2231,20 @@ class SetPasswordMutation(graphene.relay.ClientIDMutation):
 class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     """Obtain JSON Web Token mutation, with auto-provisioning from tblUsers"""
 
+    class Arguments:
+        # Both optional. A client that knows nothing about a second factor
+        # sends neither; one refused with SECOND_FACTOR_REQUIRED resubmits
+        # the same call with otp. otp_device names the device a code was sent
+        # to, for channels that send one first; unset means any device.
+        otp = graphene.String(
+            description=gettext_lazy("Second-factor code from any confirmed device")
+        )
+        otp_device = graphene.String(
+            description=gettext_lazy(
+                "Device the code is for (a persistent id); unset tries all of them"
+            )
+        )
+
     @classmethod
     def mutate(cls, root, info, **kwargs):
 
@@ -2239,9 +2253,16 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
         request = info.context
 
         check_lockout(request)
-        info.context.user = user_authentication(request, username, password)
+        # Password and second factor both pass in here, ahead of the token
+        # super().mutate mints and of the session opened below.
+        info.context.user = authenticate_login(
+            request,
+            username,
+            password,
+            otp=kwargs.get("otp"),
+            otp_device=kwargs.get("otp_device"),
+        )
         result = super().mutate(cls, info, **kwargs)
-        # After the token: a second factor goes ahead of this line, never behind.
         open_admin_session(request, info.context.user)
         return result
 
