@@ -5,8 +5,10 @@ step for core.auth.login to sit in: an enrolled user's password alone would
 authenticate every REST and FHIR view. This refuses that, through the same
 predicate the login flow asks, so the enrolment question stays in one place.
 
-A user with no confirmed device is untouched, which is what keeps the technical
-accounts integrations authenticate with working.
+A user who owes nothing - no confirmed device, and a policy that does not bind
+them - is untouched. A technical account is outside every policy while it is
+neither staff nor superuser, which is what keeps the integrations that
+authenticate with one working.
 """
 
 from rest_framework.authentication import BasicAuthentication

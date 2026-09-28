@@ -16,7 +16,7 @@ to the frontend login, whose session open_admin_session then provides.
 
 from django.contrib.auth.signals import user_login_failed
 
-from core.auth import devices, second_factor
+from core.auth import devices, policy, second_factor
 from core.services.userServices import user_authentication
 
 #: Password accepted; the user has a confirmed device and sent no code.
@@ -25,6 +25,8 @@ SECOND_FACTOR_REQUIRED = "SECOND_FACTOR_REQUIRED"
 INVALID_SECOND_FACTOR = "INVALID_SECOND_FACTOR"
 #: Every device the code could be for is backing off; nothing was tried.
 SECOND_FACTOR_THROTTLED = "SECOND_FACTOR_THROTTLED"
+#: The policy binds the user and they have no confirmed device to present.
+SECOND_FACTOR_ENROLMENT_REQUIRED = "SECOND_FACTOR_ENROLMENT_REQUIRED"
 
 
 class SecondFactorError(Exception):
@@ -48,11 +50,13 @@ class SecondFactorError(Exception):
 def mfa_required(user):
     """Whether this login must present a second factor.
 
-    Enrolment is the policy for now: a user with a confirmed device must use
-    it. The role- and deployment-aware predicate replaces this body; it stays
-    the one place the question is asked.
+    Two things make it so: the user has a confirmed device - enrolment binds,
+    whatever the policy says - or the deployment's policy binds them (every
+    interactive user, or the roles it names). This is the one place the
+    question is asked. A deployment that delegates the second factor to an
+    identity provider changes this body and nothing else.
     """
-    return devices.has_second_factor(user)
+    return devices.has_second_factor(user) or policy.mandates(user)
 
 
 def authenticate_login(request, username, password, otp=None, otp_device=None):
@@ -67,6 +71,11 @@ def authenticate_login(request, username, password, otp=None, otp_device=None):
     user = user_authentication(request, username, password)
     if not mfa_required(user):
         return user
+    if not devices.has_second_factor(user):
+        # The policy binds a user who has nothing to present. Ahead of the otp
+        # branch so a stray code reads as "enrol" rather than as a wrong code,
+        # and no signal is sent below, because nothing was guessed.
+        raise SecondFactorError(SECOND_FACTOR_ENROLMENT_REQUIRED)
     if not otp:
         raise SecondFactorError(SECOND_FACTOR_REQUIRED)
 
