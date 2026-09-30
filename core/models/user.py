@@ -30,6 +30,7 @@ from secrets import token_hex
 from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
+from .row_security import ParentScope
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
@@ -607,24 +608,16 @@ class ClaimAdmin(VersionedModel):
     def __str__(self):
         return self.code + " " + self.last_name + " " + self.other_names
 
-    @classmethod
-    def get_queryset(cls, queryset, user):
-        queryset = cls.filter_queryset(queryset)
-        # GraphQL calls with an info object while Rest calls with the user itself
-        if isinstance(user, ResolveInfo):
-            user = user.context.user
-        if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            from location.schema import LocationManager
+    # As visible as the health facility the administrator works for. HealthFacility
+    # scopes itself in code, so this restricts through its queryset. An
+    # administrator with no health facility stays visible, as a null location does
+    # in the location filter this replaces.
+    row_scope = ParentScope("health_facility", allow_null=True)
 
-            queryset = LocationManager().build_user_location_filter_query(
-                user._u,
-                prefix="health_facility__location",
-                queryset=queryset,
-                loc_types=["D"],
-            )
-        return queryset
+    @classmethod
+    def get_queryset(cls, queryset, user=None):
+        # Kept for the validity filter and for REST callers passing None for "all rows".
+        return super().get_queryset(cls.filter_queryset(queryset), user)
 
     @property
     def id_for_audit(self):

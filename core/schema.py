@@ -37,6 +37,7 @@ from core.services import (
 from core.mutation_log_secrets import contains_secret, scrub_secrets
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
+from core.gql import ScopedQuerysetMixin
 from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
@@ -861,7 +862,7 @@ class MutationLogGQLType(DjangoObjectType):
         return queryset.filter(user=user)
 
 
-class ClaimAdminGQLType(DjangoObjectType):
+class ClaimAdminGQLType(ScopedQuerysetMixin, DjangoObjectType):
     """
     Details about a Claim Administrator
     """
@@ -879,11 +880,6 @@ class ClaimAdminGQLType(DjangoObjectType):
             ),
         }
         connection_class = ExtendedConnection
-
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        queryset = queryset.filter(*ClaimAdmin.filter_validity())
-        return queryset
 
 
 class Query(graphene.ObjectType):
@@ -1035,7 +1031,6 @@ class Query(graphene.ObjectType):
 
     def resolve_claim_admins(self, info, search=None, **kwargs):
         user = info.context.user
-        user_health_facility = None
         if not user.has_perms(CoreConfig.gql_query_claim_administrator_perms):
             # Without the query right, a user is still allowed to see the claim
             # administrator they are themselves linked to: the frontend relies on
@@ -1055,33 +1050,15 @@ class Query(graphene.ObjectType):
                 *ClaimAdmin.filter_validity(**kwargs), own_claim_admin
             )
 
+        # Which administrators the user may see is ClaimAdmin.row_scope; the
+        # district and region arguments only narrow that further.
+        filters = [*ClaimAdmin.filter_validity(**kwargs)]
         district_uuid = kwargs.get("district_uuid", None)
         region_uuid = kwargs.get("region_uuid", None)
-        try:
-            HealthFacility = apps.get_model("location", "HealthFacility")
-            hf_filters = [*HealthFacility.filter_validity(**kwargs)]
-            if district_uuid is not None:
-                hf_filters += [Q(location__uuid=district_uuid)]
-            elif region_uuid is not None:
-                hf_filters += [Q(location__parent__uuid=region_uuid)]
-
-            if settings.ROW_SECURITY:
-                from location.models import LocationManager
-
-                q = LocationManager().build_user_location_filter_query(
-                    user._u, prefix="location", loc_types=["D"]
-                )
-                if q:
-                    hf_filters += [q]
-
-            user_health_facility = HealthFacility.objects.filter(*hf_filters)
-        except Exception as e:
-            logger.debug(e)
-            pass
-
-        filters = [*ClaimAdmin.filter_validity(**kwargs)]
-        if user_health_facility:
-            filters += [Q(health_facility__in=user_health_facility)]
+        if district_uuid is not None:
+            filters += [Q(health_facility__location__uuid=district_uuid)]
+        elif region_uuid is not None:
+            filters += [Q(health_facility__location__parent__uuid=region_uuid)]
 
         if search:
             filters += [
@@ -1090,7 +1067,7 @@ class Query(graphene.ObjectType):
                 | Q(other_names__icontains=search)
             ]
 
-        return ClaimAdmin.objects.filter(*filters)
+        return ClaimAdmin.get_queryset(ClaimAdmin.objects.filter(*filters), user)
 
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
