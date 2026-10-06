@@ -13,6 +13,7 @@ from core.models.row_security import (
     ParentScope,
     RowSecurityMixin,
     Scope,
+    target_queryset,
 )
 from core.utils import filter_validity
 

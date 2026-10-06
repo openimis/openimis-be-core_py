@@ -324,6 +324,18 @@ class ParentScope(Scope):
         return queryset.filter(condition)
 
 
+def target_queryset(model, user):
+    """The rows of ``model`` that ``user`` may act on: the ones they may read.
+
+    Update, delete and replace paths look their target up here, never in
+    ``model.objects``, so a write cannot reach a row its author cannot see.
+    Models without row security are unrestricted, as for reads.
+    """
+    queryset = model.objects.all()
+    get_queryset = getattr(model, "get_queryset", None)
+    return get_queryset(queryset, user) if callable(get_queryset) else queryset
+
+
 def is_row_secured(model):
     """True when ``model`` narrows its own rows, declaratively or in code."""
     return (
