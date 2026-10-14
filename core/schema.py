@@ -499,6 +499,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             logger.debug(
                 "[OpenIMISMutation %s] before mutate signal sent", mutation_log.id
             )
+            # What the mutation returned, merged into the log's metadata below.
+            # Only the synchronous branch has one: an async mutation runs later.
+            messages = None
             if core.async_mutations and not carries_secret:
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
