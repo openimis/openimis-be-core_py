@@ -53,9 +53,9 @@ def check_linked_object_access(is_own_record, info):
     With gql_query_users_perms, nothing changes. Without it, these are readable
     on your own record only - reading your own profile needs no right, reading
     somebody else's does. What the caller may reach from there is left to the
-    module that owns it: location row-secures a walk into the tree in
-    location.gql_queries.check_location_readable, so the objects hanging off
-    your own record cannot become a way around it.
+    module that owns it: location lets a walk go up the tree from any object
+    you hold, in location.gql_queries.check_location_walk, and row-secures the
+    way down in the querysets of its reverse relations.
     """
     if info.context.user.has_perms(CoreConfig.gql_query_users_perms):
         return

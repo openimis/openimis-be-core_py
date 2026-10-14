@@ -405,9 +405,9 @@ class gqlTest(openIMISGraphQLTestCase):
     def test_self_service_walks_into_own_health_facility_location(self):
         """
         The walk continues under the rules of the module that owns it: the
-        location of your own facility is inside your own branch of the tree.
-        Locations outside it are refused by location.check_location_readable,
-        covered in location.tests.test_location_walk_row_security.
+        location of a facility you may read comes with it, see
+        location.check_location_walk and
+        location.tests.test_location_walk_row_security.
         """
         _db_user, token = self._self_service_user("TSTHF2")
         query = """
