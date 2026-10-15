@@ -7,7 +7,7 @@ from django.db.models import Q
 from core.utils import (
     full_class_name, comparable, to_json_safe_value,
     to_list_permissions, collect_all_gql_permissions,
-    clear_current_user, clear_history_context
+    clear_current_user, clear_history_context, append_validity_filter
 )
 from core.datetimes.ad_datetime import AdDate, AdDatetime
 from core.test_helpers import create_test_interactive_user
@@ -171,3 +171,53 @@ class UtilsTestCase(TestCase):
         )
         caches["default"].clear()
         User.USE_CACHE = False
+
+
+class AppendValidityFilterIsDeletedTest(TestCase):
+    """The soft-delete scope now comes from here rather than get_queryset.
+
+    get_queryset is never handed the filter arguments, so forcing the scope
+    there made "show deleted" resolve to is_deleted=True AND is_deleted=False -
+    an empty list for every row (OP-3180). The decision belongs where the
+    arguments are visible.
+    """
+
+    @staticmethod
+    def _is_deleted_clauses(filters):
+        return [f for f in filters if "is_deleted" in str(f)]
+
+    def test_hides_deleted_by_default(self):
+        filters = append_validity_filter()
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=False)])
+
+    def test_honours_an_explicit_request_for_deleted_rows(self):
+        filters = append_validity_filter(isDeleted=True)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=True)])
+
+    def test_none_returns_both(self):
+        # For a legacy model with no is_deleted column, where the clause would
+        # raise FieldError.
+        filters = append_validity_filter(isDeleted=None)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [])
+
+    def test_accepts_the_snake_case_spelling_from_python_callers(self):
+        self.assertEqual(
+            self._is_deleted_clauses(append_validity_filter(is_deleted=True)),
+            [Q(is_deleted=True)],
+        )
+        self.assertEqual(self._is_deleted_clauses(append_validity_filter(is_deleted=None)), [])
+
+    def test_camel_case_wins_when_both_are_given(self):
+        filters = append_validity_filter(isDeleted=True, is_deleted=False)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=True)])
+
+    def test_does_not_disturb_the_date_validity_filters(self):
+        without = append_validity_filter(isDeleted=None)
+        with_default = append_validity_filter()
+
+        # The only difference is the soft-delete clause.
+        self.assertEqual(len(with_default), len(without) + 1)

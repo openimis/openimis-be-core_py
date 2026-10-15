@@ -336,10 +336,35 @@ def __place_the_filters(date_start, date_end):
     )
 
 
+_UNSET = object()
+
+
 def append_validity_filter(**kwargs):
+    """Scope filters for a HistoryBusinessModel query.
+
+    Besides the date validity, this decides whether soft-deleted rows are in
+    scope. `is_deleted` defaults to False, so a caller that says nothing keeps
+    hiding them; passing the client's own value is what makes a "show deleted"
+    filter work, and None drops the clause to return both.
+
+    It is the one place that decision is made, rather than each model's
+    get_queryset forcing it: a queryset that has already been narrowed to
+    is_deleted=False cannot be widened again by a filter argument, which is
+    exactly how "show deleted" came to return an empty list (OP-3180).
+
+    Pass `is_deleted=None` for a model that has no such column - the legacy
+    OpenIMISModel family marks deletion with `active` / `validity_to` instead,
+    and filtering is_deleted there raises FieldError.
+    """
     default_filter = kwargs.pop("applyDefaultValidityFilter", False)
     date_valid_from = kwargs.pop("dateValidFrom__Gte", None)
     date_valid_to = kwargs.pop("dateValidTo__Lte", None)
+    # The GraphQL argument arrives camelCased; the snake_case spelling is for
+    # Python callers. A sentinel keeps an explicit isDeleted=None meaningful.
+    is_deleted = kwargs.pop("isDeleted", _UNSET)
+    if is_deleted is _UNSET:
+        is_deleted = kwargs.pop("is_deleted", False)
+    kwargs.pop("is_deleted", None)
     filters = []
     # check if we can use default filter validity
     if date_valid_from is None and date_valid_to is None:
@@ -352,6 +377,9 @@ def append_validity_filter(**kwargs):
             dateValidFrom__Gte=date_valid_from,
             dateValidTo__Lte=date_valid_to)
         ]
+
+    if is_deleted is not None:
+        filters.append(Q(is_deleted=is_deleted))
 
     return filters
 
