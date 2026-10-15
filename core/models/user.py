@@ -923,27 +923,47 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         return "(%s) %s [%s]" % (utype, self.username, self.id)
 
     def save(self, *args, **kwargs):
+        # User is a wrapper: most of what it is asked to save - a new password,
+        # for instance - is stored on the sub-objects and leaves the User row
+        # itself untouched. Track the sub-objects that were actually written so
+        # that such a composite save is not reported as a failure by the
+        # "no changes in fields" guard of the base model.
+        sub_object_saved = False
         if self.i_user:
             try:
                 self.i_user.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save i_user: {e}")
         if self.officer:
             try:
                 self.officer.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save officer {e}")
         if self.claim_admin:
             try:
                 self.claim_admin.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save claim_admin {e}")
         if self.t_user:
             try:
                 self.t_user.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save t_user {e}")
-        super().save(*args, **kwargs)
+        if sub_object_saved:
+            if not self.is_dirty(check_relationship=True):
+                # The sub-objects carried the whole change, the User row has
+                # nothing to write: no update to attempt, hence nothing to fail.
+                return None
+            # The User row is written too, but a sub-object was already updated:
+            # the composite save is a success whatever this row has left to do.
+            kwargs["silent"] = True
+        # No sub-object was updated: the usual "no changes in fields" guard
+        # applies, a save that changes strictly nothing is still an error.
+        return super().save(*args, **kwargs)
 
     def shallow_save(self, *args, **kwargs):
         """Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion"""
