@@ -7,7 +7,8 @@ from django.db.models import Q
 from core.utils import (
     full_class_name, comparable, to_json_safe_value,
     to_list_permissions, collect_all_gql_permissions,
-    clear_current_user, clear_history_context
+    clear_current_user, clear_history_context, append_validity_filter,
+    deleted_filter
 )
 from core.datetimes.ad_datetime import AdDate, AdDatetime
 from core.test_helpers import create_test_interactive_user
@@ -171,3 +172,126 @@ class UtilsTestCase(TestCase):
         )
         caches["default"].clear()
         User.USE_CACHE = False
+
+
+class AppendValidityFilterIsDeletedTest(TestCase):
+    """The soft-delete scope now comes from here rather than get_queryset.
+
+    get_queryset is never handed the filter arguments, so forcing the scope
+    there made "show deleted" resolve to is_deleted=True AND is_deleted=False -
+    an empty list for every row (OP-3180). The decision belongs where the
+    arguments are visible.
+    """
+
+    @staticmethod
+    def _is_deleted_clauses(filters):
+        return [f for f in filters if "is_deleted" in str(f)]
+
+    def test_hides_deleted_by_default(self):
+        filters = append_validity_filter()
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=False)])
+
+    def test_honours_an_explicit_request_for_deleted_rows(self):
+        filters = append_validity_filter(isDeleted=True)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=True)])
+
+    def test_none_returns_both(self):
+        filters = append_validity_filter(isDeleted=None)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [])
+
+    def test_accepts_the_snake_case_spelling_from_python_callers(self):
+        self.assertEqual(
+            self._is_deleted_clauses(append_validity_filter(is_deleted=True)),
+            [Q(is_deleted=True)],
+        )
+        self.assertEqual(self._is_deleted_clauses(append_validity_filter(is_deleted=None)), [])
+
+    def test_camel_case_wins_when_both_are_given(self):
+        filters = append_validity_filter(isDeleted=True, is_deleted=False)
+
+        self.assertEqual(self._is_deleted_clauses(filters), [Q(is_deleted=True)])
+
+    def test_does_not_disturb_the_date_validity_filters(self):
+        without = append_validity_filter(isDeleted=None)
+        with_default = append_validity_filter()
+
+        # The only difference is the soft-delete clause.
+        self.assertEqual(len(with_default), len(without) + 1)
+
+
+class _StubField:
+    def __init__(self, name):
+        self.name = name
+
+
+class _StubMeta:
+    def __init__(self, names):
+        self._names = names
+
+    def get_fields(self):
+        return [_StubField(n) for n in self._names]
+
+
+class _StubModel:
+    """Just enough model to exercise the field lookup."""
+
+    def __init__(self, *names):
+        self._meta = _StubMeta(names)
+
+
+class DeletedFilterTest(TestCase):
+    """One rule, two spellings.
+
+    `active` and `is_deleted` are each other's negation. Which one a model uses
+    is the model's business; "hide deleted unless asked" is stated once.
+    """
+
+    def test_is_deleted_model(self):
+        model = _StubModel("id", "is_deleted")
+
+        self.assertEqual(deleted_filter(model), Q(is_deleted=False))
+        self.assertEqual(deleted_filter(model, True), Q(is_deleted=True))
+
+    def test_active_model_gets_the_negated_clause(self):
+        model = _StubModel("id", "active")
+
+        self.assertEqual(deleted_filter(model), Q(active=True))
+        self.assertEqual(deleted_filter(model, True), Q(active=False))
+
+    def test_is_deleted_wins_when_a_model_has_both(self):
+        # HistoryModel exposes `active` as a property over is_deleted; should a
+        # model ever carry both columns, the explicit marker is the right one.
+        model = _StubModel("is_deleted", "active")
+
+        self.assertEqual(deleted_filter(model), Q(is_deleted=False))
+
+    def test_no_marker_means_no_clause(self):
+        self.assertIsNone(deleted_filter(_StubModel("id", "name")))
+
+    def test_none_means_no_clause(self):
+        self.assertIsNone(deleted_filter(_StubModel("is_deleted"), None))
+        self.assertIsNone(deleted_filter(None))
+
+    def test_real_legacy_model_resolves_to_active(self):
+        # InteractiveUser is OpenIMISMigrationModel: `active`, no is_deleted.
+        from core.models import InteractiveUser
+
+        self.assertEqual(deleted_filter(InteractiveUser), Q(active=True))
+
+    def test_append_validity_filter_routes_through_the_model(self):
+        from core.models import InteractiveUser
+
+        clauses = [
+            f for f in append_validity_filter(model=InteractiveUser) if "active" in str(f)
+        ]
+
+        self.assertEqual(clauses, [Q(active=True)])
+
+    def test_without_a_model_it_still_assumes_is_deleted(self):
+        # Every current caller is a HistoryBusinessModel, so the default stays.
+        clauses = [f for f in append_validity_filter() if "is_deleted" in str(f)]
+
+        self.assertEqual(clauses, [Q(is_deleted=False)])
