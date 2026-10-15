@@ -357,6 +357,14 @@ def deleted_filter(model, is_deleted=False):
     Note that HistoryModel also exposes `active`, but as a property computed
     from `is_deleted` rather than a column - hence the field lookup rather than
     `hasattr`, and hence `is_deleted` being checked first.
+
+    VersionedModel is deliberately absent. Its `validity_to` looks like a third
+    spelling of the same idea, but it is not: save_history() sets validity_to
+    on a superseded *version*, and delete_history() sets it on a *deleted* row,
+    so both are non-null and the two cases differ only by validity_from ==
+    validity_to. Mapping it here would turn "show deleted" into "show deleted
+    and every historical version" on that family - which is showHistory, a
+    different feature. Use filter_validity for those models.
     """
     if model is None or is_deleted is None:
         return None
