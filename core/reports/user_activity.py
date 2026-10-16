@@ -3407,16 +3407,23 @@ def user_activity_query(
     if date_start > date_end:
         return {"error": "Error - the start date cannot be greater than the end date"}
     user_id = int(requested_user_id)
+    # `subject` is who the report is *about*; `user`, the caller, is a
+    # separate thing and is deliberately left alone. It used to be overwritten
+    # here, which hid the fact that nothing in this report is scoped to the
+    # requester - worth revisiting, but not by quietly reusing the name.
+    subject = None
     if user_id != ALL_USERS:
         try:
-            user = InteractiveUser.objects.get(id=user_id, *InteractiveUser.filter_validity())
+            subject = InteractiveUser.objects.get(
+                id=user_id, *InteractiveUser.filter_validity()
+            )
         except ObjectDoesNotExist:
             return {"error": "Error - the user requested does not exist"}
 
     # Preparing data for the header table
     header = {
         "user_name": (
-            f"{user.other_names} {user.last_name}"
+            f"{subject.other_names} {subject.last_name}"
             if user_id != ALL_USERS
             else "All users"
         ),

@@ -107,3 +107,101 @@ class UserDeleteTest(TestCase):
             User.objects.filter(pk=user.pk).values_list("username", flat=True).first(),
             before,
         )
+
+
+class UserDeleteGuardTest(TestCase):
+    """A delete that works needs something standing in its way (OP-1572).
+
+    Until OP-3194 the mutation wrote nothing, so nothing had to. It does now,
+    and an administrator deleting their own account locks the instance out of
+    itself - which is how this was found.
+    """
+
+    def _superuser(self, username):
+        return create_test_interactive_user(
+            username=username, custom_props={"is_superuser": True}
+        )
+
+    @staticmethod
+    def _delete(actor, *targets):
+        from core.schema import DeleteUserMutation
+
+        return DeleteUserMutation.async_mutate(
+            actor, uuids=[str(t.id) for t in targets]
+        )
+
+    @staticmethod
+    def _is_live(user):
+        return (
+            InteractiveUser.objects.filter(pk=user.i_user_id)
+            .values_list("active", flat=True)
+            .first()
+        )
+
+    def test_a_user_cannot_delete_themselves(self):
+        actor = self._superuser("OP1572Self")
+        self._superuser("OP1572Other")  # so only the self rule can fire
+
+        errors = self._delete(actor, actor)
+
+        self.assertTrue(errors, "the self-deletion was allowed")
+        self.assertIn("cannot_delete_self", str(errors))
+        self.assertTrue(self._is_live(actor), "the caller deleted themselves")
+
+    def test_the_last_superuser_cannot_be_deleted(self):
+        actor = self._superuser("OP1572LastActor")
+        target = self._superuser("OP1572Last")
+        # make `target` the only superuser left, including the caller
+        User.objects.filter(is_superuser=True).exclude(id=target.id).update(
+            is_superuser=False
+        )
+        actor.refresh_from_db()
+        actor.is_superuser = True  # the caller still needs the right to try
+
+        errors = self._delete(actor, target)
+
+        self.assertTrue(errors, "the last superuser was deleted")
+        self.assertIn("cannot_delete_last_superuser", str(errors))
+        self.assertTrue(self._is_live(target))
+
+    def test_a_superuser_goes_when_another_one_remains(self):
+        actor = self._superuser("OP1572KeeperActor")
+        target = self._superuser("OP1572Keeper")
+        self._superuser("OP1572Spare")
+
+        errors = self._delete(actor, target)
+
+        self.assertEqual(errors, [], f"refused unexpectedly: {errors}")
+        self.assertFalse(self._is_live(target))
+
+    def test_an_ordinary_user_is_unaffected(self):
+        actor = self._superuser("OP1572PlainActor")
+        target = create_test_interactive_user(
+            username="OP1572Plain", custom_props={"is_superuser": False}
+        )
+
+        errors = self._delete(actor, target)
+
+        self.assertEqual(errors, [], f"refused unexpectedly: {errors}")
+        self.assertFalse(self._is_live(target))
+
+    def test_an_unknown_uuid_is_titled_with_that_uuid(self):
+        """The loop used to rebind `user`, so the title held a User object.
+
+        Two uuids, because a single error is collapsed to its `list` by the
+        caller and the title would not be visible. The message itself still
+        does not name the id - `"...id_does_not_exist" % {"id": ...}` has no
+        placeholder to fill, which is what its `# noqa: F504` marks - and that
+        is left alone here.
+        """
+        from core.schema import DeleteUserMutation
+
+        actor = self._superuser("OP1572Unknown")
+        missing = [
+            "00000000-0000-0000-0000-00000000dead",
+            "00000000-0000-0000-0000-00000000beef",
+        ]
+
+        errors = DeleteUserMutation.async_mutate(actor, uuids=missing)
+
+        self.assertEqual([e["title"] for e in errors], missing)
