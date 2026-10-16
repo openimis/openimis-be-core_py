@@ -221,9 +221,16 @@ def create_or_update_claim_admin(user_id, data, audit_user_id, connected):
 
 
 def create_or_update_core_user(
-    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, user=None, silent=False,
+    user_uuid, username, i_user=None, t_user=None, officer=None, claim_admin=None, silent=False,
     is_superuser=None
 ):
+    """Create or update the core User row that ties the components together.
+
+    It used to take a `user` argument, which callers passed the *acting* user.
+    Every branch below overwrote it before it was read, so it never did
+    anything - and `user.username = username` a few lines down means that if
+    those branches were ever reordered it would have renamed the caller.
+    """
     if user_uuid:
         # This intentionally fails if the provided uuid doesn't exist as we don't want clients to set it
         user = User.objects.get(id=user_uuid)

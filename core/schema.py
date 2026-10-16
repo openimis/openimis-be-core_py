@@ -2170,7 +2170,6 @@ def update_or_create_user(data, user):
         i_user=i_user,
         officer=officer,
         claim_admin=claim_admin,
-        user=user,
         silent=True,
         is_superuser=is_superuser,
     )
