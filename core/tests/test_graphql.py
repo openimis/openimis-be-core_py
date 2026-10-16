@@ -2,7 +2,7 @@ from core.models.openimis_graphql_test_case import (
     openIMISGraphQLTestCase,
     BaseTestContext,
 )
-from core.models import Language, User
+from core.models import InteractiveUser, Language, User
 from core.test_helpers import (
     create_test_interactive_user,
     create_admin_role,
@@ -19,6 +19,11 @@ class gqlTest(openIMISGraphQLTestCase):
     admin_user = None
     admin_username = "Adminlogin"
     admin_password = "EdfmD3!12@#"
+    # The account test_login_default_successful signs in as. It is seeded by
+    # the database rather than created here, so the class has to make sure it
+    # is still usable - see _reset_default_admin.
+    default_admin_username = "Admin"
+    default_admin_password = "admin123"
     district = None
     test_hf = None
     test_village = None
@@ -31,8 +36,50 @@ class gqlTest(openIMISGraphQLTestCase):
     """
 
     @classmethod
+    def _reset_default_admin(cls):
+        """Put the seeded Admin account back into a state it can sign in from.
+
+        `test_login_default_successful` asserts that the stock administrator
+        still logs in with the stock password, but nothing in this class
+        creates that account - it comes with the database. On a long-lived
+        database it drifts: the password gets changed, or the account gets
+        closed while someone exercises the Users screen, and the test then
+        fails for a reason that has nothing to do with the code.
+
+        The failed-login counter is cleared for the same reason. django-axes
+        locks an account out after repeated failures, and `test_login_wrong_
+        credentials` in this class produces one every run; where the test
+        database is also the development database, the attempts made against
+        the running server land in the same table.
+
+        setUpClass runs inside the class-level atomic block, so none of this
+        is written back.
+        """
+        from axes.models import AccessAttempt, AccessFailureLog
+
+        AccessAttempt.objects.all().delete()
+        AccessFailureLog.objects.all().delete()
+
+        i_user = InteractiveUser.objects.filter(
+            login_name=cls.default_admin_username
+        ).first()
+        if i_user is None:
+            create_test_interactive_user(
+                username=cls.default_admin_username,
+                password=cls.default_admin_password,
+            )
+            return
+        i_user.validity_to = None
+        i_user.active = True
+        i_user.set_password(
+            cls.default_admin_password, private_key=i_user.private_key
+        )
+        i_user.save(silent=True)
+
+    @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls._reset_default_admin()
         cls.admin_user = create_test_interactive_user(
             username=cls.admin_username, password=cls.admin_password
         )

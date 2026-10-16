@@ -164,34 +164,6 @@ class BaseUpdateMutationMixin(TargetLookupMixin):
         return object_to_update
 
 
-class BaseDeleteMutationMixin(TargetLookupMixin):
-    @property
-    def _model(self):
-        raise NotImplementedError()
-
-    @classmethod
-    def _object_not_exist_exception(cls, obj_uuid):
-        raise ObjectNotExistException(cls._model, obj_uuid)
-
-    @classmethod
-    def _validate_mutation(cls, user, **data):
-        cls._validate_user(user)
-
-    @classmethod
-    def _validate_user(cls, user):
-        if type(user) is AnonymousUser or not user.id:
-            raise PermissionDenied(_("mutation.authentication_required"))
-
-    @classmethod
-    def _mutate(cls, user, uuid=None, **data):
-        object_to_delete = cls._target_queryset(user).filter(uuid=uuid).first()
-
-        if object_to_delete is None:
-            cls._object_not_exist_exception(uuid)
-        else:
-            object_to_delete.delete_history()
-
-
 class BaseHistoryModelCreateMutationMixin:
 
     @property
