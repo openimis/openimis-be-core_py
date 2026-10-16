@@ -1947,27 +1947,77 @@ class DeleteUserMutation(OpenIMISMutation):
     class Input(OpenIMISMutation.Input):
         uuids = graphene.List(graphene.String)
 
+    @staticmethod
+    def _refusal(target_id, message):
+        return {"title": str(target_id), "list": [{"message": message}]}
+
+    @classmethod
+    def _refuse_deletion(cls, actor, target):
+        """Why `actor` may not delete `target`, or None if it may.
+
+        Deleting a user used to write nothing, so nothing had to stand in the
+        way of it. OP-3175 put the Delete action back in the Users searcher and
+        OP-3194 made it write, which leaves these two the only thing between an
+        administrator and locking the instance out of itself (OP-1572).
+        """
+        if actor.id == target.id:
+            # Signing yourself out of existence mid-request, and never what
+            # anyone means by a bulk delete.
+            return cls._refusal(target.id, "user.validation.cannot_delete_self")
+
+        if target.is_superuser and not cls._another_superuser_remains(target):
+            return cls._refusal(
+                target.id, "user.validation.cannot_delete_last_superuser"
+            )
+        return None
+
+    @staticmethod
+    def _another_superuser_remains(target):
+        """Is there a superuser other than `target` who is not already deleted?
+
+        Deletion is recorded on the components, not on `core_User` - which is
+        why this repeats the clause `resolve_users` uses rather than asking
+        `User` directly. Technical users count: they are kept out of the Users
+        searcher but can still administer the instance.
+        """
+        return (
+            User.objects.filter(
+                Q(i_user__isnull=True)
+                | Q(*InteractiveUser.filter_validity(prefix="i_user__")),
+                is_superuser=True,
+            )
+            .exclude(id=target.id)
+            .exists()
+        )
+
     @classmethod
     def async_mutate(cls, user, **data):
         if not user.has_perms(CoreConfig.gql_mutation_delete_users_perms):
             raise PermissionDenied("unauthorized")
         errors = []
+        # `user` is the caller and stays that way. The loop used to rebind it
+        # to each target, which lost the caller's identity after the first one
+        # and put a User object in the "title" of the not-found error.
         for user_uuid in data["uuids"]:
-            user = User.objects.filter(id=user_uuid).first()
-            if user is None:
+            target = User.objects.filter(id=user_uuid).first()
+            if target is None:
                 errors.append(
-                    {
-                        "title": user,
-                        "list": [
-                            {
-                                "message": "user.validation.id_does_not_exist"  # noqa: F504
-                                % {"id": user_uuid}
-                            }
-                        ],
-                    }
+                    cls._refusal(
+                        user_uuid,
+                        "user.validation.id_does_not_exist"  # noqa: F504
+                        % {"id": user_uuid},
+                    )
                 )
                 continue
-            errors += set_user_deleted(user)
+            refusal = cls._refuse_deletion(user, target)
+            if refusal:
+                errors.append(refusal)
+                continue
+            failure = set_user_deleted(target)
+            if failure:
+                # `errors += failure` appended the dict's *keys*, so every
+                # failure reached the journal as ["title", "list"] (OP-3195).
+                errors.append(failure)
         if len(errors) == 1:
             errors = errors[0]["list"]
         return errors
