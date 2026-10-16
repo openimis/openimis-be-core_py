@@ -33,7 +33,7 @@ class RightsScopeTestCase(TestCase):
 
     def test_model_without_scope_parent_resolves_to_none(self):
         self.assertIsNone(scope_parent_of(self.parent_model))
-  
+
     def test_undeclared_action_returns_none(self):
         """None means "no rule", which is not an empty right list."""
         self.assertIsNone(model_rights(self.child_model, "no_such_action"))
