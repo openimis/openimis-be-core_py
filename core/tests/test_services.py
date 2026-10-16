@@ -1,7 +1,11 @@
 import importlib
 import logging
 import datetime
+from unittest import mock
 
+from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError
+from django.db import DatabaseError
 from django.test.client import RequestFactory
 from django.apps import apps
 from django.test import TestCase
@@ -10,6 +14,7 @@ from rest_framework.exceptions import AuthenticationFailed, ParseError
 import core
 from core.models import InteractiveUser, Language, User
 from core.services import (
+    change_user_password,
     create_or_update_interactive_user,
     create_or_update_core_user,
     create_or_update_officer,
@@ -28,6 +33,7 @@ from location.models import OfficerVillage
 from location.test_helpers import create_test_village, create_test_health_facility
 logger = logging.getLogger(__file__)
 PASSWORD = "FoBoar72!"
+NEW_PASSWORD = "NewFoBoar72!"
 
 
 class UserServicesTest(TestCase):
@@ -556,6 +562,49 @@ class UserServicesTest(TestCase):
         request = self.factory.get("/")
         with self.assertRaises(ValidationError):
             set_user_password(request, username, "TOKEN", "new_password")
+
+    def test_change_user_password_own_account_persists(self):
+        user = create_test_interactive_user(username="pwd_own", password=PASSWORD)
+
+        change_user_password(user, old_password=PASSWORD, new_password=NEW_PASSWORD)
+
+        user = User.objects.get(username="pwd_own")
+        self.assertTrue(user.check_password(NEW_PASSWORD))
+        self.assertFalse(user.check_password(PASSWORD))
+
+    def test_change_user_password_by_administrator_persists(self):
+        create_test_interactive_user(username="pwd_target", password=PASSWORD)
+
+        change_user_password(
+            self.user, username_to_update="pwd_target", new_password=NEW_PASSWORD
+        )
+
+        self.assertTrue(User.objects.get(username="pwd_target").check_password(NEW_PASSWORD))
+
+    def test_change_user_password_wrong_old_password_leaves_it(self):
+        user = create_test_interactive_user(username="pwd_wrong", password=PASSWORD)
+
+        with self.assertRaises(ValidationError):
+            change_user_password(user, old_password="not-it", new_password=NEW_PASSWORD)
+
+        self.assertTrue(User.objects.get(username="pwd_wrong").check_password(PASSWORD))
+
+    def test_change_user_password_save_failure_propagates(self):
+        user = create_test_interactive_user(username="pwd_fail", password=PASSWORD)
+
+        with mock.patch.object(InteractiveUser, "save", side_effect=DatabaseError("down")):
+            with self.assertRaises(DatabaseError):
+                change_user_password(user, old_password=PASSWORD, new_password=NEW_PASSWORD)
+
+        self.assertTrue(User.objects.get(username="pwd_fail").check_password(PASSWORD))
+
+    def test_user_set_password_with_valid_token_persists(self):
+        user = create_test_interactive_user(username="pwd_token", password=PASSWORD)
+        token = default_token_generator.make_token(user)
+
+        set_user_password(self.factory.get("/"), "pwd_token", token, NEW_PASSWORD)
+
+        self.assertTrue(User.objects.get(username="pwd_token").check_password(NEW_PASSWORD))
 
 
 class UserAuthenticationTest(TestCase):
