@@ -558,21 +558,33 @@ class Officer(VersionedModel, ExtendableModel):
 
     @property
     def officer_allowed_locations(self):
-        """
-        Returns uuid of all locations allowed for given officer
-        """
-        from location.models import OfficerVillage, Location
+        """Every location this officer may see: their villages, and the ancestors of those.
 
-        villages = OfficerVillage.objects.filter(officer=self, validity_to__isnull=True)
-        all_allowed_uuids = []
-        for village in villages:
-            allowed_uuids = [village.location.uuid]
-            parent = village.location.parent
-            while parent is not None:
-                allowed_uuids.append(parent.uuid)
-                parent = parent.parent
-            all_allowed_uuids.extend(allowed_uuids)
-        return Location.objects.filter(uuid__in=all_allowed_uuids)
+        Each level is read straight off the officer-village rows by following
+        `parent` one more hop, so the database resolves the whole hierarchy in
+        one statement. `distinct()` collapses each level inside its subquery -
+        villages in a ward share a parent, so a few hundred villages are a few
+        dozen wards and a handful of districts - which keeps every `IN` a
+        subquery over the officer's own rows rather than a list of ids.
+
+        It used to walk `parent` in Python: one query per village plus one per
+        hop, neither relation being select_related, then the collected uuids
+        sent back as a literal list (OP-3197).
+        """
+        from location.apps import LocationConfig
+        from location.models import Location, OfficerVillage
+
+        villages = OfficerVillage.objects.filter(
+            officer=self, validity_to__isnull=True
+        )
+
+        condition = models.Q(id__in=villages.values("location_id").distinct())
+        hops = "location"
+        for _ in range(len(LocationConfig.location_types) - 1):
+            hops += "__parent"
+            condition |= models.Q(id__in=villages.values(f"{hops}_id").distinct())
+
+        return Location.objects.filter(condition)
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -661,22 +673,31 @@ class ClaimAdmin(VersionedModel):
 
     @property
     def officer_allowed_locations(self):
-        """
-        Returns uuid of all locations allowed for given officerLocationManager
-        """
-        Location = apps.get_model('location', 'Location')
-        district = self.health_facility.location
-        all_allowed_uuids = [district.parent.uuid, district.uuid]
-        child_locations = Location.objects.filter(
-            parent=district
-        ).values_list("uuid", flat=True)
-        while child_locations:
-            all_allowed_uuids.extend(child_locations)
-            child_locations = Location.objects.filter(
-                parent__uuid__in=child_locations
-            ).values_list("uuid", flat=True)
+        """Every location this claim administrator may see.
 
-        return Location.objects.filter(uuid__in=all_allowed_uuids)
+        That is the district their health facility sits in, its parent, and
+        everything beneath it. The descendants used to be collected one level
+        at a time in Python and sent back as a literal uuid list, which grows
+        with the number of villages in the district; they are a bounded set of
+        `parent` hops instead (OP-3197).
+
+        A district with no parent no longer raises - the old first line read
+        `district.parent.uuid` unguarded.
+        """
+        from location.apps import LocationConfig
+
+        Location = apps.get_model('location', 'Location')
+        district_id = self.health_facility.location_id
+
+        condition = models.Q(id=district_id) | models.Q(
+            id__in=Location.objects.filter(id=district_id).values("parent_id")
+        )
+        hops = "parent"
+        for _ in range(len(LocationConfig.location_types) - 1):
+            condition |= models.Q(**{f"{hops}_id": district_id})
+            hops += "__parent"
+
+        return Location.objects.filter(condition)
 
     class Meta:
         managed = True
