@@ -139,6 +139,21 @@ class TechnicalUser(AbstractBaseUser):
     def id_for_audit(self):
         return -1
 
+    def delete_history(self, **kwargs):
+        """Close the technical user.
+
+        `set_user_deleted` calls this on every component of a user.
+        AbstractBaseUser has no such method, so deleting a technical user
+        raised AttributeError, which the caller turned into a generic
+        failure (OP-3194).
+        """
+        if self.validity_to is None:
+            now = py_datetime.now()
+            if self.validity_from is None:
+                self.validity_from = now
+            self.validity_to = now
+            self.save()
+
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = ["password"]
 
@@ -730,10 +745,17 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         pass
 
     def delete_history(self, **kwargs):
-        # now = py_datetime.now()
-        # self.validity_from = now
-        # self.validity_to = now
-        # self.save()
+        """Nothing to mark here - core_User carries no deletion marker.
+
+        The table has neither `active` nor `ValidityTo`, which is why
+        `filter_validity` above returns no clause: whether a user is deleted
+        is answered by its components, and `resolve_users` filters on
+        `i_user`. Deleting those is what `set_user_deleted` is for.
+
+        This override exists to stop the mixin's real `delete_history` from
+        bumping `version` on a row where that means nothing. If a marker on
+        core_User is ever wanted, it is a schema change, not this method.
+        """
         pass
 
     @property

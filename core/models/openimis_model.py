@@ -117,8 +117,19 @@ class OpenIMISHistoryMixin(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin,
             )
         return None
 
-    def delete_history(self):
-        pass
+    def delete_history(self, *args, **kwargs):
+        """Soft-delete this row.
+
+        `delete_history` is the name every module calls to delete a record -
+        it predates this family and the versioned models still implement it
+        that way. Here the work is `delete()`, which writes the marker this
+        family reads (`active`).
+
+        It used to be `pass`, which is why deleting a user reported success
+        and changed nothing: `set_user_deleted` calls this on every component
+        of the user and none of them wrote anything (OP-3194).
+        """
+        return self.delete(*args, **kwargs)
 
     def delete(self, *args, user=None, **kwargs):
         if not self.is_dirty(check_relationship=True) and getattr(self, 'active', True):
@@ -137,6 +148,11 @@ class OpenIMISHistoryMixin(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin,
                     replaced_entity.replacement_uuid = None
                     replaced_entity.save(user=user)
             result = super().save(*args, **kwargs)
+            # The row survives with active=False, so the cache must be
+            # refreshed the way save() does. Without this the manager keeps
+            # serving the pre-delete instance - a deleted user would still be
+            # found by username.
+            self.update_cache()
             return result
         else:
             raise ValidationError(
@@ -168,11 +184,25 @@ class OpenIMISHistoryMixin(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin,
 
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
+        """The "this row is not deleted" clause, in the marker this family uses.
+
+        `prefix` is honoured so the clause can be applied across a relation
+        the way core.utils.filter_validity does. It used to be ignored, which
+        meant a caller passing prefix="i_user__" filtered on the wrong table
+        and got a FieldError.
+
+        With a validity date the question is "was the row alive then", so an
+        active row qualifies; it used to ask for `active=False`, which
+        answered the opposite question.
+        """
         validity = kwargs.get(arg, None)
         if not validity:
-            return [Q(active=True)]
+            return [Q(**{f"{prefix}active": True})]
         else:
-            return [Q(active=False) | Q(date_deactivated__gte=validity)]
+            return [
+                Q(**{f"{prefix}active": True})
+                | Q(**{f"{prefix}date_deactivated__gte": validity})
+            ]
 
     class Meta:
         abstract = True
@@ -315,9 +345,40 @@ class OpenIMISMigrationModel(OpenIMISModel):
     validity_from = DateTimeField(db_column="ValidityFrom", default=py_datetime.now, null=True)
     validity_to = DateTimeField(db_column="ValidityTo", blank=True, null=True, default=None)
 
+    def delete_history(self, *args, **kwargs):
+        """Close both deletion markers.
+
+        `active` is what the OpenIMISModel family reads; `validity_to` is what
+        the rows that have not been moved to the history table yet still
+        carry. A model is only in this class while that migration is in
+        flight, so a delete has to write both - otherwise the row is deleted
+        for half the code and alive for the other half.
+
+        `validity_from` is deliberately left alone. The versioned models set
+        it equal to `validity_to` to tell a deleted row from a superseded one,
+        but superseded rows live in the history table here, so there is
+        nothing to disambiguate and nothing to gain from losing the date.
+        """
+        result = super().delete_history(*args, **kwargs)
+        if self.validity_to is None:
+            self.validity_to = py_datetime.now()
+            self.save(*args, **kwargs)
+        return result
+
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
-        return core_filter_validity(arg, prefix, **kwargs)
+        """Hide rows marked deleted either way, for the same reason.
+
+        `validity_to` is the legacy half and comes out of here once every
+        table has moved to the history model; until then a row marked only
+        one way still has to disappear.
+        """
+        return [
+            *core_filter_validity(arg, prefix, **kwargs),
+            *super(OpenIMISMigrationModel, OpenIMISMigrationModel).filter_validity(
+                arg, prefix, **kwargs
+            ),
+        ]
 
     class Meta:
         abstract = True
