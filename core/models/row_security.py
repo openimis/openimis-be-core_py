@@ -197,7 +197,18 @@ class RowSecurityMixin:
 
         A model needing logic a Scope cannot express overrides this directly;
         the models that already do keep working untouched.
+
+        ``queryset`` may be None, meaning "every row of this model". The
+        hand-written overrides accept that because they open with
+        ``filter_queryset(None)``, which builds the base queryset as a side
+        effect of filtering it. This one deliberately does not filter -- OP-3180
+        moved the "hide deleted unless asked" decision out to the resolvers,
+        where "show deleted" can actually turn it off -- so it has to build the
+        base itself, or a caller passing None gets ``None`` back, or an
+        AttributeError once a scope tries to filter it (OP-3196).
         """
+        if queryset is None:
+            queryset = cls._default_manager.all()
         if cls.row_scope is None:
             return queryset
         return cls.row_scope.filter(queryset, cls.scoping_user(user), cls)

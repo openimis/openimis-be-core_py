@@ -400,10 +400,14 @@ class GenericScopeTest(TestCase):
         )
 
     def assertUnfiltered(self, base, scoped):
-        """Invoice re-applies its soft-delete filter regardless; assert nothing else."""
-        self.assertEqual(
-            str(self.Invoice.filter_queryset(base).query), str(scoped.query)
-        )
+        """Nothing was narrowed: the queryset comes back exactly as it went in.
+
+        It used to expect the model's soft-delete filter on top. OP-3180 moved
+        that decision to the resolvers, so that "show deleted" can turn it off,
+        and removed `filter_queryset` from the `get_queryset` overrides that
+        applied it unconditionally. Row security does not re-apply it here.
+        """
+        self.assertEqual(str(base.query), str(scoped.query))
 
     def test_only_the_types_actually_stored_are_returned(self):
         stored = sorted(
