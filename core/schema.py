@@ -1123,9 +1123,10 @@ class Query(graphene.ObjectType):
             return gql_optimizer.query(
                 Officer.objects.filter(
                     Q(code__icontains=search)
+                    | Q(user__username__icontains=search)
                     | Q(last_name__icontains=search)
                     | Q(other_names__icontains=search)
-                ),
+                ).distinct(),
                 info,
             )
 
