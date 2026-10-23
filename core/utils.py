@@ -382,7 +382,8 @@ def append_validity_filter(**kwargs):
     Besides the date validity, this decides whether soft-deleted rows are in
     scope. `is_deleted` defaults to False, so a caller that says nothing keeps
     hiding them; passing the client's own value is what makes a "show deleted"
-    filter work, and None drops the clause to return both.
+    filter work, and None drops the clause to return both. A lookup by `id` or
+    `uuid` that says nothing returns the record whether it is deleted or not.
 
     It is the one place that decision is made, rather than each model's
     get_queryset forcing it: a queryset that has already been narrowed to
@@ -401,7 +402,12 @@ def append_validity_filter(**kwargs):
     # Python callers. A sentinel keeps an explicit isDeleted=None meaningful.
     is_deleted = kwargs.pop("isDeleted", _UNSET)
     if is_deleted is _UNSET:
-        is_deleted = kwargs.pop("is_deleted", False)
+        is_deleted = kwargs.pop("is_deleted", _UNSET)
+    if is_deleted is _UNSET:
+        # A record asked for by its id is returned whatever its deletion state: a
+        # detail page opened from a "show deleted" list sends no isDeleted, and
+        # hiding the row left it loading for ever (OP-3256). Lists keep the default.
+        is_deleted = None if (kwargs.get("id") or kwargs.get("uuid")) else False
     kwargs.pop("is_deleted", None)
     filters = []
     # check if we can use default filter validity
