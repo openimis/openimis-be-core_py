@@ -221,6 +221,28 @@ class AppendValidityFilterIsDeletedTest(TestCase):
         # The only difference is the soft-delete clause.
         self.assertEqual(len(with_default), len(without) + 1)
 
+    def test_a_lookup_by_id_returns_the_record_whatever_its_deletion_state(self):
+        # OP-3256: a detail page opened from "show deleted" asks for its record by
+        # id without isDeleted; hiding deleted rows left it on "Loading" for ever.
+        for lookup in ({"id": str(uuid.uuid4())}, {"uuid": str(uuid.uuid4())}):
+            with self.subTest(lookup=lookup):
+                self.assertEqual(self._is_deleted_clauses(append_validity_filter(**lookup)), [])
+
+    def test_an_explicit_is_deleted_still_wins_on_a_lookup_by_id(self):
+        record = str(uuid.uuid4())
+        self.assertEqual(
+            self._is_deleted_clauses(append_validity_filter(id=record, isDeleted=False)),
+            [Q(is_deleted=False)],
+        )
+        self.assertEqual(
+            self._is_deleted_clauses(append_validity_filter(id=record, is_deleted=True)),
+            [Q(is_deleted=True)],
+        )
+
+    def test_an_empty_id_is_not_a_lookup(self):
+        self.assertEqual(self._is_deleted_clauses(append_validity_filter(id=None)), [Q(is_deleted=False)])
+        self.assertEqual(self._is_deleted_clauses(append_validity_filter(id="")), [Q(is_deleted=False)])
+
 
 class _StubField:
     def __init__(self, name):
