@@ -55,7 +55,7 @@ location answers instead. A fallback here is another path, not a special case.
 
 import logging
 
-from django.core.cache import cache
+from core.cache_control import cache_delete, cache_get, cache_set
 from django.db import DatabaseError
 from django.db.models import Q, TextField
 from django.db.models.functions import Cast
@@ -380,7 +380,7 @@ def present_content_type_ids(model, ct_field):
     from django.contrib.contenttypes.models import ContentType
 
     key = f"row_security:generic_cts:{model._meta.label_lower}:{ct_field}"
-    cached = cache.get(key)
+    cached = cache_get(key)
     if cached is not None:
         return cached
 
@@ -398,7 +398,7 @@ def present_content_type_ids(model, ct_field):
         logger.debug("content types unavailable for %s: %s", model.__name__, exc)
         return None
 
-    cache.set(key, ids, None)
+    cache_set(key, ids)
     _invalidate_on_new_content_type(model, ct_field, key)
     return ids
 
@@ -407,10 +407,10 @@ def _invalidate_on_new_content_type(model, ct_field, key):
     """Drop the cached set when a row brings in a type it does not list."""
 
     def drop_if_new(sender, instance, **kwargs):
-        known = cache.get(key)
+        known = cache_get(key)
         ct_id = getattr(instance, f"{ct_field}_id", None)
         if known is not None and ct_id is not None and ct_id not in known:
-            cache.delete(key)
+            cache_delete(key)
 
     post_save.connect(
         drop_if_new,

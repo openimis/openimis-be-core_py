@@ -280,6 +280,23 @@ class CoreConfig(AppConfig):
                         group,
                     )
 
+    @staticmethod
+    def _install_task_boundaries():
+        # A Celery task is a request for the per-request state in core.utils (access
+        # checks, the cache memo): the web middleware clears it between requests, and
+        # this clears it between tasks, so a worker thread never carries it over.
+        try:
+            from celery.signals import task_postrun, task_prerun
+        except ImportError:
+            return
+        from core.utils import clear_access_cache
+
+        def clear(**kwargs):
+            clear_access_cache()
+
+        task_prerun.connect(clear, weak=False, dispatch_uid="core_clear_access_cache_prerun")
+        task_postrun.connect(clear, weak=False, dispatch_uid="core_clear_access_cache_postrun")
+
     def _configure_graphql(self, cfg):
         this.async_mutations = (
             True
@@ -321,6 +338,7 @@ class CoreConfig(AppConfig):
         self._configure_additional_settings(cfg)
         from core.rights_sync import install as install_rights_sync
         install_rights_sync(self)
+        self._install_task_boundaries()
 
         CoreConfig.password_reset_template = cfg["password_reset_template"]
         CoreConfig.locked_user_password_hash = cfg["locked_user_password_hash"]

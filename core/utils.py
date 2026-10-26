@@ -138,8 +138,13 @@ def get_content_type_cache():
     return _get_thread_access_cache("content_type_cache")
 
 
+def get_cache_memo():
+    """Stands in for a cache that cannot be trusted across requests (core.cache_control)."""
+    return _get_thread_access_cache("cache_memo")
+
+
 def clear_access_cache():
-    for attr in ("authentication_checked", "business_access_cache", "content_type_cache"):
+    for attr in ("authentication_checked", "business_access_cache", "content_type_cache", "cache_memo"):
         if hasattr(_request_local, attr):
             delattr(_request_local, attr)
 
