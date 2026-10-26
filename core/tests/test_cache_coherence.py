@@ -102,7 +102,8 @@ class IncoherentCacheTest(SimpleTestCase):
             self.assertIsNone(cache_control.get_officer_flag("eo1"))
 
     def test_named_alias_follows_its_own_backend(self):
-        conf = {**LOCMEM, "location": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "op3281-loc"}}
+        location = {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "op3281-loc"}
+        conf = {**LOCMEM, "location": location}
         with override_settings(CACHES=conf), async_mutations(True):
             cache_control.cache_set("user_locations_7", [1, 2], alias="location")
             self.assertEqual(cache_control.cache_get("user_locations_7", alias="location"), [1, 2])

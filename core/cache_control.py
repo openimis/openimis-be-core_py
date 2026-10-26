@@ -102,12 +102,70 @@ def flush_caches(aliases=None):
 
 
 # ---------------------------------------------------------------------------
-# Fault tolerant accessors for the default cache
+# Expiry and coherence
+#
+# Every entry expires: the overall CACHE_OBJECT_TTL applies whenever a caller
+# gives no timeout, or None. An entry that lives forever outlives any
+# invalidation it misses.
+#
+# A process-local backend (LocMemCache) is only coherent when every write
+# happens in the process that reads: with async mutations the write, and the
+# invalidation its signals trigger, run in the Celery worker, and never reach
+# the web processes' copies - nor the other way round. Such a cache is then not
+# used at all: values live in a memo for the current request or task only.
 # ---------------------------------------------------------------------------
 
-def _cache_call(operation, default, *args, **kwargs):
+PROCESS_LOCAL_BACKENDS = ("LocMemCache", "DummyCache")
+
+
+def default_ttl():
+    return getattr(settings, "CACHE_OBJECT_TTL", 3600)
+
+
+def _timeout(timeout):
+    return default_ttl() if timeout is _UNSET or timeout is None else timeout
+
+
+def _runs_out_of_process():
+    import core
+
+    return bool(getattr(core, "async_mutations", False))
+
+
+def cache_is_coherent(alias="default"):
+    """Whether entries of this cache alias can be trusted across requests."""
+    if get_cache_info(alias)["backend_short"] not in PROCESS_LOCAL_BACKENDS:
+        return True
+    return not _runs_out_of_process()
+
+
+def _memo():
+    # request (or Celery task) scoped; cleared by core.utils.clear_access_cache
+    from core.utils import get_cache_memo
+
+    return get_cache_memo()
+
+
+def cache_memo_forget(prefixes, alias="default"):
+    """Drop the request memo's entries whose key starts with one of ``prefixes``.
+
+    For invalidations that cannot name their keys (a whole key space), next to
+    whatever the caller does on the backend itself.
+    """
+    prefixes = tuple(prefixes)
+    memo = _memo()
+    for entry in [entry for entry in memo if entry[0] == alias and str(entry[1]).startswith(prefixes)]:
+        del memo[entry]
+
+
+# ---------------------------------------------------------------------------
+# Fault tolerant accessors, for the default cache or a named alias
+# ---------------------------------------------------------------------------
+
+def _cache_call(operation, default, *args, alias="default", **kwargs):
     try:
-        return getattr(cache, operation)(*args, **kwargs)
+        backend = cache if alias == "default" else caches[alias]
+        return getattr(backend, operation)(*args, **kwargs)
     except Exception as exc:
         # a failing cache must not propagate: the caller either has a database
         # fallback (reads) or has already written to the database (writes)
@@ -115,41 +173,54 @@ def _cache_call(operation, default, *args, **kwargs):
         return default
 
 
-def cache_get(key, default=None):
+def cache_get(key, default=None, alias="default"):
     """``cache.get``, returning ``default`` when the backend is unavailable."""
-    return _cache_call("get", default, key, default)
+    if not cache_is_coherent(alias):
+        return _memo().get((alias, key), default)
+    return _cache_call("get", default, key, default, alias=alias)
 
 
-def cache_get_many(keys):
+def cache_get_many(keys, alias="default"):
     """``cache.get_many``, returning ``{}`` when the backend is unavailable."""
-    return _cache_call("get_many", {}, keys)
+    if not cache_is_coherent(alias):
+        memo = _memo()
+        return {key: memo[(alias, key)] for key in keys if (alias, key) in memo}
+    return _cache_call("get_many", {}, keys, alias=alias)
 
 
-def cache_set(key, value, timeout=_UNSET):
+def cache_set(key, value, timeout=_UNSET, alias="default"):
     """``cache.set``; returns False when the backend is unavailable."""
-    kwargs = {} if timeout is _UNSET else {"timeout": timeout}
-    return _cache_call("set", False, key, value, **kwargs) is not False
+    if not cache_is_coherent(alias):
+        _memo()[(alias, key)] = value
+        return True
+    return _cache_call("set", False, key, value, timeout=_timeout(timeout), alias=alias) is not False
 
 
-def cache_set_many(mapping, timeout=_UNSET):
+def cache_set_many(mapping, timeout=_UNSET, alias="default"):
     """``cache.set_many``; returns False when the backend is unavailable."""
     if not mapping:
         return True
-    kwargs = {} if timeout is _UNSET else {"timeout": timeout}
-    return _cache_call("set_many", False, mapping, **kwargs) is not False
+    if not cache_is_coherent(alias):
+        _memo().update({(alias, key): value for key, value in mapping.items()})
+        return True
+    return _cache_call("set_many", False, mapping, timeout=_timeout(timeout), alias=alias) is not False
 
 
-def cache_delete(key):
+def cache_delete(key, alias="default"):
     """``cache.delete``; returns False when the backend is unavailable."""
-    return _cache_call("delete", False, key) is not False
+    _memo().pop((alias, key), None)
+    return _cache_call("delete", False, key, alias=alias) is not False
 
 
-def cache_delete_many(keys):
+def cache_delete_many(keys, alias="default"):
     """``cache.delete_many``; returns False when the backend is unavailable."""
     keys = list(keys)
     if not keys:
         return True
-    return _cache_call("delete_many", False, keys) is not False
+    memo = _memo()
+    for key in keys:
+        memo.pop((alias, key), None)
+    return _cache_call("delete_many", False, keys, alias=alias) is not False
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +242,7 @@ def get_user_rights(user_id):
 
 
 def set_user_rights(user_id, rights):
-    return cache_set(RIGHTS_KEY.format(user_id), rights, timeout=None)
+    return cache_set(RIGHTS_KEY.format(user_id), rights)
 
 
 def invalidate_user_rights(user_id):
@@ -216,7 +287,7 @@ def get_officer_flag(login_name):
 
 
 def set_officer_flag(login_name, is_officer):
-    return cache_set(OFFICER_KEY.format(login_name), is_officer, timeout=None)
+    return cache_set(OFFICER_KEY.format(login_name), is_officer)
 
 
 def invalidate_officer(login_name):
@@ -228,7 +299,7 @@ def get_claim_admin_flag(login_name):
 
 
 def set_claim_admin_flag(login_name, is_claim_admin):
-    return cache_set(CLAIM_ADMIN_KEY.format(login_name), is_claim_admin, timeout=None)
+    return cache_set(CLAIM_ADMIN_KEY.format(login_name), is_claim_admin)
 
 
 def invalidate_claim_admin(login_name):
