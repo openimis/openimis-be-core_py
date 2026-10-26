@@ -344,7 +344,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     field.type, graphene.types.enum.EnumMeta
                 ):
                     # If the field type is Enum
-                    if hasattr(field.type, value):
+                    if value is not None and hasattr(field.type, value):
                         coerced_data[key] = str(getattr(field.type, value).value)
                     else:
                         coerced_data[key] = value
@@ -354,7 +354,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     and isinstance(field.type._of_type, graphene.types.enum.EnumMeta)
                 ):
                     # If the field type is Enum
-                    if hasattr(field.type._of_type, value):
+                    if value is not None and hasattr(field.type._of_type, value):
                         coerced_data[key] = str(
                             getattr(field.type._of_type, value).value
                         )
