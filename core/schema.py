@@ -98,6 +98,7 @@ from core.utils import (  # noqa: 401
 from core.cache_control import invalidate_role_rights
 from core.models import (
     ModuleConfiguration,
+    Notification,
     FieldControl,
     MutationLog,
     Language,
@@ -824,6 +825,42 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
         return OrderedDjangoFilterConnectionField.orderBy(qs, args)
 
 
+class NotificationGQLType(DjangoObjectType):
+    uuid = graphene.UUID(source="id", required=True)
+
+    class Meta:
+        model = Notification
+        interfaces = (graphene.relay.Node,)
+        filter_fields = {"id": ["exact"], "type": ["exact"], "read_at": ["isnull"]}
+        connection_class = ExtendedConnection
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        user = info.context.user
+        if user.is_anonymous:
+            return queryset.none()
+        return queryset.filter(recipient=user).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=now())
+        )
+
+
+class MarkNotificationsRead(graphene.Mutation):
+    class Arguments:
+        ids = graphene.List(graphene.UUID, required=True)
+
+    updated_count = graphene.Int(required=True)
+
+    @classmethod
+    @login_required
+    def mutate(cls, root, info, ids):
+        updated = Notification.objects.filter(
+            recipient=info.context.user,
+            id__in=ids,
+            read_at__isnull=True,
+        ).update(read_at=now())
+        return cls(updated_count=updated)
+
+
 class MutationLogGQLType(DjangoObjectType):
     """
     This represents a requested mutation and its status.
@@ -886,6 +923,12 @@ class ClaimAdminGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
 
 class Query(graphene.ObjectType):
+    notifications = OrderedDjangoFilterConnectionField(
+        NotificationGQLType,
+        orderBy=graphene.List(of_type=graphene.String),
+    )
+    unread_notification_count = graphene.Int(required=True)
+
     module_configurations = graphene.List(
         ModuleConfigurationGQLType, validity=graphene.String(), layer=graphene.String()
     )
@@ -898,6 +941,14 @@ class Query(graphene.ObjectType):
     mutation_logs = OrderedDjangoFilterConnectionField(
         MutationLogGQLType, orderBy=graphene.List(of_type=graphene.String)
     )
+
+    def resolve_notifications(self, info, **kwargs):
+        return NotificationGQLType.get_queryset(Notification.objects.all(), info)
+
+    def resolve_unread_notification_count(self, info):
+        return NotificationGQLType.get_queryset(
+            Notification.objects.filter(read_at__isnull=True), info
+        ).count()
 
     role = OrderedDjangoFilterConnectionField(
         RoleGQLType,
@@ -2477,6 +2528,7 @@ class LogoutMutation(graphene.Mutation):
 
 
 class Mutation(graphene.ObjectType):
+    mark_notifications_read = MarkNotificationsRead.Field()
     create_role = CreateRoleMutation.Field()
     update_role = UpdateRoleMutation.Field()
     delete_role = DeleteRoleMutation.Field()
