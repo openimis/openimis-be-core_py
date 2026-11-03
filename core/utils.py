@@ -10,7 +10,7 @@ import graphene
 import jsonschema
 from django.db import models
 from django.conf import settings
-from django.core.exceptions import ValidationError, FieldDoesNotExist
+from django.core.exceptions import PermissionDenied, ValidationError, FieldDoesNotExist
 from core.gql_errors import AuthenticationRequired
 from django.core.files.storage import default_storage
 from django.db.models import Q, ForeignKey
@@ -19,7 +19,14 @@ from django.utils.translation import gettext as _
 from password_validator import PasswordValidator
 from zxcvbn import zxcvbn
 import datetime
-from django.core.cache import caches
+from core.cache_control import (
+    cache_delete,
+    cache_delete_many,
+    cache_get,
+    cache_get_many,
+    cache_set,
+    cache_set_many,
+)
 from functools import lru_cache
 # utils/request_local.py
 import threading
@@ -36,9 +43,6 @@ except Exception:
 _request_local = threading.local()
 
 logger = logging.getLogger(__file__)
-
-
-cache = caches["default"]
 
 __all__ = [
     "TimeUtils",
@@ -73,6 +77,43 @@ def clear_current_user():
     clear_access_cache()
 
 
+# Request header (in its WSGI META form) carrying the user to impersonate.
+IMPERSONATE_USER_META = "HTTP_X_IMPERSONATE_USER"
+
+# Wording matters: the frontend matches this substring to detect a rejected
+# impersonation and drop its own impersonation state, so every refusal below
+# leads with it.
+INVALID_IMPERSONATION_TARGET = "Invalid impersonation target"
+
+
+class ImpersonationDenied(PermissionDenied):
+    """Raised when a request may not impersonate the user it asked for.
+
+    Subclasses PermissionDenied so existing handlers keep treating it as a
+    permission failure, but it is distinguishable so that the GraphQL layer can
+    surface its message to the client instead of a generic NO_PERMISSION: the
+    frontend needs that message to stop impersonating.
+    """
+
+
+def get_original_user():
+    """The authenticated user behind an impersonation, None when not impersonating.
+
+    Audit trails record this one rather than the impersonated user, so history
+    always attributes a change to whoever actually made it.
+    """
+    return getattr(_request_local, "original_user", None)
+
+
+def set_original_user(user):
+    _request_local.original_user = user
+
+
+def clear_original_user():
+    if hasattr(_request_local, "original_user"):
+        del _request_local.original_user
+
+
 def _get_thread_access_cache(name):
     cache = getattr(_request_local, name, None)
     if cache is None:
@@ -97,8 +138,13 @@ def get_content_type_cache():
     return _get_thread_access_cache("content_type_cache")
 
 
+def get_cache_memo():
+    """Stands in for a cache that cannot be trusted across requests (core.cache_control)."""
+    return _get_thread_access_cache("cache_memo")
+
+
 def clear_access_cache():
-    for attr in ("authentication_checked", "business_access_cache", "content_type_cache"):
+    for attr in ("authentication_checked", "business_access_cache", "content_type_cache", "cache_memo"):
         if hasattr(_request_local, attr):
             delattr(_request_local, attr)
 
@@ -124,6 +170,85 @@ def clear_history_context():
                 del HistoricalRecords.thread.request
         except Exception:
             pass
+
+
+def impersonation_target_id(request):
+    """Read the impersonation header off a request or a GraphQL context."""
+    meta = getattr(request, "META", None)
+    if meta is None:
+        meta = getattr(getattr(request, "request", None), "META", None)
+    return meta.get(IMPERSONATE_USER_META) if meta else None
+
+
+def handle_impersonation(request, user):
+    """Resolve the effective user for a request, honouring X-Impersonate-User.
+
+    Sets the thread-local current user (the effective one) and original user
+    (the authenticated one, and only while impersonating), then returns the
+    effective user. Every authenticated request goes through this so the thread
+    locals get rewritten rather than inherited from whatever ran on the thread
+    before, which is what keeps an impersonation from leaking into the next call.
+
+    Impersonation is a dev/support aid gated by CoreConfig.impersonation_enabled
+    (.env IMPERSONATION_ENABLED -> settings.IMPERSONATION_ENABLED), so on a
+    production instance the header is refused outright.
+    """
+    target_id = impersonation_target_id(request)
+    if not target_id:
+        set_original_user(None)
+        set_current_user(user)
+        return user
+
+    # Lazy import: core.utils is imported from core.models, which loads before
+    # core.apps has finished setting up.
+    from core.apps import CoreConfig
+
+    if not CoreConfig.impersonation_enabled:
+        # Rejected the same way as a bad target so the frontend drops its own
+        # impersonation state; the log line is what tells an operator that the
+        # feature is merely switched off here.
+        logger.warning(
+            "Refused impersonation by %s: impersonation is disabled on this instance",
+            getattr(user, "username", user),
+        )
+        raise ImpersonationDenied(
+            "%s: impersonation is disabled on this instance"
+            % INVALID_IMPERSONATION_TARGET
+        )
+
+    if not getattr(user, "is_superuser", False):
+        logger.warning(
+            "Refused impersonation by non-superuser %s", getattr(user, "username", user)
+        )
+        raise ImpersonationDenied(
+            "%s: impersonation requires superuser privileges"
+            % INVALID_IMPERSONATION_TARGET
+        )
+
+    from django.apps import apps
+
+    User = apps.get_model("core", "User")
+    try:
+        # Only interactive users carry the rights an impersonated session needs.
+        target_user = User.objects.get(
+            id=uuid.UUID(str(target_id)),
+            i_user__isnull=False,
+            i_user__active=True,
+        )
+    except (ValueError, TypeError, AttributeError, User.DoesNotExist) as exc:
+        logger.warning(
+            "Refused impersonation by %s: %r is not a valid target",
+            getattr(user, "username", user),
+            target_id,
+        )
+        raise ImpersonationDenied(INVALID_IMPERSONATION_TARGET) from exc
+
+    set_original_user(user)
+    set_current_user(target_user)
+    logger.info(
+        "Superuser %s is impersonating %s", user.username, target_user.username
+    )
+    return target_user
 
 
 class TimeUtils(object):
@@ -216,10 +341,79 @@ def __place_the_filters(date_start, date_end):
     )
 
 
+_UNSET = object()
+
+
+def deleted_filter(model, is_deleted=False):
+    """The "is this row deleted" clause, in whichever form `model` records it.
+
+    openIMIS marks deletion two ways, and they are each other's negation:
+
+    - HistoryModel / HistoryBusinessModel: `is_deleted`
+    - the legacy OpenIMISModel family:     `active`
+
+    Callers pick the model; the mapping between the two lives here, once, so
+    that "hide deleted unless asked" is a single rule rather than a convention
+    each module restates in whichever spelling its model happens to use.
+
+    Returns None when the answer is "no clause": either `is_deleted` is None,
+    meaning both are wanted, or the model records neither marker.
+
+    Note that HistoryModel also exposes `active`, but as a property computed
+    from `is_deleted` rather than a column - hence the field lookup rather than
+    `hasattr`, and hence `is_deleted` being checked first.
+
+    VersionedModel is deliberately absent. Its `validity_to` looks like a third
+    spelling of the same idea, but it is not: save_history() sets validity_to
+    on a superseded *version*, and delete_history() sets it on a *deleted* row,
+    so both are non-null and the two cases differ only by validity_from ==
+    validity_to. Mapping it here would turn "show deleted" into "show deleted
+    and every historical version" on that family - which is showHistory, a
+    different feature. Use filter_validity for those models.
+    """
+    if model is None or is_deleted is None:
+        return None
+    columns = {f.name for f in model._meta.get_fields()}
+    if "is_deleted" in columns:
+        return Q(is_deleted=is_deleted)
+    if "active" in columns:
+        return Q(active=not is_deleted)
+    return None
+
+
 def append_validity_filter(**kwargs):
+    """Scope filters for a HistoryBusinessModel query.
+
+    Besides the date validity, this decides whether soft-deleted rows are in
+    scope. `is_deleted` defaults to False, so a caller that says nothing keeps
+    hiding them; passing the client's own value is what makes a "show deleted"
+    filter work, and None drops the clause to return both. A lookup by `id` or
+    `uuid` that says nothing returns the record whether it is deleted or not.
+
+    It is the one place that decision is made, rather than each model's
+    get_queryset forcing it: a queryset that has already been narrowed to
+    is_deleted=False cannot be widened again by a filter argument, which is
+    exactly how "show deleted" came to return an empty list (OP-3180).
+
+    Pass `is_deleted=None` for a model that has no such column - the legacy
+    OpenIMISModel family marks deletion with `active` / `validity_to` instead,
+    and filtering is_deleted there raises FieldError.
+    """
     default_filter = kwargs.pop("applyDefaultValidityFilter", False)
     date_valid_from = kwargs.pop("dateValidFrom__Gte", None)
     date_valid_to = kwargs.pop("dateValidTo__Lte", None)
+    model = kwargs.pop("model", None)
+    # The GraphQL argument arrives camelCased; the snake_case spelling is for
+    # Python callers. A sentinel keeps an explicit isDeleted=None meaningful.
+    is_deleted = kwargs.pop("isDeleted", _UNSET)
+    if is_deleted is _UNSET:
+        is_deleted = kwargs.pop("is_deleted", _UNSET)
+    if is_deleted is _UNSET:
+        # A record asked for by its id is returned whatever its deletion state: a
+        # detail page opened from a "show deleted" list sends no isDeleted, and
+        # hiding the row left it loading for ever (OP-3256). Lists keep the default.
+        is_deleted = None if (kwargs.get("id") or kwargs.get("uuid")) else False
+    kwargs.pop("is_deleted", None)
     filters = []
     # check if we can use default filter validity
     if date_valid_from is None and date_valid_to is None:
@@ -232,6 +426,19 @@ def append_validity_filter(**kwargs):
             dateValidFrom__Gte=date_valid_from,
             dateValidTo__Lte=date_valid_to)
         ]
+
+    # With a model, the marker it actually uses; without one, is_deleted - the
+    # right answer for every HistoryBusinessModel caller, which is all of them
+    # today. Passing model= is the explicit form and the only one that works
+    # for a legacy model.
+    if model is not None:
+        clause = deleted_filter(model, is_deleted)
+    elif is_deleted is not None:
+        clause = Q(is_deleted=is_deleted)
+    else:
+        clause = None
+    if clause is not None:
+        filters.append(clause)
 
     return filters
 
@@ -388,7 +595,7 @@ class CachedManager(models.Manager):
         """Handle cache lookup for exact or in queries."""
         if lookup == "exact":
             cache_key = get_cache_key(self.model, self._normalize_value(value))
-            cached_data = cache.get(cache_key)
+            cached_data = cache_get(cache_key)
             if cached_data:
                 if isinstance(cached_data, dict):
                     # Instantiate from dict to ensure proper __init__ and dirtyfields state
@@ -416,7 +623,7 @@ class CachedManager(models.Manager):
                 return None
             values = [self._normalize_value(v) for v in value]
             cache_keys = [get_cache_key(self.model, v) for v in values]
-            cached_results = cache.get_many(cache_keys)
+            cached_results = cache_get_many(cache_keys)
             cached_instances = []
             uncached_values = []
 
@@ -599,7 +806,7 @@ def get_cached_foreign_keys(instances, fk_field_names):
 def _related_from_cache(related_model, fk_values):
     """Read related objects from the cache; return (by pk, list of misses)."""
     keys = {value: get_cache_key(related_model, value) for value in fk_values}
-    cached = cache.get_many(list(keys.values()))
+    cached = cache_get_many(list(keys.values()))
 
     resolved = {}
     missing = []
@@ -756,7 +963,7 @@ class CachedModelMixin:
                 primary_data[get_cache_key(cls, obj.pk)] = clean_fk(obj)
 
         if primary_data:
-            cache.set_many(primary_data, timeout=now)
+            cache_set_many(primary_data, timeout=now)
 
         # Secondary caches: key(field_value) -> pk  (only if value != pk)
         secondary_data = {}
@@ -773,7 +980,7 @@ class CachedModelMixin:
                     secondary_data[key] = obj.pk
 
         if secondary_data:
-            cache.set_many(secondary_data, timeout=now)
+            cache_set_many(secondary_data, timeout=now)
 
         logger.debug("Bulk cached %d instances of %s", len(objs), cls.__name__)
 
@@ -783,32 +990,41 @@ class CachedModelMixin:
         """
         if self.USE_CACHE:
             ttl = getattr(settings, "CACHE_OBJECT_TTL", 3600)  # default 1 hour (3600s)
-            cache.set(
+            cache_set(
                 get_cache_key(self.__class__, self.pk),
                 clean_fk(self),
                 timeout=ttl,
             )
-            unique_fields = getattr(
-                self, "UNIQUE_FIELDS", {"id", "uuid", "pk"}
-            )
-            for f in unique_fields:
-                # get_field raised an error on property raise
-                if self.pk != getattr(self, f, self.pk):
-                    cache.set(
-                        get_cache_key(self.__class__, getattr(self, f)),
-                        self.pk,
-                        timeout=ttl,
-                    )
+            for key in self._alias_cache_keys():
+                cache_set(key, self.pk, timeout=ttl)
             logger.debug("Saved and cached instance: %s", self)
+
+    def _alias_cache_keys(self):
+        """
+        Cache keys of the alias entries (unique field value -> pk).
+
+        They are what lets a lookup by uuid or username resolve to the cached
+        object, so they are written and dropped together with the primary one.
+        """
+        unique_fields = getattr(self, "UNIQUE_FIELDS", {"id", "uuid", "pk"})
+        keys = []
+        for f in unique_fields:
+            # getattr with a default: UNIQUE_FIELDS may name a property
+            value = getattr(self, f, self.pk)
+            if self.pk != value:
+                keys.append(get_cache_key(self.__class__, value))
+        return keys
 
     def delete_cache(self):
         """
-        Deletes the cache entry for this object.
+        Deletes the cache entries for this object.
         """
         if self.USE_CACHE:
-            cache_key = f"{self.__class__.__name__}:{self.pk}"
-            cache.delete(cache_key)
-            logger.debug(f"Removed instance from cache: {cache_key}")
+            # get_cache_key is the only key builder: the primary entry is
+            # written under it, and a hand built key silently deleted nothing
+            keys = [get_cache_key(self.__class__, self.pk)] + self._alias_cache_keys()
+            cache_delete_many(keys)
+            logger.debug("Removed instance from cache: %s", keys)
 
     class Meta:
         abstract = True
@@ -886,58 +1102,21 @@ def get_first_or_default_language():
         return Language.objects.first()
 
 
+# Role rights are seeded (solution-builder fixtures and the permission maps),
+# never migrated. Both helpers are kept because some forty historical
+# migrations import them, but they do nothing: they looked their role up by
+# `IsSystem`, and a legacy label on a role must not decide which rights that
+# role carries. The insert side has been inert for a while; the remove side
+# followed it, since a reverse that deletes seeded rights the forward never
+# created only takes rights away.
+
+
 def insert_role_right_for_system(system_role, right_id, apps):
-    pass
-    # do not manage the role and right via migrations
-    # RoleRight = apps.get_model("core", "RoleRight")
-    # Role = apps.get_model("core", "Role")
-    # existing_roles = Role.objects.filter(
-    #     is_system=system_role, validity_to__isnull=True
-    # )
-    # if not existing_roles:
-    #     logger.warning(
-    #         "Migration requested a role_right for system role %s but couldn't find that role",
-    #         system_role,
-    #     )
-    # else:
-    #     for existing_role in existing_roles:
-    #         role_rights = RoleRight.objects.filter(
-    #             role=existing_role, right_id=right_id
-    #         ).first()
-    #         if not role_rights:
-    #             RoleRight.objects.create(
-    #                 role=existing_role,
-    #                 right_id=right_id,
-    #                 validity_from=datetime.datetime.now(),
-    #             )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def remove_role_right_for_system(system_role, right_id, apps):
-    RoleRight = apps.get_model("core", "RoleRight")
-    Role = apps.get_model("core", "Role")
-    existing_roles = Role.objects.filter(
-        is_system=system_role, validity_to__isnull=True
-    )
-    if not existing_roles:
-        logger.warning(
-            "Migration requested to remove a role_right for system role %s but couldn't find that role",
-            system_role,
-        )
-    for existing_role in existing_roles:
-        role_rights = RoleRight.objects.filter(role=existing_role, right_id=right_id)
-        if not role_rights:
-            logger.warning(
-                "Role right not found for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
-        for role_right in role_rights:
-            role_right.delete()
-            logger.info(
-                "Role right removed for system role %s and right ID %s",
-                system_role,
-                right_id,
-            )
+    """No-op. Kept for the migrations that still import it."""
 
 
 def convert_to_python_value(string):
@@ -1100,7 +1279,7 @@ class ConfigUtilMixin:
 
 
 def clear_cache(instance):
-    cache.delete(get_cache_key(instance.__class__, instance.pk))
+    cache_delete(get_cache_key(instance.__class__, instance.pk))
 
 
 def get_cache_key(model, id):
@@ -1109,11 +1288,6 @@ def get_cache_key(model, id):
 
 @lru_cache(maxsize=1)
 def collect_all_gql_permissions():
-    """
-    Collect all GQL permission codes from Django app configs into a dict structure:
-    {app: {perm_name: [perm_ids]}}.
-    Scans for attributes in DEFAULT_CFG or DEFAULT_CONFIG ending with '_perms' that are lists.
-    """
     excluded_apps = [
         "health_check.cache",
         "health_check",
@@ -1126,31 +1300,26 @@ def collect_all_gql_permissions():
         "channels",
         "graphql_jwt.refresh_token.apps.RefreshTokenConfig",
     ]
-    all_apps = [
-        app
-        for app in settings.INSTALLED_APPS
-        if not app.startswith("django") and app not in excluded_apps
-    ]
+
+    from django.apps import apps as django_apps
 
     permissions_dict = {}
-    for app in all_apps:
-        try:
-            app_module = __import__(f"{app}.apps")
-            config_dict = None
-            if hasattr(app_module.apps, "DEFAULT_CFG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CFG)
-            elif hasattr(app_module.apps, "DEFAULT_CONFIG"):
-                config_dict = flatten_dict(app_module.apps.DEFAULT_CONFIG)
-
-            if config_dict:
-                app_perms = {}
-                for key, value in config_dict.items():
-                    if key.endswith("_perms") and isinstance(value, list):
-                        app_perms[key] = [str(perm) for perm in value]
-                if app_perms:  # Only add apps with permissions
-                    permissions_dict[app] = app_perms
-        except (ImportError, AttributeError):
+    for app_config in django_apps.get_app_configs():
+        app = app_config.name
+        if app.startswith("django") or app in excluded_apps:
             continue
+        app_perms = {}
+        for attr in dir(app_config):
+            if not attr.endswith("_perms"):
+                continue
+            try:
+                value = getattr(app_config, attr)
+            except Exception:
+                continue
+            if isinstance(value, (list, tuple)):
+                app_perms[attr] = [str(perm) for perm in value]
+        if app_perms:
+            permissions_dict[app] = app_perms
 
     return permissions_dict
 

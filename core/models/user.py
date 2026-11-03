@@ -3,8 +3,15 @@ import os
 import sys
 import uuid
 from datetime import timedelta, datetime as py_datetime
-from django.core.cache import cache
 from cached_property import cached_property
+from core.cache_control import (
+    get_claim_admin_flag,
+    get_officer_flag,
+    get_user_rights,
+    set_claim_admin_flag,
+    set_officer_flag,
+    set_user_rights,
+)
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import (
@@ -23,6 +30,7 @@ from secrets import token_hex
 from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
+from .row_security import ParentScope
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
@@ -131,6 +139,21 @@ class TechnicalUser(AbstractBaseUser):
     def id_for_audit(self):
         return -1
 
+    def delete_history(self, **kwargs):
+        """Close the technical user.
+
+        `set_user_deleted` calls this on every component of a user.
+        AbstractBaseUser has no such method, so deleting a technical user
+        raised AttributeError, which the caller turned into a generic
+        failure (OP-3194).
+        """
+        if self.validity_to is None:
+            now = py_datetime.now()
+            if self.validity_from is None:
+                self.validity_from = now
+            self.validity_to = now
+            self.save()
+
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = ["password"]
 
@@ -158,7 +181,9 @@ class TechnicalUser(AbstractBaseUser):
 
 
 class Role(VersionedModel):
-    # Legacy tblRole.IsSystem value for IMIS Administrator.
+    # Legacy tblRole.IsSystem value for IMIS Administrator. IsSystem labels a
+    # role for the fixtures and the role-browsing filters; it confers no right
+    # and no access decision may be taken on it.
     IMIS_ADMINISTRATOR = 64
 
     id = models.AutoField(db_column="RoleID", primary_key=True)
@@ -175,27 +200,6 @@ class Role(VersionedModel):
 
     def natural_key(self):
         return (self.uuid,)
-
-    @classmethod
-    def get_system_role_ids(cls, system_code):
-        """
-        Return ids of currently valid roles with the given IsSystem value.
-
-        System roles are supposed to be unique, but legacy data can contain
-        duplicates. Callers must not use QuerySet.get() on this lookup.
-        """
-        ids = list(
-            cls.objects.filter(is_system=system_code, *cls.filter_validity())
-            .order_by("id")
-            .values_list("id", flat=True)
-        )
-        if len(ids) > 1:
-            logger.warning(
-                "Multiple valid Role rows have is_system=%s (ids=%s)",
-                system_code,
-                ids,
-            )
-        return ids
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -323,11 +327,13 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_superuser(self):
+        # The stored flag is the only thing that makes a superuser. It used to
+        # fall back on `is_imis_admin`, which resolved the legacy IsSystem=64
+        # role: holding that role silently granted every right, bypassing the
+        # declared-rights layer entirely.
         # bind once: `user` is a query, and this used to run it twice per call
         user = self.user
-        if user and user.is_superuser:
-            return True
-        return self.is_imis_admin
+        return bool(user and user.is_superuser)
 
     @is_superuser.setter
     def is_superuser(self, value):
@@ -343,7 +349,7 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def rights(self):
-        rights = cache.get("rights_" + str(self.id))
+        rights = get_user_rights(self.id)
         if rights:
             return rights
         if self.is_superuser:
@@ -360,7 +366,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 )
                 .distinct()
             ]
-        cache.set("rights_" + str(self.id), rights, timeout=None)
+        set_user_rights(self.id, rights)
         return rights
 
     @property
@@ -378,13 +384,12 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @property
     def is_officer(self):
-        cache_name = f"user_eo_{self.login_name}"
-        is_officer = cache.get(cache_name)
+        is_officer = get_officer_flag(self.login_name)
         if is_officer is None:
             is_officer = Officer.objects.filter(
                 code=self.login_name, has_login=True, *Officer.filter_validity()
             ).exists()
-            cache.set(cache_name, is_officer, None)
+            set_officer_flag(self.login_name, is_officer)
         return is_officer
 
     @property
@@ -392,8 +397,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         # Unlike Officer ClaimAdmin model was moved to the claim module,
         # and it's not granted that the module is installed.
         if "claim" in sys.modules:
-            cache_name = f"user_ca_{self.login_name}"
-            is_claim_admin = cache.get(cache_name)
+            is_claim_admin = get_claim_admin_flag(self.login_name)
             if is_claim_admin is None:
 
                 from core.models.user import ClaimAdmin
@@ -401,7 +405,7 @@ class InteractiveUser(OpenIMISMigrationModel):
                 is_claim_admin = ClaimAdmin.objects.filter(
                     code=self.login_name, has_login=True, *ClaimAdmin.filter_validity()
                 ).exists()
-                cache.set(cache_name, is_claim_admin, None)
+                set_claim_admin_flag(self.login_name, is_claim_admin)
             return is_claim_admin
         else:
             return False
@@ -410,18 +414,14 @@ class InteractiveUser(OpenIMISMigrationModel):
     def is_imis_admin(self):
         """
         Deprecated: Use is_superuser instead. This will be removed in a future version.
+
+        It used to answer "does this user hold the role whose IsSystem is 64?".
+        `IsSystem` is a legacy bitmask that labels a role, and labelling a role
+        is not granting a right: the rights a role carries are the ones
+        declared for it. The property now reports the stored superuser flag and
+        nothing else, so no access decision depends on IsSystem any more.
         """
-        # import warnings
-        is_admin = cache.get("is_admin_" + str(self.id))
-        if is_admin is None:
-            is_admin = Role.objects.filter(
-                *Role.filter_validity(),
-                *UserRole.filter_validity(prefix="user_roles__"),
-                is_system=Role.IMIS_ADMINISTRATOR,
-                user_roles__user=self,
-            ).exists()
-            cache.set("is_admin_" + str(self.id), is_admin, 600)
-        return is_admin
+        return self.is_superuser
 
     def set_password(self, raw_password, private_key=None):
         validate_password(raw_password)
@@ -558,21 +558,33 @@ class Officer(VersionedModel, ExtendableModel):
 
     @property
     def officer_allowed_locations(self):
-        """
-        Returns uuid of all locations allowed for given officer
-        """
-        from location.models import OfficerVillage, Location
+        """Every location this officer may see: their villages, and the ancestors of those.
 
-        villages = OfficerVillage.objects.filter(officer=self, validity_to__isnull=True)
-        all_allowed_uuids = []
-        for village in villages:
-            allowed_uuids = [village.location.uuid]
-            parent = village.location.parent
-            while parent is not None:
-                allowed_uuids.append(parent.uuid)
-                parent = parent.parent
-            all_allowed_uuids.extend(allowed_uuids)
-        return Location.objects.filter(uuid__in=all_allowed_uuids)
+        Each level is read straight off the officer-village rows by following
+        `parent` one more hop, so the database resolves the whole hierarchy in
+        one statement. `distinct()` collapses each level inside its subquery -
+        villages in a ward share a parent, so a few hundred villages are a few
+        dozen wards and a handful of districts - which keeps every `IN` a
+        subquery over the officer's own rows rather than a list of ids.
+
+        It used to walk `parent` in Python: one query per village plus one per
+        hop, neither relation being select_related, then the collected uuids
+        sent back as a literal list (OP-3197).
+        """
+        from location.apps import LocationConfig
+        from location.models import Location, OfficerVillage
+
+        villages = OfficerVillage.objects.filter(
+            officer=self, validity_to__isnull=True
+        )
+
+        condition = models.Q(id__in=villages.values("location_id").distinct())
+        hops = "location"
+        for _ in range(len(LocationConfig.location_types) - 1):
+            hops += "__parent"
+            condition |= models.Q(id__in=villages.values(f"{hops}_id").distinct())
+
+        return Location.objects.filter(condition)
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -623,24 +635,16 @@ class ClaimAdmin(VersionedModel):
     def __str__(self):
         return self.code + " " + self.last_name + " " + self.other_names
 
-    @classmethod
-    def get_queryset(cls, queryset, user):
-        queryset = cls.filter_queryset(queryset)
-        # GraphQL calls with an info object while Rest calls with the user itself
-        if isinstance(user, ResolveInfo):
-            user = user.context.user
-        if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            from location.schema import LocationManager
+    # As visible as the health facility the administrator works for. HealthFacility
+    # scopes itself in code, so this restricts through its queryset. An
+    # administrator with no health facility stays visible, as a null location does
+    # in the location filter this replaces.
+    row_scope = ParentScope("health_facility", allow_null=True)
 
-            queryset = LocationManager().build_user_location_filter_query(
-                user._u,
-                prefix="health_facility__location",
-                queryset=queryset,
-                loc_types=["D"],
-            )
-        return queryset
+    @classmethod
+    def get_queryset(cls, queryset, user=None):
+        # Kept for the validity filter and for REST callers passing None for "all rows".
+        return super().get_queryset(cls.filter_queryset(queryset), user)
 
     @property
     def id_for_audit(self):
@@ -669,22 +673,31 @@ class ClaimAdmin(VersionedModel):
 
     @property
     def officer_allowed_locations(self):
-        """
-        Returns uuid of all locations allowed for given officerLocationManager
-        """
-        Location = apps.get_model('location', 'Location')
-        district = self.health_facility.location
-        all_allowed_uuids = [district.parent.uuid, district.uuid]
-        child_locations = Location.objects.filter(
-            parent=district
-        ).values_list("uuid", flat=True)
-        while child_locations:
-            all_allowed_uuids.extend(child_locations)
-            child_locations = Location.objects.filter(
-                parent__uuid__in=child_locations
-            ).values_list("uuid", flat=True)
+        """Every location this claim administrator may see.
 
-        return Location.objects.filter(uuid__in=all_allowed_uuids)
+        That is the district their health facility sits in, its parent, and
+        everything beneath it. The descendants used to be collected one level
+        at a time in Python and sent back as a literal uuid list, which grows
+        with the number of villages in the district; they are a bounded set of
+        `parent` hops instead (OP-3197).
+
+        A district with no parent no longer raises - the old first line read
+        `district.parent.uuid` unguarded.
+        """
+        from location.apps import LocationConfig
+
+        Location = apps.get_model('location', 'Location')
+        district_id = self.health_facility.location_id
+
+        condition = models.Q(id=district_id) | models.Q(
+            id__in=Location.objects.filter(id=district_id).values("parent_id")
+        )
+        hops = "parent"
+        for _ in range(len(LocationConfig.location_types) - 1):
+            condition |= models.Q(**{f"{hops}_id": district_id})
+            hops += "__parent"
+
+        return Location.objects.filter(condition)
 
     class Meta:
         managed = True
@@ -753,10 +766,17 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         pass
 
     def delete_history(self, **kwargs):
-        # now = py_datetime.now()
-        # self.validity_from = now
-        # self.validity_to = now
-        # self.save()
+        """Nothing to mark here - core_User carries no deletion marker.
+
+        The table has neither `active` nor `ValidityTo`, which is why
+        `filter_validity` above returns no clause: whether a user is deleted
+        is answered by its components, and `resolve_users` filters on
+        `i_user`. Deleting those is what `set_user_deleted` is for.
+
+        This override exists to stop the mixin's real `delete_history` from
+        bumping `version` on a row where that means nothing. If a marker on
+        core_User is ever wanted, it is a schema change, not this method.
+        """
         pass
 
     @property
@@ -839,9 +859,9 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     @property
     def is_imis_admin(self):
+        """Deprecated: use `is_superuser`. Kept while callers migrate."""
         if self.is_superuser:
             return True
-        # Role.IMIS_ADMINISTRATOR (IsSystem=64)
         user = self._u
         if user and isinstance(user, InteractiveUser):
             return user.is_imis_admin
@@ -864,12 +884,19 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     def has_perm(self, perm, obj=None):
         i_user = self.i_user if obj is None else obj.i_user
-        if i_user is not None and (
-            i_user.is_superuser or any(str(right) == str(perm) for right in i_user.rights)
-        ):
-            return True
-        else:
-            return super(User, self).has_perm(perm, obj)
+        if i_user is not None:
+            if i_user.is_superuser:
+                return True
+            wanted = {str(perm)}
+            if not str(perm).isdigit():
+                from core.rights_sync import right_id_for_permission_name
+
+                right_id = right_id_for_permission_name(str(perm))
+                if right_id is not None:
+                    wanted.add(str(right_id))
+            if any(str(right) in wanted for right in i_user.rights):
+                return True
+        return super(User, self).has_perm(perm, obj)
 
     @property
     def rights(self):
@@ -939,27 +966,47 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         return "(%s) %s [%s]" % (utype, self.username, self.id)
 
     def save(self, *args, **kwargs):
+        # User is a wrapper: most of what it is asked to save - a new password,
+        # for instance - is stored on the sub-objects and leaves the User row
+        # itself untouched. Track the sub-objects that were actually written so
+        # that such a composite save is not reported as a failure by the
+        # "no changes in fields" guard of the base model.
+        sub_object_saved = False
         if self.i_user:
             try:
                 self.i_user.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save i_user: {e}")
         if self.officer:
             try:
                 self.officer.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save officer {e}")
         if self.claim_admin:
             try:
                 self.claim_admin.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save claim_admin {e}")
         if self.t_user:
             try:
                 self.t_user.save()
+                sub_object_saved = True
             except Exception as e:
                 logger.debug(f"cannot save t_user {e}")
-        super().save(*args, **kwargs)
+        if sub_object_saved:
+            if not self.is_dirty(check_relationship=True):
+                # The sub-objects carried the whole change, the User row has
+                # nothing to write: no update to attempt, hence nothing to fail.
+                return None
+            # The User row is written too, but a sub-object was already updated:
+            # the composite save is a success whatever this row has left to do.
+            kwargs["silent"] = True
+        # No sub-object was updated: the usual "no changes in fields" guard
+        # applies, a save that changes strictly nothing is still an error.
+        return super().save(*args, **kwargs)
 
     def shallow_save(self, *args, **kwargs):
         """Unlike save(), shallow_save() won't attempt to save the subobjects, useful to avoid infinite recursion"""

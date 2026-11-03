@@ -20,6 +20,8 @@ from graphql.error import GraphQLError
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 from graphql_jwt.decorators import login_required
+from graphql_jwt.refresh_token.shortcuts import get_refresh_token
+from graphql_jwt.settings import jwt_settings
 import graphene_django_optimizer as gql_optimizer
 from core.services import (
     create_or_update_interactive_user,
@@ -32,16 +34,25 @@ from core.services import (
     user_authentication,
     wait_for_mutation,
 )
+from core.mutation_log_secrets import contains_secret, scrub_secrets
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
+from core.gql import ScopedQuerysetMixin
 from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
+from django.contrib.auth import logout as django_logout
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
-from core.gql_errors import AuthenticationRequired
+from core.gql_errors import (
+    AuthenticationRequired,
+    CodedGraphQLError,
+    CsrfTokenInvalid,
+    LockedOut,
+    safe_error_message,
+)
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, transaction, models
 from django.db.models import Q, Count
 from django.db.models.expressions import RawSQL
 from django.http import HttpRequest
@@ -84,6 +95,7 @@ from core.utils import (  # noqa: 401
     collect_all_gql_permissions,
     filter_validity
 )
+from core.cache_control import invalidate_role_rights
 from core.models import (
     ModuleConfiguration,
     FieldControl,
@@ -218,10 +230,13 @@ def _check_csrf_token(request):
         bypass in user_agent
         for bypass in getattr(settings, "USER_AGENT_CSRF_BYPASS", [])
     )):
-        session_csrf = request.session['csrftoken']
-        request_csrf = request.META['HTTP_X_CSRFTOKEN']
-        if session_csrf != request_csrf:
-            raise PermissionDenied("CSRF token missing or incorrect.")
+        # .get(), not [...]: a missing token is the common case (expired or
+        # fresh session) and used to surface as KeyError('csrftoken'), which
+        # told the client nothing and never matched the message below.
+        session_csrf = (getattr(request, "session", None) or {}).get("csrftoken")
+        request_csrf = request.META.get("HTTP_X_CSRFTOKEN")
+        if not session_csrf or not request_csrf or session_csrf != request_csrf:
+            raise CsrfTokenInvalid("CSRF token missing or incorrect.")
 
 
 class OpenIMISJSONEncoder(DjangoJSONEncoder):
@@ -268,6 +283,14 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         abstract = True
 
     internal_id = graphene.Field(graphene.String)
+    client_mutation_id = graphene.Field(graphene.String)
+    status = graphene.Field(graphene.Int)
+    success = graphene.Field(graphene.Boolean)
+    error = graphene.Field(graphene.String)
+    message = graphene.Field(graphene.String)
+    metadata = GenericScalar(
+        description="Metadata dictionary containing the mutated entity details or input parameters."
+    )
 
     class Input:
         client_mutation_label = graphene.String(max_length=255, required=False)
@@ -308,7 +331,8 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                                 coerced_list.append(item)
                         elif (
                             inner_type.__class__
-                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta and getattr(inner_type._meta, 'name', '') != "Int"
+                            == graphene.utils.subclass_with_meta.SubclassWithMeta_Meta
+                            and getattr(inner_type._meta, 'name', '') != "Int"
                         ):
                             coerced_list.append(
                                 cls.coerce_mutation_data(item, input_class=inner_type)
@@ -320,7 +344,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     field.type, graphene.types.enum.EnumMeta
                 ):
                     # If the field type is Enum
-                    if hasattr(field.type, value):
+                    if value is not None and hasattr(field.type, value):
                         coerced_data[key] = str(getattr(field.type, value).value)
                     else:
                         coerced_data[key] = value
@@ -330,7 +354,7 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     and isinstance(field.type._of_type, graphene.types.enum.EnumMeta)
                 ):
                     # If the field type is Enum
-                    if hasattr(field.type._of_type, value):
+                    if value is not None and hasattr(field.type._of_type, value):
                         coerced_data[key] = str(
                             getattr(field.type._of_type, value).value
                         )
@@ -367,14 +391,41 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
         _check_csrf_token(request)
 
+        # Reject before anything is persisted or queued.
+        #
+        # Every OpenIMISMutation requires an authenticated user, but each one
+        # checks inside async_mutate -- which runs *after* the MutationLog row
+        # below is written and, when async_mutations is on (the default
+        # whenever MODE=prod), after a Celery job has been queued for it. An
+        # anonymous caller could therefore make the server write a row whose
+        # json_content/client_mutation_details it controls, and occupy a
+        # worker, once per request and without credentials.
+        #
+        # graphql_jwt's JWT_ALLOW_ANY_CLASSES lists the operations that may run
+        # anonymously; no OpenIMISMutation is among them, so this gate is
+        # unconditional. AuthenticationRequired is a JSONWebTokenError, which
+        # the GraphQL view maps to HTTP 401.
+        user = getattr(request, "user", None)
+        if (
+            user is None
+            or getattr(user, "is_anonymous", True)
+            or not getattr(user, "id", None)
+        ):
+            raise AuthenticationRequired()
+        carries_secret = contains_secret(data)
+        logged_data = scrub_secrets(data) if carries_secret else data
+        logged_details = data.get("client_mutation_details")
+        if carries_secret:
+            logged_details = scrub_secrets(logged_details)
+
         mutation_log = MutationLog.objects.create(
-            json_content=json.dumps(data, cls=OpenIMISJSONEncoder),
+            json_content=json.dumps(logged_data, cls=OpenIMISJSONEncoder),
             user_id=info.context.user.id if info.context.user else None,
             client_mutation_id=data.get("client_mutation_id"),
             client_mutation_label=data.get("client_mutation_label"),
             client_mutation_details=(
-                json.dumps(data.get("client_mutation_details"), cls=OpenIMISJSONEncoder)
-                if data.get("client_mutation_details")
+                json.dumps(logged_details, cls=OpenIMISJSONEncoder)
+                if logged_details
                 else None
             ),
         )
@@ -424,7 +475,18 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             )
             if errors:
                 mutation_log.mark_as_failed(json.dumps(errors))
-                return cls(internal_id=mutation_log.id)
+                return cls(
+                    internal_id=mutation_log.id,
+                    client_mutation_id=mutation_log.client_mutation_id,
+                    status=mutation_log.status,
+                    success=False,
+                    error=mutation_log.error,
+                    message=mutation_log.client_mutation_label or mutation_log.error,
+                    # The front end receives the input echoed back; it must not
+                    # find there the password it has just sent - the response
+                    # travels through access logs, proxies and error reporters.
+                    metadata=scrub_secrets(data) if data else None,
+                )
 
             signal_mutation_module_before_mutating[cls._mutation_module].send(
                 sender=cls,
@@ -437,7 +499,10 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
             logger.debug(
                 "[OpenIMISMutation %s] before mutate signal sent", mutation_log.id
             )
-            if core.async_mutations:
+            # What the mutation returned, merged into the log's metadata below.
+            # Only the synchronous branch has one: an async mutation runs later.
+            messages = None
+            if core.async_mutations and not carries_secret:
                 logger.debug(
                     "[OpenIMISMutation %s] Sending async mutation", mutation_log.id
                 )
@@ -525,9 +590,79 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                 f"Exception while processing mutation id {mutation_log.id}",
                 exc_info=exc
             )
-            mutation_log.safe_mark_as_failed(str(exc))
+            # mutation_log.error is returned to the client, so an unexpected
+            # exception must not carry its text out of here -- the inner
+            # handler above already withholds details for the same reason.
+            # The full exception is in the log line just above.
+            mutation_log.safe_mark_as_failed(safe_error_message(exc))
 
-        return cls(internal_id=mutation_log.id)
+        metadata = {}
+        try:
+            if mutation_log.json_content:
+                metadata = json.loads(mutation_log.json_content)
+            elif data:
+                metadata = json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
+            if isinstance(messages, dict):
+                metadata.update(messages)
+            elif isinstance(messages, models.Model):
+                if hasattr(messages, "uuid"):
+                    metadata["uuid"] = str(messages.uuid)
+                if hasattr(messages, "id") and not metadata.get("id"):
+                    metadata["id"] = messages.id
+
+            if isinstance(metadata, dict):
+                if not metadata.get("uuid"):
+                    if data.get("uuid"):
+                        metadata["uuid"] = str(data.get("uuid"))
+                    elif isinstance(messages, dict) and messages.get("uuid"):
+                        metadata["uuid"] = str(messages.get("uuid"))
+                    else:
+                        for rel in mutation_log._meta.related_objects:
+                            rel_name = rel.get_accessor_name()
+                            if hasattr(mutation_log, rel_name):
+                                rel_mgr = getattr(mutation_log, rel_name)
+                                first_link = rel_mgr.first() if hasattr(rel_mgr, "first") else None
+                                if first_link:
+                                    for f in first_link._meta.fields:
+                                        if f.is_relation and f.name != "mutation":
+                                            linked_obj = getattr(first_link, f.name, None)
+                                            if linked_obj and hasattr(linked_obj, "uuid"):
+                                                metadata["uuid"] = str(linked_obj.uuid)
+                                                break
+                                    if metadata.get("uuid"):
+                                        break
+                if metadata:
+                    # This rewrite happens after the move to a terminal state, so
+                    # after the secrets have been masked (`_secret_free_fields`).
+                    # `metadata` most often comes from the already masked
+                    # `json_content`, but not always: the `elif data` branch above
+                    # starts again from the raw input, and `messages` is merged
+                    # into it. So mask again at write time, so that this path
+                    # cannot reintroduce what the masking has just removed.
+                    metadata = scrub_secrets(metadata)
+                    mutation_log.json_content = json.dumps(metadata, cls=OpenIMISJSONEncoder)
+                    MutationLog.objects.filter(id=mutation_log.id).update(json_content=mutation_log.json_content)
+        except Exception as exc:
+            # Metadata is best-effort: the mutation itself already succeeded or
+            # failed above, so don't fail the response over it -- but don't
+            # discard the reason silently either.
+            logger.warning(
+                "[OpenIMISMutation %s] could not assemble metadata",
+                mutation_log.id,
+                exc_info=exc,
+            )
+
+        return cls(
+            internal_id=mutation_log.id,
+            client_mutation_id=mutation_log.client_mutation_id,
+            status=mutation_log.status,
+            success=(mutation_log.status == MutationLog.SUCCESS),
+            error=mutation_log.error,
+            message=mutation_log.client_mutation_label or (
+                mutation_log.error if mutation_log.status == MutationLog.ERROR else None
+            ),
+            metadata=scrub_secrets(metadata) if metadata else None,
+        )
 
 
 class FieldControlGQLType(DjangoObjectType):
@@ -715,18 +850,22 @@ class MutationLogGQLType(DjangoObjectType):
             [f"{pair[0]}: {pair[1]}" for pair in MutationLog.STATUS_CHOICES]
         ),
     )
+    success = graphene.Field(graphene.Boolean)
+
+    def resolve_success(self, info):
+        return self.status == MutationLog.SUCCESS
 
     @classmethod
     def get_queryset(cls, queryset, info):
         user = info.context.user
         if user.is_anonymous:
             return queryset.none()
-        if user.is_superuser or getattr(user, "is_imis_admin", False):
+        if user.is_superuser:
             return queryset
         return queryset.filter(user=user)
 
 
-class ClaimAdminGQLType(DjangoObjectType):
+class ClaimAdminGQLType(ScopedQuerysetMixin, DjangoObjectType):
     """
     Details about a Claim Administrator
     """
@@ -744,11 +883,6 @@ class ClaimAdminGQLType(DjangoObjectType):
             ),
         }
         connection_class = ExtendedConnection
-
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        queryset = queryset.filter(*ClaimAdmin.filter_validity())
-        return queryset
 
 
 class Query(graphene.ObjectType):
@@ -899,37 +1033,35 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_claim_admins(self, info, search=None, **kwargs):
-        user_health_facility = None
-        if not info.context.user.has_perms(CoreConfig.gql_query_claim_admins_perms):
-            raise PermissionDenied(_("unauthorized"))
+        user = info.context.user
+        if not user.has_perms(CoreConfig.gql_query_claim_administrator_perms):
+            # Without the query right, a user is still allowed to see the claim
+            # administrator they are themselves linked to: the frontend relies on
+            # that entry to resolve the health facility of the logged-in user.
+            claim_admin_id = getattr(user, "claim_admin_id", None)
+            if claim_admin_id:
+                own_claim_admin = Q(id=claim_admin_id)
+            else:
+                # tblUsers.ClaimAdminId is not always populated: InteractiveUser
+                # .is_claim_admin resolves the link by login name instead, so fall
+                # back to the same lookup rather than denying a genuine claim admin.
+                login_name = getattr(user, "username", None)
+                if not login_name:
+                    raise PermissionDenied(_("unauthorized"))
+                own_claim_admin = Q(code__iexact=login_name, has_login=True)
+            return ClaimAdmin.objects.filter(
+                *ClaimAdmin.filter_validity(**kwargs), own_claim_admin
+            )
 
+        # Which administrators the user may see is ClaimAdmin.row_scope; the
+        # district and region arguments only narrow that further.
+        filters = [*ClaimAdmin.filter_validity(**kwargs)]
         district_uuid = kwargs.get("district_uuid", None)
         region_uuid = kwargs.get("region_uuid", None)
-        try:
-            HealthFacility = apps.get_model("location", "HealthFacility")
-            hf_filters = [*HealthFacility.filter_validity(**kwargs)]
-            if district_uuid is not None:
-                hf_filters += [Q(location__uuid=district_uuid)]
-            elif region_uuid is not None:
-                hf_filters += [Q(location__parent__uuid=region_uuid)]
-
-            if settings.ROW_SECURITY:
-                from locations.models import LocationManager
-
-                q = LocationManager().build_user_location_filter_query(
-                    info.context.user._u, prefix="location", loc_types=["D"]
-                )
-                if q:
-                    hf_filters += [q]
-
-            user_health_facility = HealthFacility.objects.filter(*hf_filters)
-        except Exception as e:
-            logger.debug(e)
-            pass
-
-        filters = [*ClaimAdmin.filter_validity(**kwargs)]
-        if user_health_facility:
-            filters += [Q(health_facility__in=user_health_facility)]
+        if district_uuid is not None:
+            filters += [Q(health_facility__location__uuid=district_uuid)]
+        elif region_uuid is not None:
+            filters += [Q(health_facility__location__parent__uuid=region_uuid)]
 
         if search:
             filters += [
@@ -938,7 +1070,7 @@ class Query(graphene.ObjectType):
                 | Q(other_names__icontains=search)
             ]
 
-        return ClaimAdmin.objects.filter(*filters)
+        return ClaimAdmin.get_queryset(ClaimAdmin.objects.filter(*filters), user)
 
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
@@ -991,9 +1123,10 @@ class Query(graphene.ObjectType):
             return gql_optimizer.query(
                 Officer.objects.filter(
                     Q(code__icontains=search)
+                    | Q(user__username__icontains=search)
                     | Q(last_name__icontains=search)
                     | Q(other_names__icontains=search)
-                ),
+                ).distinct(),
                 info,
             )
 
@@ -1093,8 +1226,14 @@ class Query(graphene.ObjectType):
         parent_location_level=None,
         **kwargs,
     ):
-        if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
-            raise PermissionError("Unauthorized")
+        user = info.context.user
+        if not user.has_perms(CoreConfig.gql_query_users_perms):
+            # Without the query right, a user is still allowed to see their own
+            # record: the frontend reads the logged-in user profile through this
+            # query. Anything else stays unauthorized.
+            if user.is_anonymous or not getattr(user, "id", None):
+                raise PermissionError("Unauthorized")
+            return User.objects.filter(id=user.id)
 
         user_filters = [Q(t_user__isnull=True)]
         user_query = User.objects
@@ -1449,6 +1588,9 @@ def update_or_create_role(data, user):
                     )
                     role_right.validity_to = None
                     role_right.save()
+            # the rights above were expired with a queryset update, which fires
+            # no signal: invalidate once the new set is in place
+            invalidate_role_rights(role.id)
     else:
         role = Role.objects.create(**data)
         # create role rights for that role if they were passed to mutation
@@ -1806,27 +1948,77 @@ class DeleteUserMutation(OpenIMISMutation):
     class Input(OpenIMISMutation.Input):
         uuids = graphene.List(graphene.String)
 
+    @staticmethod
+    def _refusal(target_id, message):
+        return {"title": str(target_id), "list": [{"message": message}]}
+
+    @classmethod
+    def _refuse_deletion(cls, actor, target):
+        """Why `actor` may not delete `target`, or None if it may.
+
+        Deleting a user used to write nothing, so nothing had to stand in the
+        way of it. OP-3175 put the Delete action back in the Users searcher and
+        OP-3194 made it write, which leaves these two the only thing between an
+        administrator and locking the instance out of itself (OP-1572).
+        """
+        if actor.id == target.id:
+            # Signing yourself out of existence mid-request, and never what
+            # anyone means by a bulk delete.
+            return cls._refusal(target.id, "user.validation.cannot_delete_self")
+
+        if target.is_superuser and not cls._another_superuser_remains(target):
+            return cls._refusal(
+                target.id, "user.validation.cannot_delete_last_superuser"
+            )
+        return None
+
+    @staticmethod
+    def _another_superuser_remains(target):
+        """Is there a superuser other than `target` who is not already deleted?
+
+        Deletion is recorded on the components, not on `core_User` - which is
+        why this repeats the clause `resolve_users` uses rather than asking
+        `User` directly. Technical users count: they are kept out of the Users
+        searcher but can still administer the instance.
+        """
+        return (
+            User.objects.filter(
+                Q(i_user__isnull=True)
+                | Q(*InteractiveUser.filter_validity(prefix="i_user__")),
+                is_superuser=True,
+            )
+            .exclude(id=target.id)
+            .exists()
+        )
+
     @classmethod
     def async_mutate(cls, user, **data):
         if not user.has_perms(CoreConfig.gql_mutation_delete_users_perms):
             raise PermissionDenied("unauthorized")
         errors = []
+        # `user` is the caller and stays that way. The loop used to rebind it
+        # to each target, which lost the caller's identity after the first one
+        # and put a User object in the "title" of the not-found error.
         for user_uuid in data["uuids"]:
-            user = User.objects.filter(id=user_uuid).first()
-            if user is None:
+            target = User.objects.filter(id=user_uuid).first()
+            if target is None:
                 errors.append(
-                    {
-                        "title": user,
-                        "list": [
-                            {
-                                "message": "user.validation.id_does_not_exist"  # noqa: F504
-                                % {"id": user_uuid}
-                            }
-                        ],
-                    }
+                    cls._refusal(
+                        user_uuid,
+                        "user.validation.id_does_not_exist"  # noqa: F504
+                        % {"id": user_uuid},
+                    )
                 )
                 continue
-            errors += set_user_deleted(user)
+            refusal = cls._refuse_deletion(user, target)
+            if refusal:
+                errors.append(refusal)
+                continue
+            failure = set_user_deleted(target)
+            if failure:
+                # `errors += failure` appended the dict's *keys*, so every
+                # failure reached the journal as ["title", "list"] (OP-3195).
+                errors.append(failure)
         if len(errors) == 1:
             errors = errors[0]["list"]
         return errors
@@ -1891,27 +2083,24 @@ class ChangeUserDefaultRowsPerPageMutation(OpenIMISMutation):
 @transaction.atomic
 @validate_payload_for_obligatory_fields(CoreConfig.fields_controls_user, "data")
 def update_or_create_user(data, user):
-    admin_role_ids = Role.get_system_role_ids(Role.IMIS_ADMINISTRATOR)
     client_mutation_id = data.get("client_mutation_id", None)
     # client_mutation_label = data.get("client_mutation_label", None)
     user_uuid = data.pop("uuid", None)
     incoming_email = data.get("email")
     is_superuser = data.pop("is_superuser", None)
-    # is_imis_admin covers both the stored superuser flag and the IMIS Administrator role,
-    # which already grants every right, hence the ability to escalate any other user
-    if is_superuser is not None and not user.is_imis_admin:
+    # The superuser flag grants every right, hence the ability to escalate any
+    # other user: only a superuser may hand it out.
+    if is_superuser is not None and not user.is_superuser:
         raise PermissionDenied(_("mutation.user_is_superuser_not_grantable"))
     if user_uuid:
-        incoming_roles = data.get("roles") or []
         is_self = uuid.UUID(str(user_uuid)) == uuid.UUID(str(user.id))
+        # Self-demotion is guarded on the flag alone. There used to be a second
+        # guard here, refusing the save when the incoming roles held none whose
+        # IsSystem was 64: it was written when that legacy label still conferred
+        # admin. It no longer does, so the guard protected nothing and only
+        # forced an administrator to keep a role they may not want.
         if is_self and is_superuser is False:
             raise ValidationError(_("mutation.user_cannot_demote_self"))
-        if (
-            is_self
-            and user.is_superuser
-            and not set(admin_role_ids).intersection(incoming_roles)
-        ):
-            raise ValidationError("Administrator cannot deprovision himself.")
         current_user = InteractiveUser.objects.filter(user__id=user_uuid).first()
 
         current_email = current_user.email if current_user else None
@@ -1982,7 +2171,6 @@ def update_or_create_user(data, user):
         i_user=i_user,
         officer=officer,
         claim_admin=claim_admin,
-        user=user,
         silent=True,
         is_superuser=is_superuser,
     )
@@ -2206,11 +2394,86 @@ class GetCsrfTokenMutation(graphene.Mutation):
     def mutate(cls, root, info):
         csrf_token = get_token(info.context)
         if not csrf_token:
-            raise GraphQLError("CSRF token could not be generated")
+            raise CodedGraphQLError("CSRF token could not be generated")
         if info.context and hasattr(info.context, 'session'):
             info.context.session['csrftoken'] = csrf_token
             info.context.session.save()
         return GetCsrfTokenMutation(csrf_token=csrf_token)
+
+
+class LogoutMutation(graphene.Mutation):
+    """Terminate the caller's session server side, not just in their browser.
+
+    deleteTokenCookie/deleteRefreshTokenCookie only ask the browser to drop the
+    cookies: neither of them touches any server-side state. Two things therefore
+    used to outlive a logout:
+
+      * the Django session. user_authentication() calls django login() for staff
+        users, so an admin gets a sessionid whose session record is never
+        destroyed. SessionAuthentication is one of the DRF default authentication
+        classes, so that cookie alone still authenticates /core/users/current_user/
+        and the front end silently logged the admin back in on the next page load.
+      * a long-running refresh token, when JWT_LONG_RUNNING_REFRESH_TOKEN is on:
+        it lives in the database and stays usable until it expires.
+
+    Listed in JWT_ALLOW_ANY_CLASSES so that logging out still works once the
+    access token has expired - that is precisely when the front end needs it.
+    """
+
+    success = graphene.Boolean(required=True)
+
+    @classmethod
+    def mutate(cls, root, info):
+        request = info.context
+
+        cls._revoke_refresh_token(request)
+        cls._flush_django_session(request)
+        cls._delete_auth_cookies(request)
+
+        return cls(success=True)
+
+    @staticmethod
+    def _revoke_refresh_token(request):
+        """Revoke the presented refresh token when it is stored server side.
+
+        No-op under the default sliding refresh tokens (JWT_LONG_RUNNING_REFRESH_TOKEN
+        off), which carry no server-side record to revoke.
+        """
+        if not jwt_settings.JWT_LONG_RUNNING_REFRESH_TOKEN:
+            return
+
+        token = request.COOKIES.get(jwt_settings.JWT_REFRESH_TOKEN_COOKIE_NAME)
+        if not token:
+            return
+
+        try:
+            get_refresh_token(token, request).revoke(request)
+        except Exception as exc:
+            # An unknown, already revoked or malformed token is not a reason to
+            # fail the logout: the rest of the teardown still has to happen.
+            logger.info("Could not revoke refresh token on logout: %s", exc)
+
+    @staticmethod
+    def _flush_django_session(request):
+        """Destroy the session record and let SessionMiddleware drop the cookie."""
+        if not hasattr(request, "session"):
+            return
+
+        try:
+            django_logout(request)
+        except Exception as exc:
+            logger.warning("Could not flush the Django session on logout: %s", exc)
+
+    @staticmethod
+    def _delete_auth_cookies(request):
+        """Ask the jwt_cookie decorator to emit the cookie-deleting headers.
+
+        It only tests hasattr(), and we set both unconditionally rather than
+        mirroring the graphql_jwt mixins, so the deletion headers go out even
+        when the browser did not send the cookie back.
+        """
+        request.delete_jwt_cookie = True
+        request.delete_refresh_token_cookie = True
 
 
 class Mutation(graphene.ObjectType):
@@ -2234,8 +2497,12 @@ class Mutation(graphene.ObjectType):
     refresh_token = graphql_jwt.mutations.Refresh.Field()
     revoke_token = graphql_jwt.mutations.Revoke.Field()
 
+    # Kept for backward compatibility with older front ends. They only clear the
+    # browser cookies; new callers must use `logout`, which also tears down the
+    # server-side session.
     delete_token_cookie = graphql_jwt.DeleteJSONWebTokenCookie.Field()
     delete_refresh_token_cookie = graphql_jwt.DeleteRefreshTokenCookie.Field()
+    logout = LogoutMutation.Field()
     get_csrf_token = GetCsrfTokenMutation.Field()
 
 
@@ -2329,7 +2596,7 @@ def check_lockout(request):
                     now() - last_attempt_time
                 )
                 remaining_minutes = int(remaining_lockout_delta.total_seconds() / 60)
-                raise GraphQLError(
+                raise LockedOut(
                     f"Too many failed attempts."
                     f"Try again in {remaining_minutes} minutes."
                 )

@@ -2,8 +2,12 @@ from core.models.openimis_graphql_test_case import (
     openIMISGraphQLTestCase,
     BaseTestContext,
 )
-from core.models import Language, User
-from core.test_helpers import create_test_interactive_user, create_admin_role
+from core.models import InteractiveUser, Language, User
+from core.test_helpers import (
+    create_test_interactive_user,
+    create_admin_role,
+    create_test_role,
+)
 from core.user_types import UT_OFFICER, UT_CLAIM_ADMIN, UT_INTERACTIVE
 from location.models import Location
 from location.test_helpers import create_test_health_facility, create_test_village
@@ -15,13 +19,67 @@ class gqlTest(openIMISGraphQLTestCase):
     admin_user = None
     admin_username = "Adminlogin"
     admin_password = "EdfmD3!12@#"
+    # The account test_login_default_successful signs in as. It is seeded by
+    # the database rather than created here, so the class has to make sure it
+    # is still usable - see _reset_default_admin.
+    default_admin_username = "Admin"
+    default_admin_password = "admin123"
     district = None
     test_hf = None
     test_village = None
+    CLAIM_ADMIN_CODES_QUERY = """
+        query ClaimAdminCodes {
+            claimAdmins(first: 20) {
+                edges { node { id uuid code } }
+            }
+        }
+    """
+
+    @classmethod
+    def _reset_default_admin(cls):
+        """Put the seeded Admin account back into a state it can sign in from.
+
+        `test_login_default_successful` asserts that the stock administrator
+        still logs in with the stock password, but nothing in this class
+        creates that account - it comes with the database. On a long-lived
+        database it drifts: the password gets changed, or the account gets
+        closed while someone exercises the Users screen, and the test then
+        fails for a reason that has nothing to do with the code.
+
+        The failed-login counter is cleared for the same reason. django-axes
+        locks an account out after repeated failures, and `test_login_wrong_
+        credentials` in this class produces one every run; where the test
+        database is also the development database, the attempts made against
+        the running server land in the same table.
+
+        setUpClass runs inside the class-level atomic block, so none of this
+        is written back.
+        """
+        from axes.models import AccessAttempt, AccessFailureLog
+
+        AccessAttempt.objects.all().delete()
+        AccessFailureLog.objects.all().delete()
+
+        i_user = InteractiveUser.objects.filter(
+            login_name=cls.default_admin_username
+        ).first()
+        if i_user is None:
+            create_test_interactive_user(
+                username=cls.default_admin_username,
+                password=cls.default_admin_password,
+            )
+            return
+        i_user.validity_to = None
+        i_user.active = True
+        i_user.set_password(
+            cls.default_admin_password, private_key=i_user.private_key
+        )
+        i_user.save(silent=True)
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls._reset_default_admin()
         cls.admin_user = create_test_interactive_user(
             username=cls.admin_username, password=cls.admin_password
         )
@@ -244,6 +302,197 @@ class gqlTest(openIMISGraphQLTestCase):
                 }
             }
         }
+        """
+        response = self.query(
+            query, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        self.assertResponseNoErrors(response)
+
+    def _create_role_without_query_rights(self):
+        """Role holding an unrelated right only, so the query rights are missing."""
+        return create_test_role(
+            perm_names=["gql_query_roles_perms"], name="SelfServiceTestRole"
+        )
+
+    def test_fetch_claimadmin_without_right_returns_own_claim_admin(self):
+        """Without the query right, a user only gets the claim admin they are linked to."""
+        role = self._create_role_without_query_rights()
+        username = "TSTCAS" + str(uuid.uuid4())[:4]
+        self._create_user_gql(
+            {
+                "username": username,
+                "userTypes": [UT_INTERACTIVE, UT_CLAIM_ADMIN],
+                "lastName": "SelfOnly",
+                "otherNames": "ClaimAdmin",
+                "email": f"{username.lower()}@test.openimis.org",
+                "language": "en",
+                "healthFacilityId": self.test_hf.id,
+                "roles": [role.id],
+                "districts": [self.disctict.id] if self.disctict else [],
+                "password": "P@ssw0rdSelf123!",
+            }
+        )
+        db_user = User.objects.filter(username=username).first()
+        self.assertIsNotNone(db_user.claim_admin)
+        token = BaseTestContext(user=db_user).get_jwt()
+
+        response = self.query(
+            self.CLAIM_ADMIN_CODES_QUERY,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"},
+        )
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        codes = [e["node"]["code"] for e in content["data"]["claimAdmins"]["edges"]]
+        self.assertEqual(codes, [db_user.claim_admin.code])
+
+    def test_fetch_claimadmin_without_right_nor_link_sees_nothing(self):
+        """No claim admin link and no matching code: the query returns nothing."""
+        role = self._create_role_without_query_rights()
+        username = "TSTNCA" + str(uuid.uuid4())[:4]
+        db_user = create_test_interactive_user(
+            username=username, password="P@ssw0rdNoCA123!", roles=[role.id]
+        )
+        self.assertIsNone(db_user.claim_admin)
+        token = BaseTestContext(user=db_user).get_jwt()
+
+        response = self.query(
+            self.CLAIM_ADMIN_CODES_QUERY,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"},
+        )
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertEqual(content["data"]["claimAdmins"]["edges"], [])
+
+    def test_query_users_without_right_returns_own_user_only(self):
+        """Without the users query right, the users query is limited to the caller."""
+        role = self._create_role_without_query_rights()
+        username = "TSTSLF" + str(uuid.uuid4())[:4]
+        db_user = create_test_interactive_user(
+            username=username, password="P@ssw0rdSelfUsr123!", roles=[role.id]
+        )
+        token = BaseTestContext(user=db_user).get_jwt()
+
+        query = """
+            query SelfUser {
+                users(first: 20) {
+                    edges { node { id username userTypes } }
+                }
+            }
+        """
+        response = self.query(query, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        nodes = content["data"]["users"]["edges"]
+        self.assertEqual([e["node"]["username"] for e in nodes], [username])
+        # The own record stays readable field by field, userTypes included
+        self.assertEqual(nodes[0]["node"]["userTypes"], [UT_INTERACTIVE])
+
+    def test_query_users_without_right_hides_other_users(self):
+        """The self fallback must not expose anybody else, even when filtered for."""
+        role = self._create_role_without_query_rights()
+        username = "TSTSLO" + str(uuid.uuid4())[:4]
+        db_user = create_test_interactive_user(
+            username=username, password="P@ssw0rdSelfUsr456!", roles=[role.id]
+        )
+        token = BaseTestContext(user=db_user).get_jwt()
+
+        query = """
+            query OtherUser($username: String!) {
+                users(username_Icontains: $username, first: 20) {
+                    edges { node { id username } }
+                }
+            }
+        """
+        response = self.query(
+            query,
+            variables={"username": self.admin_username},
+            headers={"HTTP_AUTHORIZATION": f"Bearer {token}"},
+        )
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        self.assertEqual(content["data"]["users"]["edges"], [])
+
+    def _self_service_user(self, prefix):
+        """Interactive user holding no users/claim-admin query right, linked to a HF."""
+        role = self._create_role_without_query_rights()
+        username = prefix + str(uuid.uuid4())[:4]
+        self._create_user_gql(
+            {
+                "username": username,
+                "userTypes": [UT_INTERACTIVE],
+                "lastName": "SelfService",
+                "otherNames": "Linked",
+                "email": f"{username.lower()}@test.openimis.org",
+                "language": "en",
+                "healthFacilityId": self.test_hf.id,
+                "roles": [role.id],
+                "districts": [self.disctict.id] if self.disctict else [],
+                "password": "P@ssw0rdLinked123!",
+            }
+        )
+        db_user = User.objects.filter(username=username).first()
+        return db_user, BaseTestContext(user=db_user).get_jwt()
+
+    def test_self_service_reads_own_health_facility(self):
+        """Reading your own record carries the objects linked to it."""
+        _db_user, token = self._self_service_user("TSTHF1")
+        query = """
+            query OwnHf {
+                users(first: 5) {
+                    edges { node { healthFacility { id uuid code name } } }
+                }
+            }
+        """
+        response = self.query(query, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        hf = content["data"]["users"]["edges"][0]["node"]["healthFacility"]
+        self.assertEqual(hf["code"], self.test_hf.code)
+
+    def test_self_service_walks_into_own_health_facility_location(self):
+        """
+        The walk continues under the rules of the module that owns it: the
+        location of a facility you may read comes with it, see
+        location.check_location_walk and
+        location.tests.test_location_walk_row_security.
+        """
+        _db_user, token = self._self_service_user("TSTHF2")
+        query = """
+            query OwnHfLocation {
+                users(first: 5) {
+                    edges { node { healthFacility { id name location { id code } } } }
+                }
+            }
+        """
+        response = self.query(query, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        hf = content["data"]["users"]["edges"][0]["node"]["healthFacility"]
+        self.assertEqual(hf["location"]["code"], self.test_hf.location.code)
+
+    def test_self_service_reads_own_interactive_health_facility(self):
+        """Same through iUser, which resolves the health facility manually."""
+        _db_user, token = self._self_service_user("TSTHF3")
+        query = """
+            query OwnIUserHf {
+                users(first: 5) {
+                    edges { node { iUser { healthFacility { id name } } } }
+                }
+            }
+        """
+        response = self.query(query, headers={"HTTP_AUTHORIZATION": f"Bearer {token}"})
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        hf = content["data"]["users"]["edges"][0]["node"]["iUser"]["healthFacility"]
+        self.assertEqual(hf["name"], self.test_hf.name)
+
+    def test_privileged_user_still_walks_the_whole_graph(self):
+        query = """
+            query AdminWalk {
+                users(first: 5) {
+                    edges { node { iUser { healthFacility { id name location { id name } } } } }
+                }
+            }
         """
         response = self.query(
             query, headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}

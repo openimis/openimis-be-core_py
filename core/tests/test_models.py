@@ -288,7 +288,10 @@ class SaveNoOpTestCase(TestCase):
     def test_has_perms_and_logic(self):
         """Test has_perms with AND logic and integer perms"""
         # Create role with multiple permissions
-        role = create_test_role(perm_names=["gql_query_insuree_perms", "gql_mutation_create_insurees_perms"], name="TestRoleAnd")
+        role = create_test_role(
+            perm_names=["gql_query_insuree_perms", "gql_mutation_create_insurees_perms"],
+            name="TestRoleAnd",
+        )
         user = create_test_interactive_user(username="testuser_and", roles=[role.id])
 
         if len(user.rights) >= 2:

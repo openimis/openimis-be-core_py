@@ -1,3 +1,5 @@
+import json
+
 from core.rights_role_test_case import RightsRoleGraphQLTestCase
 from core.test_helpers import (
     create_hf_admin_role,
@@ -29,7 +31,16 @@ class UserRightsTests(RightsRoleGraphQLTestCase):
         denied = create_right_only_user("r_usr_q_no", [], district_codes=self.DISTRICT_CODES)
         self.assert_user_has_named_perms(allowed, ["gql_query_users_perms"])
         self.assert_user_lacks_named_perms(denied, ["gql_query_users_perms"])
-        self.assert_gql_unauthorized(denied, USERS_QUERY)
+        # Without the right, the query is not refused anymore: it falls back to
+        # the caller's own record, and must expose nobody else.
+        headers, _token = self.bearer(denied)
+        response = self.query(USERS_QUERY, headers=headers)
+        self.assertResponseNoErrors(response)
+        content = json.loads(response.content)
+        usernames = [
+            edge["node"]["username"] for edge in content["data"]["users"]["edges"]
+        ]
+        self.assertEqual(usernames, [denied.username])
 
     def test_user_mutation_rights_assigned(self):
         allowed = create_right_only_user(

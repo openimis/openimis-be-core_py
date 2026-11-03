@@ -23,7 +23,12 @@ class GetUserTypesTest(TestCase):
             from claim.test_helpers import create_test_claim_admin
             from location.test_helpers import create_test_health_facility
             hf = create_test_health_facility()
-            ca = create_test_claim_admin(custom_props={"code": "UTCA01", "last_name": "CA", "other_names": "Test", "health_facility_id": hf.id})
+            ca = create_test_claim_admin(custom_props={
+                "code": "UTCA01",
+                "last_name": "CA",
+                "other_names": "Test",
+                "health_facility_id": hf.id,
+            })
         except Exception:
             self.skipTest("claim module or HF not available for test")
         core_user = User.objects.create(username=ca.code, claim_admin=ca)

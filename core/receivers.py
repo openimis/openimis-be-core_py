@@ -4,35 +4,36 @@ from django.apps import apps
 from django.db.models.signals import post_save, post_delete
 from contextlib import suppress
 from core.models.user import Officer, Role, RoleRight, UserRole
-from django.core.cache import cache
+from core.cache_control import (
+    invalidate_claim_admin,
+    invalidate_officer,
+    invalidate_role_rights,
+    invalidate_user_rights,
+)
 
-
-def _clear_all_rights_cache():
-    # rights are cached per user id, so a role-level change cannot target a single key
-    delete_pattern = getattr(cache, "delete_pattern", None)
-    if delete_pattern:
-        delete_pattern("rights_*")
-        delete_pattern("is_admin_*")
-    else:
-        cache.clear()
+# These receivers are triggers only: a role level change invalidates data cached
+# against *other* models (the rights of every user holding the role), which no
+# model level save hook can express. The keys, and the tolerance for a cache
+# backend that is down, belong to core.cache_control.
 
 
 @receiver([post_save, post_delete], sender=Officer)
 def _post_save_eo_receiver(sender, instance, **kwargs):
     with suppress(AttributeError):
-        cache.delete(f"user_eo_{instance.code}")
+        invalidate_officer(instance.code)
 
 
 @receiver([post_save, post_delete], sender=Role)
 @receiver([post_save, post_delete], sender=RoleRight)
 def _post_save_rolerights_receiver(sender, instance, **kwargs):
-    _clear_all_rights_cache()
+    # RoleRight points at the role it belongs to, Role is the role itself
+    role_id = instance.role_id if isinstance(instance, RoleRight) else instance.pk
+    invalidate_role_rights(role_id)
 
 
 @receiver([post_save, post_delete], sender=UserRole)
 def _post_save_userrole_receiver(sender, instance, **kwargs):
-    cache.delete(f"rights_{instance.user_id}")
-    cache.delete(f"is_admin_{instance.user_id}")
+    invalidate_user_rights(instance.user_id)
 
 
 if "claim" in sys.modules:
@@ -41,4 +42,4 @@ if "claim" in sys.modules:
     @receiver([post_save, post_delete], sender=ClaimAdmin)
     def _post_save_ca_receiver(sender, instance, **kwargs):
         with suppress(AttributeError):
-            cache.delete(f"user_ca_{instance.code}")
+            invalidate_claim_admin(instance.code)

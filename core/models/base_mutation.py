@@ -103,6 +103,16 @@ class MutationLog(UUIDModel, ExtendableModel):
         managed = True
         db_table = "core_Mutation_Log"
 
+    def _secret_free_fields(self):
+        from core.mutation_log_secrets import scrub_json_text
+
+        fields = {}
+        for name in ("json_content", "client_mutation_details"):
+            scrubbed = scrub_json_text(getattr(self, name, None))
+            if scrubbed is not None:
+                fields[name] = scrubbed
+        return fields
+
     def mark_as_successful(self):
         """
         Do not alter the mutation_log and then save it as it might override changes from another process. This
@@ -112,7 +122,7 @@ class MutationLog(UUIDModel, ExtendableModel):
         affected_rows = (
             MutationLog.objects.filter(id=self.id)
             .filter(status=MutationLog.RECEIVED)
-            .update(status=MutationLog.SUCCESS)
+            .update(status=MutationLog.SUCCESS, **self._secret_free_fields())
         )
         self.refresh_from_db()
         return affected_rows > 0
@@ -123,7 +133,7 @@ class MutationLog(UUIDModel, ExtendableModel):
         This method will force the status to ERROR and set its error accordingly.
         """
         MutationLog.objects.filter(id=self.id).update(
-            status=MutationLog.ERROR, error=error
+            status=MutationLog.ERROR, error=error, **self._secret_free_fields()
         )
         self.refresh_from_db()
 

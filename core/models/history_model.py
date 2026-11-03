@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import F
 from dirtyfields import DirtyFieldsMixin
-from core.utils import CachedManager, CachedModelMixin, uuidv7  # , GenerateUUIDv7
+from core.utils import CachedManager, CachedModelMixin, uuidv7, get_original_user  # , GenerateUUIDv7
 from simple_history.utils import bulk_update_with_history, bulk_create_with_history
 from django.db.models import (
     DateTimeField, Model, IntegerField,
@@ -13,6 +13,7 @@ from django.db.models import (
 from simple_history.models import HistoricalRecords
 from django.apps import apps
 from core.models.openimis_model import ValidityMixin
+from core.models.row_security import RowSecurityMixin
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class HistoryModelManager(CachedManager):
         return super().get(*args, **kwargs)
 
 
-class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
+class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
     history = HistoricalRecords(
         inherit=True,
     )
@@ -117,7 +118,8 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
             data_list: List of dicts with instance data (with or without 'id')
             user: User performing the operation
             batch_size: Number of records to process per batch
-            include_deleted: If True, includes soft-deleted records in the lookup and allows updating the `is_deleted` field
+            include_deleted: If True, includes soft-deleted records in the lookup
+                and allows updating the `is_deleted` field
 
         Returns:
             dict with 'created' and 'updated' counts
@@ -183,7 +185,9 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
                     if not f.startswith('_') and f not in exclude_fields
                 ]
                 update_fields += ['user_updated', 'date_updated', 'version']
-                updated_count = bulk_update_with_history(to_update, cls, update_fields, batch_size=batch_size, default_user=user)
+                updated_count = bulk_update_with_history(
+                    to_update, cls, update_fields, batch_size=batch_size, default_user=user
+                )
                 cls.bulk_update_cache(to_update)
 
         return {'created': created_count, 'updated': updated_count}
@@ -251,6 +255,11 @@ class HistoryModel(DirtyFieldsMixin, CachedModelMixin, Model):
         pass
 
     def get_user(self, user=None, username=None):
+        # While impersonating, the audit trail names whoever actually made the
+        # change rather than the user they were acting as.
+        original_user = get_original_user()
+        if original_user:
+            return original_user
         if not user:
             user_id = 1
             if username:
