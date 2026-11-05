@@ -31,7 +31,6 @@ from django.contrib.auth.password_validation import validate_password
 from ..utils import CachedManager
 from .base import ExtendableModel, Language, UUIDModel
 from .row_security import ParentScope
-from .row_filters import Audits, Validity
 from .versioned_model import VersionedModel
 from .openimis_model import OpenIMISMigrationModel, OpenIMISHistoryMixin  # , OpenIMISModel
 from core.utils import to_list_permissions
@@ -639,9 +638,10 @@ class ClaimAdmin(VersionedModel):
     row_scope = ParentScope("health_facility", allow_null=True)
 
     @classmethod
-    def get_queryset(cls, queryset, user=None, *, validity=Validity.NOW, audits=Audits.NONE):
+    def get_queryset(cls, queryset, user=None, *, validity=None, audits=None):
         # Hides deleted rows unless asked; None stays "all rows" for REST callers.
-        return super().get_queryset(queryset, user, validity=validity, audits=audits)
+        queryset = cls.apply_row_filters(queryset, validity, audits, default=cls.filter_queryset)
+        return super().get_queryset(queryset, user)
 
     @property
     def id_for_audit(self):

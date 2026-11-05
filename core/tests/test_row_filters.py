@@ -157,3 +157,31 @@ class RowFilterValuesTest(TestCase):
     def test_constants_are_distinct(self):
         self.assertNotEqual(Validity.NOW, Validity.ALL)
         self.assertNotEqual(Audits.NONE, Audits.ALL)
+
+
+class ApplyRowFiltersTest(TestCase):
+    """What an overriding get_queryset opens with."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.current = create_test_role(name="apply-rows-current")
+        cls.deleted = create_test_role(name="apply-rows-deleted")
+        cls.deleted.delete_history()
+        cls.mine = Role.objects.filter(name__startswith="apply-rows-")
+
+    def test_nothing_asked_leaves_the_queryset(self):
+        self.assertEqual(ids(self.mine), ids(Role.apply_row_filters(self.mine)))
+
+    def test_nothing_asked_applies_the_given_default(self):
+        self.assertEqual(
+            ids(Role.filter_queryset(self.mine)),
+            ids(Role.apply_row_filters(self.mine, default=Role.filter_queryset)),
+        )
+
+    def test_a_request_wins_over_the_default(self):
+        self.assertEqual(
+            {self.deleted.id},
+            ids(Role.apply_row_filters(
+                self.mine, validity=Validity.DELETED_NOW, default=Role.filter_queryset
+            )),
+        )

@@ -210,16 +210,7 @@ class RowSecurityMixin:
         base itself, or a caller passing None gets ``None`` back, or an
         AttributeError once a scope tries to filter it (OP-3196).
         """
-        if queryset is None:
-            queryset = cls._default_manager.all()
-        if validity is not None or audits is not None:
-            # Only when asked: a caller that says nothing keeps today's
-            # behaviour until the GraphQL path always passes both (OP-2029).
-            queryset = cls.filter_rows(
-                queryset,
-                validity=Validity.NOW if validity is None else validity,
-                audits=Audits.NONE if audits is None else audits,
-            )
+        queryset = cls.apply_row_filters(queryset, validity, audits)
         if cls.row_scope is None:
             return queryset
         return cls.row_scope.filter(queryset, cls.scoping_user(user), cls)
@@ -293,6 +284,25 @@ class RowSecurityMixin:
     def dated_rows_q(cls):
         """Which rows a validity date is looked up in: the live ones by default."""
         return cls.live_rows_q()
+
+    @classmethod
+    def apply_row_filters(cls, queryset, validity=None, audits=None, default=None):
+        """filter_rows when the caller asked for validity or audits.
+
+        A caller that says nothing gets ``default(queryset)`` -- the model's
+        own default, typically its filter_queryset -- or the queryset as it
+        is, so nothing changes until the GraphQL path always passes both
+        (OP-2029). An overriding get_queryset opens with this.
+        """
+        if queryset is None:
+            queryset = cls._default_manager.all()
+        if validity is None and audits is None:
+            return queryset if default is None else default(queryset)
+        return cls.filter_rows(
+            queryset,
+            validity=Validity.NOW if validity is None else validity,
+            audits=Audits.NONE if audits is None else audits,
+        )
 
     @classmethod
     def filter_rows(cls, queryset=None, validity=Validity.NOW, audits=Audits.NONE):
