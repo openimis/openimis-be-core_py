@@ -3,12 +3,14 @@ from copy import copy
 from datetime import datetime as py_datetime
 
 from django.db import models
+from django.db.models import Q
 
 from core.utils import CachedManager, CachedModelMixin
 from ..fields import DateTimeField
 from ..utils import filter_validity as core_filter_validity
 import logging
 from core.models.row_security import RowSecurityMixin
+from core.models.row_filters import NO_ROWS, Audits, day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,51 @@ class BaseVersionedModel(RowSecurityMixin, CachedModelMixin, models.Model):
 
     class Meta:
         abstract = True
+
+    #: True on the tables whose versions carry a business meaning (price
+    #: lists, products, health facilities...): a validity date then picks the
+    #: version valid at that date. Elsewhere versions are an audit trail only.
+    business_versioned = False
+
+    @classmethod
+    def get_business_validity_fields(cls):
+        return ("validity_from", "validity_to") if cls.business_versioned else None
+
+    @classmethod
+    def live_rows_q(cls):
+        return Q(validity_to__isnull=True)
+
+    @classmethod
+    def _has_legacy_id(cls):
+        return any(field.name == "legacy_id" for field in cls._meta.fields)
+
+    @classmethod
+    def current_rows_q(cls):
+        # save_history() copies the row with legacy_id pointing at it;
+        # delete_history() closes validity_to on the row itself.
+        return Q(legacy_id__isnull=True) if cls._has_legacy_id() else None
+
+    @classmethod
+    def dated_rows_q(cls):
+        # The version valid at a date may be an audit copy by now.
+        return Q()
+
+    @classmethod
+    def audit_rows_q(cls, audits):
+        if not cls._has_legacy_id():
+            return NO_ROWS
+        copies = Q(legacy_id__isnull=False)
+        if audits == Audits.ALL:
+            return copies
+        start, end = day_bounds(*audits.range())
+        if audits.kind == "at":
+            return copies & Q(validity_from__lte=end, validity_to__gte=start)
+        # An audit copy is dated by the change that superseded it.
+        if start is not None:
+            copies &= Q(validity_to__gte=start)
+        if end is not None:
+            copies &= Q(validity_to__lte=end)
+        return copies
 
     @classmethod
     def filter_queryset(cls, queryset=None):

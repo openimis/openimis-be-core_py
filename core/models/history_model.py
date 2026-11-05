@@ -3,7 +3,7 @@ from datetime import datetime as py_datetime
 from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from dirtyfields import DirtyFieldsMixin
 from core.utils import CachedManager, CachedModelMixin, uuidv7, get_original_user  # , GenerateUUIDv7
 from simple_history.utils import bulk_update_with_history, bulk_create_with_history
@@ -100,6 +100,10 @@ class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
 
     def set_pk(self):
         self.pk = uuidv7()
+
+    @classmethod
+    def live_rows_q(cls):
+        return Q(is_deleted=False)
 
     @classmethod
     def filter_queryset(cls, queryset=None):
@@ -333,5 +337,7 @@ class HistoryModel(RowSecurityMixin, DirtyFieldsMixin, CachedModelMixin, Model):
 
 
 class HistoryBusinessModel(HistoryModel, ValidityMixin):
+    business_validity_fields = ValidityMixin.business_validity_fields
+
     class Meta:
         abstract = True
