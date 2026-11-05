@@ -185,3 +185,18 @@ class ApplyRowFiltersTest(TestCase):
                 self.mine, validity=Validity.DELETED_NOW, default=Role.filter_queryset
             )),
         )
+
+
+class AssertRowFiltersHelperTest(TestCase):
+    """The helper the modules use, run against a core model."""
+
+    def test_on_role(self):
+        from core.test_helpers import assert_row_filters, mark_deleted
+
+        user = create_test_interactive_user(username="rowfiltershelper")
+        live = create_test_role(name="helper-rows-live")
+        deleted = mark_deleted(create_test_role(name="helper-rows-deleted"))
+        assert_row_filters(
+            self, Role, Role.objects.filter(name__startswith="helper-rows-"), user,
+            live.id, deleted.id, default_hides_deleted=False,
+        )
