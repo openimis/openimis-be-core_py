@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 
-from core.utils import collect_all_gql_permissions
+from core.utils import build_permissions_map
 
 
 class Command(BaseCommand):
@@ -30,20 +30,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Generating permissions map to {output_path}")
 
-        permissions_dict = collect_all_gql_permissions()
-        permissions_map = {}
-
-        for app, app_perms in permissions_dict.items():
-            for perm_name, perm_ids in app_perms.items():
-                key = self._parse_perm_key(app, perm_name)
-                if isinstance(perm_ids, list):
-                    for perm_id in perm_ids:
-                        permissions_map[key] = perm_id
-                else:
-                    permissions_map[key] = perm_ids
-
-        # Sort the map by key
-        sorted_map = dict(sorted(permissions_map.items()))
+        sorted_map = build_permissions_map()
 
         # Ensure output directory exists
         output_dir = Path(output_path).parent
@@ -92,28 +79,3 @@ class Command(BaseCommand):
         #     self.stdout.write(f"Removed permission: {code}")
 
         self.stdout.write(self.style.SUCCESS("Permissions synced with Django Permission model"))
-
-    def _parse_perm_key(self, app, perm_name):
-        """
-        Parse permission name to module.operation key.
-        """
-        if perm_name.endswith('_perms'):
-            if perm_name.startswith('gql_'):
-                # gql_query_module_operation_perms -> module.operation
-                inner = perm_name[4:-6]  # remove gql_ and _perms
-                operation = inner
-                module = app
-            else:
-                # special perms like registers_perms -> app.operation
-                operation = perm_name[:-6]
-                module = app
-        else:
-            # fallback
-            operation = perm_name
-            module = app
-        if operation.startswith('mutation_'):
-            operation = operation[9:]
-        if operation.startswith('query_'):
-            operation = operation[6:]
-
-        return f"{module}.{operation}"

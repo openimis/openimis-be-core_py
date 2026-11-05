@@ -1324,6 +1324,42 @@ def collect_all_gql_permissions():
     return permissions_dict
 
 
+def permissions_map_key(app, perm_name):
+    """`<app>.<operation>` key of a `*_perms` config attribute in the permissions map."""
+    if perm_name.endswith('_perms'):
+        if perm_name.startswith('gql_'):
+            # gql_query_module_operation_perms -> module.operation
+            operation = perm_name[4:-6]
+        else:
+            # special perms like registers_perms -> app.operation
+            operation = perm_name[:-6]
+    else:
+        operation = perm_name
+    if operation.startswith('mutation_'):
+        operation = operation[9:]
+    if operation.startswith('query_'):
+        operation = operation[6:]
+    return f"{app}.{operation}"
+
+
+def build_permissions_map():
+    """`<app>.<operation>` -> right id for the modules loaded, sorted by key.
+
+    The map depends on the installed modules, so it is generated when needed
+    (`manage.py generate_permissions_map`, tests) and never committed.
+    """
+    permissions_map = {}
+    for app, app_perms in collect_all_gql_permissions().items():
+        for perm_name, perm_ids in app_perms.items():
+            key = permissions_map_key(app, perm_name)
+            if isinstance(perm_ids, list):
+                for perm_id in perm_ids:
+                    permissions_map[key] = perm_id
+            else:
+                permissions_map[key] = perm_ids
+    return dict(sorted(permissions_map.items()))
+
+
 @lru_cache(maxsize=1)
 def to_list_permissions():
     """Convert collected permissions to a set of all permission IDs."""
