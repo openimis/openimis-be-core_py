@@ -1,8 +1,14 @@
-from django.test import TestCase
+from unittest.mock import AsyncMock, patch
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from channels.testing import WebsocketCommunicator
+from django.test import TestCase, override_settings
 from graphene import Schema
 from graphene.test import Client
 
 from core.models import Notification, Role
+from core.notification_consumer import NotificationConsumer
 from core.notifications import notify
 from core.schema import Mutation, Query
 from core.test_helpers import create_test_interactive_user, create_test_role
@@ -55,3 +61,52 @@ class NotificationTestCase(TestCase):
         second = self.execute(mutation, self.user, variables)
         self.assertEqual(first["data"]["markNotificationsRead"]["updatedCount"], 1)
         self.assertEqual(second["data"]["markNotificationsRead"]["updatedCount"], 0)
+
+    @override_settings(NOTIFICATION_WEBSOCKET_ENABLED=True)
+    @patch("channels.layers.get_channel_layer")
+    def test_notify_signals_recipient_after_commit(self, get_channel_layer):
+        channel_layer = AsyncMock()
+        get_channel_layer.return_value = channel_layer
+
+        with self.captureOnCommitCallbacks(execute=True):
+            notify(
+                self.user,
+                "task.assigned",
+                "notification.task.title",
+                "notification.task.message",
+            )
+
+        channel_layer.group_send.assert_awaited_once_with(
+            f"notification_user_{self.user.id}",
+            {"type": "notification.changed"},
+        )
+
+    @override_settings(
+        NOTIFICATION_WEBSOCKET_ENABLED=True,
+        CHANNEL_LAYERS={
+            "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+        },
+    )
+    def test_authenticated_socket_receives_versioned_change_event(self):
+        user = self.user
+
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                NotificationConsumer.as_asgi(),
+                "/ws/notifications/",
+            )
+            communicator.scope["user"] = user
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await get_channel_layer().group_send(
+                f"notification_user_{user.id}",
+                {"type": "notification.changed"},
+            )
+            self.assertEqual(
+                await communicator.receive_json_from(),
+                {"type": "notification.inbox.changed", "version": 1},
+            )
+            await communicator.disconnect()
+
+        async_to_sync(scenario)()

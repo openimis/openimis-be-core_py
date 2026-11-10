@@ -1,8 +1,47 @@
 from collections.abc import Iterable
+import logging
 
+from django.conf import settings
 from django.db import transaction
 
 from core.models import Notification, Role, User
+
+
+logger = logging.getLogger(__name__)
+
+
+def _notification_group(user_id):
+    return f"notification_user_{user_id}"
+
+
+def _push_inbox_changed(notifications):
+    """Hint connected clients to pull their durable inbox again."""
+    if not notifications or not getattr(
+        settings, "NOTIFICATION_WEBSOCKET_ENABLED", False
+    ):
+        return
+
+    recipient_ids = {notification.recipient_id for notification in notifications}
+
+    def send_after_commit():
+        try:
+            from asgiref.sync import async_to_sync
+            from channels.layers import get_channel_layer
+
+            channel_layer = get_channel_layer()
+            if channel_layer is None:
+                return
+            for recipient_id in recipient_ids:
+                async_to_sync(channel_layer.group_send)(
+                    _notification_group(recipient_id),
+                    {"type": "notification.changed"},
+                )
+        except Exception:
+            # Push is an optional acceleration. A broker outage must never roll
+            # back the stored inbox row that polling can still retrieve.
+            logger.exception("Unable to signal a notification inbox change")
+
+    transaction.on_commit(send_after_commit)
 
 
 def _recipient_users(recipients):
@@ -67,4 +106,5 @@ def notify(
                 created.append(notification)
         else:
             created.append(Notification.objects.create(recipient=recipient, **values))
+    _push_inbox_changed(created)
     return created
