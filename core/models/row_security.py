@@ -57,9 +57,10 @@ import logging
 from datetime import datetime as py_datetime
 
 from core.cache_control import cache_delete, cache_get, cache_set
-from django.db import DatabaseError
-from django.db.models import OuterRef, Q, Subquery, TextField
-from django.db.models.functions import Cast
+from django.db import DatabaseError, connections
+from django.db.utils import NotSupportedError
+from django.db.models import F, Q, Subquery, TextField, Window
+from django.db.models.functions import Cast, RowNumber
 from django.db.models.signals import post_save
 
 from core.models.row_filters import NO_ROWS, Audits, Validity, day_bounds, refuse_date
@@ -338,17 +339,42 @@ class RowSecurityMixin:
             return queryset
         start, end = day_bounds(*audits.range())
         if audits.kind == "at":
-            latest = (
-                history.filter(**{pk: OuterRef(pk)}, history_date__lte=end)
-                .order_by("-history_date")
-                .values("history_id")[:1]
-            )
-            return queryset.filter(history_id=Subquery(latest)).exclude(history_type="-")
+            latest = cls._latest_history_ids(queryset.filter(history_date__lte=end), pk)
+            return queryset.filter(history_id__in=Subquery(latest)).exclude(history_type="-")
         if start is not None:
             queryset = queryset.filter(history_date__gte=start)
         if end is not None:
             queryset = queryset.filter(history_date__lte=end)
         return queryset
+
+    @staticmethod
+    def _latest_history_ids(history_rows, pk):
+        """The id of each entity's latest history row, set-based.
+
+        Review of openimis/openimis-be-core_py#496: the correlated subquery ran one
+        inner lookup per history row. PostgreSQL uses DISTINCT ON; other databases a
+        ROW_NUMBER() window. history_id breaks ties between rows of the same date.
+        """
+        database = connections[history_rows.db]
+        if database.vendor == "postgresql":
+            return (
+                history_rows.order_by(pk, "-history_date", "-history_id")
+                .distinct(pk)
+                .values("history_id")
+            )
+        if not database.features.supports_over_clause:
+            raise NotSupportedError(
+                f"Audits.at() requires window-function support on {database.display_name}")
+        return (
+            history_rows.annotate(history_position=Window(
+                expression=RowNumber(),
+                partition_by=[F(pk)],
+                order_by=[F("history_date").desc(), F("history_id").desc()],
+            ))
+            .filter(history_position=1)
+            .order_by()
+            .values("history_id")
+        )
 
     @classmethod
     def no_rows(cls, queryset=None):
