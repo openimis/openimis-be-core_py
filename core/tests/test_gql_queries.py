@@ -77,8 +77,13 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
     reverse relation, `userdistrictSet`, and the legacy `roleId` field. An
     authenticated user with no rights must not read any of them by enumerating
     global IDs. ROW_SECURITY is
-    disabled because otherwise InteractiveUser.get_queryset raises before the
-    field resolver runs.
+    disabled because otherwise InteractiveUser.get_queryset raised before the
+    field resolver ran.
+
+    Since OP-3124 / OP-3320, InteractiveUser.get_queryset itself hides other
+    users' records from a caller without the users right, so the attack is
+    stopped before the field guards: `node` comes back null. Either layer
+    refusing is a pass; the field must never be readable.
     """
 
     @classmethod
@@ -120,6 +125,12 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
         return any(e.get("message") == message for e in content.get("errors", []))
 
     @staticmethod
+    def _is_refused(content):
+        # the record itself is hidden (OP-3124), or a field guard said unauthorized
+        node_hidden = (content.get("data") or {}).get("node") is None
+        return node_hidden or InteractiveUserNodeAuthzTests._is_unauthorized(content)
+
+    @staticmethod
     def _node_field(content, field):
         # A denied non-null field can null the whole `node` via GraphQL
         # null-propagation, so read defensively.
@@ -129,22 +140,22 @@ class InteractiveUserNodeAuthzTests(openIMISGraphQLTestCase):
     def test_node_roles_denied_without_users_permission(self):
         self.assertFalse(self.attacker.has_perms(CoreConfig.gql_query_users_perms))
         content = self._node(self.attacker, "roles { id name }")
-        self.assertTrue(self._is_unauthorized(content))
+        self.assertTrue(self._is_refused(content))
         self.assertIsNone(self._node_field(content, "roles"))
 
     def test_node_user_roles_denied_without_users_permission(self):
         content = self._node(self.attacker, "userRoles { role { name } }")
-        self.assertTrue(self._is_unauthorized(content))
+        self.assertTrue(self._is_refused(content))
         self.assertIsNone(self._node_field(content, "userRoles"))
 
     def test_node_districts_denied_without_users_permission(self):
         content = self._node(self.attacker, "userdistrictSet { location { id } }")
-        self.assertTrue(self._is_unauthorized(content))
+        self.assertTrue(self._is_refused(content))
         self.assertIsNone(self._node_field(content, "userdistrictSet"))
 
     def test_node_role_id_denied_without_users_permission(self):
         content = self._node(self.attacker, "roleId")
-        self.assertTrue(self._is_unauthorized(content))
+        self.assertTrue(self._is_refused(content))
         self.assertIsNone(self._node_field(content, "roleId"))
 
     def test_node_roles_allowed_with_users_permission(self):

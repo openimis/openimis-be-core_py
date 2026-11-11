@@ -458,11 +458,24 @@ class InteractiveUser(OpenIMISMigrationModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
+        """The interactive users `user` may read (OP-3124 / OP-3320).
+
+        Users holding the users query right see every interactive user; anyone else
+        only their own record, so `node(id)` cannot be enumerated for other users'
+        PII. `user` is the request user (core User), never its i_user: an
+        InteractiveUser has no `is_anonymous`, which made this crash.
+        """
         if isinstance(user, ResolveInfo):
-            user = user.context.user.i_user
-        if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        return queryset
+            user = user.context.user
+        if queryset is None:
+            queryset = cls.objects.all()
+        if user is None or getattr(user, "is_anonymous", True):
+            return queryset.filter(id=-1) if settings.ROW_SECURITY else queryset
+        from core.apps import CoreConfig
+        if user.has_perms(CoreConfig.gql_query_users_perms):
+            return queryset
+        own_id = getattr(user, "i_user_id", None)
+        return queryset.filter(id=own_id) if own_id else queryset.filter(id=-1)
 
     class Meta:
         managed = True
