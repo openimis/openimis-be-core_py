@@ -62,7 +62,6 @@ from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
-from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
 from typing import List, Dict, Any
@@ -2574,6 +2573,16 @@ def log_reset_password_attempt(request, username):
         attempt.get_data = attempt_data["get_data"]
         attempt.post_data = attempt_data["post_data"]
         attempt.save()
+
+
+def get_user_attempts(request):
+    # django-axes 7 moved get_user_attempts from axes.attempts onto the database handler.
+    handler = AxesDatabaseHandler()
+    if hasattr(handler, "get_user_attempts"):
+        return handler.get_user_attempts(request)
+    from axes.attempts import get_user_attempts as legacy_get_user_attempts
+
+    return legacy_get_user_attempts(request)
 
 
 def check_lockout(request):
