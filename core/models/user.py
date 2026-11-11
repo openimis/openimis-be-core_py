@@ -588,6 +588,10 @@ class Officer(VersionedModel, ExtendableModel):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return cls.no_rows(queryset)
+        if rows.get("validity") is None and rows.get("audits") is None:
+            # live officers unless validity / audits are asked for: OfficerGQLType
+            # used to filter them for every officer connection (OP-3317)
+            queryset = cls.filter_queryset(queryset)
         return super().get_queryset(queryset, user, **rows)
 
     class Meta:
