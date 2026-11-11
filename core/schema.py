@@ -1180,7 +1180,10 @@ class Query(graphene.ObjectType):
             )
         )
 
-    def resolve_interactive_users(self, info, **kwargs):
+    # graphene looks the resolver up by the attribute name as written: the field is
+    # declared `interactiveUsers`, so `resolve_interactive_users` was never called
+    # (OP-3320): no users right check, deleted users and history copies listed.
+    def resolve_interactiveUsers(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
         filters = []
