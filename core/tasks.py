@@ -5,10 +5,24 @@ import logging
 from celery import shared_task
 from core.models import MutationLog, Language
 from core.utils import set_current_user
-from django.db import transaction
 from django.utils import translation
 
 logger = logging.getLogger(__name__)
+
+
+def _load_graphql_schema():
+    """
+    Build the GraphQL schema (GRAPHENE["SCHEMA"]) if this process has not yet.
+
+    Building it calls every module's bind_signals(), which connects the
+    mutation signal receivers. The web process builds it on its first
+    request; a Celery worker only imports the schema of the mutation's own
+    module, so without this the receivers other modules connect to that
+    module's signals would silently not run. Failing to build it is an error:
+    running the mutation without them would skip their side effects.
+    """
+    from graphene_django.settings import graphene_settings
+    return graphene_settings.SCHEMA
 
 
 @shared_task
@@ -36,20 +50,18 @@ def openimis_mutation_async(mutation_id, module, class_name):
                 translation.activate(lang.code)
             else:
                 translation.activate(lang)
-        # run the mutation inside a savepoint: should it leave the transaction
-        # broken (a database error, raised or caught by the service itself),
-        # exiting this block rolls the savepoint back and resets
-        # connection.needs_rollback, so the mark_as_* calls below can still be
-        # written. Without it they raise TransactionManagementError and the
-        # mutation log stays in RECEIVED status for ever, the client polling it
-        # waiting for an answer that never comes.
-        with transaction.atomic():
-            error_messages = mutation_class.async_mutate(
-                mutation.user,
-                **mutation_class.coerce_mutation_data(
-                    json.loads(mutation.json_content)
-                )
-            )
+        # The module's before_mutating receivers run here, in the transaction
+        # of async_mutate, rather than in the request that queued this job:
+        # see OpenIMISMutation.run_in_transaction. They are bound when the
+        # GraphQL schema is built, which a worker does not do on its own.
+        _load_graphql_schema()
+        signal_data = json.loads(mutation.json_content)
+        error_messages = mutation_class.run_in_transaction(
+            mutation.user,
+            mutation.id,
+            signal_data,
+            mutation_class.coerce_mutation_data(json.loads(mutation.json_content)),
+        )
         if not error_messages:
             mutation.mark_as_successful()
         else:

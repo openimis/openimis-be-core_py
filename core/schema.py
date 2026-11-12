@@ -386,6 +386,72 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
         pass
 
     @classmethod
+    def run_in_transaction(cls, user, mutation_log_id, signal_data, mutation_data):
+        """
+        Send the module's before_mutating signal, then run async_mutate, in one
+        transaction. Used by the synchronous path and by the async worker.
+
+        The before_mutating receivers (e.g. contribution and payment cascading
+        a policy deletion) change data before async_mutate has checked the
+        caller's rights. Sharing the transaction means their changes only
+        survive when the mutation succeeds: if async_mutate raises or returns
+        errors (which is how most mutations report a refusal), everything done
+        here is rolled back.
+
+        When the signal has no receiver, nothing changes: async_mutate keeps
+        its previous semantics, including committing the part of a bulk
+        operation that succeeded before an error was returned.
+
+        The block is a savepoint: should the mutation leave the transaction
+        broken (a database error, raised or caught by the service itself),
+        exiting it rolls the savepoint back and resets
+        connection.needs_rollback, so the caller can still write the mutation
+        log status. Without it that write raises TransactionManagementError
+        and the log stays in RECEIVED status for ever.
+
+        :param signal_data: the mutation input as the receivers expect it
+        :param mutation_data: the coerced input passed to async_mutate
+        :return: whatever async_mutate returned
+        """
+        before_mutating = signal_mutation_module_before_mutating[cls._mutation_module]
+        has_receivers = before_mutating.has_listeners(sender=cls)
+        with transaction.atomic():
+            if has_receivers:
+                # Their return value is not used, as before: a receiver that
+                # must refuse a mutation belongs on the validate signal.
+                before_mutating.send(
+                    sender=cls,
+                    mutation_log_id=mutation_log_id,
+                    data=signal_data,
+                    user=user,
+                    mutation_module=cls._mutation_module,
+                    mutation_class=cls.__name__,
+                )
+                logger.debug(
+                    "[OpenIMISMutation %s] before mutate signal sent", mutation_log_id
+                )
+            messages = cls.async_mutate(user, **mutation_data)
+            if has_receivers and cls._is_failure(messages, mutation_data):
+                logger.debug(
+                    "[OpenIMISMutation %s] failed, rolling back the before mutate changes",
+                    mutation_log_id,
+                )
+                transaction.set_rollback(True)
+        return messages
+
+    @staticmethod
+    def _is_failure(messages, mutation_data):
+        """
+        Whether async_mutate reported a failure. Matches how
+        mutate_and_get_payload decides between mark_as_successful and
+        mark_as_failed: anything truthy is an error, except the dict an
+        autogenerate mutation returns.
+        """
+        if mutation_data.get("autogenerate", False) and isinstance(messages, Dict):
+            return False
+        return bool(messages)
+
+    @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
         request = getattr(info, "context", None)
 
@@ -488,17 +554,11 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                     metadata=scrub_secrets(data) if data else None,
                 )
 
-            signal_mutation_module_before_mutating[cls._mutation_module].send(
-                sender=cls,
-                mutation_log_id=mutation_log.id,
-                data=data,
-                user=info.context.user,
-                mutation_module=cls._mutation_module,
-                mutation_class=cls.__name__,
-            )
-            logger.debug(
-                "[OpenIMISMutation %s] before mutate signal sent", mutation_log.id
-            )
+            # The before_mutating receivers are not sent here: they run in the
+            # same transaction as async_mutate (see run_in_transaction), in
+            # the request or in the worker, so a refused or failed mutation
+            # leaves none of their changes behind.
+            #
             # What the mutation returned, merged into the log's metadata below.
             # Only the synchronous branch has one: an async mutation runs later.
             messages = None
@@ -517,18 +577,12 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
                         json.loads(json.dumps(data, cls=OpenIMISJSONEncoder))
                     )  # data.copy()
                     mutation_data.pop("mutation_extensions", None)
-                    # run the mutation inside a savepoint: should it leave the
-                    # transaction broken (a database error, raised or caught by
-                    # the service itself), exiting this block rolls the savepoint
-                    # back and resets connection.needs_rollback, so the
-                    # mark_as_failed/mark_as_successful below can still be
-                    # written. Without it they raise TransactionManagementError
-                    # and the mutation log stays in "received" state for ever.
-                    with transaction.atomic():
-                        messages = cls.async_mutate(
-                            info.context.user if info.context and info.context.user else None,
-                            **mutation_data
-                        )
+                    messages = cls.run_in_transaction(
+                        info.context.user if info.context and info.context.user else None,
+                        mutation_log.id,
+                        data,
+                        mutation_data,
+                    )
                     # TODO this code is necessary for autogenerate functionality to work
                     # TODO General mutation code should be reworked
                     if mutation_data.get("autogenerate", False) and isinstance(
@@ -673,6 +727,37 @@ class FieldControlGQLType(DjangoObjectType):
 class ModuleConfigurationGQLType(DjangoObjectType):
     class Meta:
         model = ModuleConfiguration
+
+
+class AuthenticatedNodeField(graphene.relay.node.NodeField):
+    """
+    The relay ``node(id:)`` field, refused to anonymous callers.
+
+    ``node`` reaches every type that implements the relay Node interface by
+    global id, through the type's ``get_node``. A type without row security
+    (no ``ScopedQuerysetMixin`` and ``row_scope``) answers any id, and most
+    resolvers that would otherwise refuse an anonymous caller are bypassed.
+    Requiring an authenticated user here closes that for every type at once,
+    as ``OrderedDjangoFilterConnectionField.resolve_queryset`` does for
+    connections; which rows an authenticated caller reaches is still up to
+    each type's row security.
+    """
+
+    def get_resolver(self, parent_resolver):
+        resolve_node = super().get_resolver(parent_resolver)
+
+        def resolve(root, info, **kwargs):
+            user = getattr(getattr(info, "context", None), "user", None)
+            if user is None or not user.is_authenticated:
+                raise AuthenticationRequired()
+            return resolve_node(root, info, **kwargs)
+
+        return resolve
+
+
+def node_field(*args, **kwargs):
+    """``graphene.relay.Node.Field()`` for authenticated callers only."""
+    return AuthenticatedNodeField(graphene.relay.Node, *args, **kwargs)
 
 
 class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
