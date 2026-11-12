@@ -76,7 +76,12 @@ to listen to all mutations, regardless of module) and 3 at module level:
   requested mutation. Returning errors here will reject the mutation
   (see below)
 * **signal_mutation_module_before_mutating**: sent after the validation and
-  before performing the actual mutation
+  before performing the actual mutation, in the same transaction. It is sent
+  before the mutation has checked the caller's rights, so whatever a receiver
+  changes is rolled back when the mutation then raises or returns errors. With
+  async mutations it is sent by the worker, not by the request that queues the
+  job. Its receivers' return values are ignored: refuse a mutation from the
+  validate signal instead.
 * **signal_mutation_module_after_mutating**: sent when the mutation has
   finished
 
@@ -161,6 +166,10 @@ Insuree.objects.get(
         *filter_validity(**kwargs)
     )
 ```
+* schema.node_field: the relay `node(id:)` field (`graphene.relay.Node.Field()`)
+  refused to anonymous callers. The assembly declares `node` with it; use it
+  for any other `node` field too. Which rows an authenticated caller reaches
+  is still up to each type's row security (`ScopedQuerysetMixin`).
 * utils.prefix_filterset: helper method to provide dynamic filtering on related (FK) entities
 Sample usage:
 ```

@@ -293,3 +293,42 @@ class MutationOnQuerysetFromFilterTests(TestCase):
 #    regional admin, and verifies that the mutation cannot affect users outside
 #    the admin's business access scope.
 # -----------------------------------------------------------------------------
+
+
+class BusinessModelFilterIsScopedTests(TestCase):
+    """The business model variant starts from the caller's rows too.
+
+    It used to start from ``model.objects``, so a bulk mutation driven by a
+    filter (approve/counter contracts by filter, say) reached rows its author
+    cannot read. Core has no concrete business model to build rows for, so the
+    model is a stand-in and the test checks what the query starts from.
+    """
+
+    def test_starts_from_target_queryset_not_from_objects(self):
+        from unittest.mock import MagicMock
+        from core.gql.gql_mutations.mutation_by_filter import (
+            mutation_on_uuids_from_filter_business_model,
+        )
+
+        model = MagicMock(__name__="Thing")
+        gql_type = MagicMock()
+        gql_type._meta.filter_fields = {"code": ["exact"]}
+        scoped = MagicMock()
+        user = object()
+        spy_mutate, calls = _make_async_mutate_spy()
+        decorated = mutation_on_uuids_from_filter_business_model(
+            model, gql_type, return_objects=True
+        )(spy_mutate)
+
+        with patch(
+            "core.gql.gql_mutations.mutation_by_filter.target_queryset",
+            return_value=scoped,
+        ) as target:
+            decorated("SomeMutationClass", user, extended_filters=json.dumps({"code": "X"}))
+
+        target.assert_called_once_with(model, user)
+        model.objects.filter.assert_not_called()
+        self.assertIs(
+            calls[0]["data"]["filtered_objects"],
+            scoped.filter.return_value.filter.return_value,
+        )
