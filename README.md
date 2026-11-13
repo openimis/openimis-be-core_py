@@ -513,5 +513,21 @@ This will make the data appear in the masked way again.
 * gql_mutation_delete_roles_perms: required rights to call deleteRole GraphQL Mutation (default: ["152104"])
 * gql_mutation_duplicate_roles_perms: required rights to call duplicateRole GraphQL Mutation (default: ["152105"])
 
+### Optional notification push
+
+The notification inbox is always stored in the database and read through the
+GraphQL `notifications` connection. Installations may enable the existing
+Django Channels transport to send `notification.inbox.changed` invalidation
+events. The event contains no notification or patient data; clients pull the
+authorized GraphQL connection after receiving it. Set both assembly variables:
+
+```env
+WEBSOCKETS_ENABLED=true
+NOTIFICATION_WEBSOCKET_ENABLED=true
+```
+
+If either option is disabled or the channel layer is unavailable, polling
+continues to provide the complete inbox.
+
 ## openIMIS Modules Dependencies
 N.A.

@@ -47,3 +47,4 @@ ValidityMixin = openimis_model.ValidityMixin
 OpenIMISBusinessModel = openimis_model.OpenIMISBusinessModel
 UserBusinessAccess = user_business_access.UserBusinessAccess
 from .right_permission import RightPermission  # noqa: E402
+from .notification import Notification  # noqa: E402
