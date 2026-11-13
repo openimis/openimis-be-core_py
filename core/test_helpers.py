@@ -1017,3 +1017,45 @@ def create_monitoring_evaluation_role():
         "registers_services_perms",
     ]
     return create_test_role(perm_names=perms, name="MonitoringEvaluation", is_system=0)
+
+
+def mark_deleted(obj):
+    """Mark ``obj`` deleted the way its model family does, without side effects.
+
+    Written straight to the row, so no audit copy or history entry is made:
+    a test of the validity filter wants exactly one deleted row.
+    """
+    model = type(obj)
+    fields = {f.name for f in model._meta.fields}
+    changes = {}
+    if "is_deleted" in fields:
+        changes["is_deleted"] = True
+    if "active" in fields:
+        changes["active"] = False
+    if "validity_to" in fields:
+        changes["validity_to"] = datetime.datetime.now()
+    model.objects.filter(pk=obj.pk).update(**changes)
+    # update() bypasses save(), so a cached copy would still read as live
+    if hasattr(obj, "delete_cache"):
+        obj.delete_cache()
+    return obj
+
+
+def assert_row_filters(test, model, queryset, user, live, deleted, default_hides_deleted):
+    """The OP-2029 validity contract of ``model.get_queryset``, on two rows.
+
+    ``live`` and ``deleted`` are primary keys inside ``queryset``.
+    ``default_hides_deleted`` states what a caller asking for nothing gets
+    today, which phase 1 of OP-3317 must not change.
+    """
+    from core.models.row_filters import Validity
+
+    def pks(**kwargs):
+        rows = model.get_queryset(queryset, user, **kwargs)
+        return set(rows.values_list("pk", flat=True)) & {live, deleted}
+
+    test.assertEqual({live} if default_hides_deleted else {live, deleted}, pks())
+    test.assertEqual({live}, pks(validity=Validity.NOW))
+    test.assertEqual({live}, pks(validity=Validity.LIVE))
+    test.assertEqual({deleted}, pks(validity=Validity.DELETED_NOW))
+    test.assertEqual({live, deleted}, pks(validity=Validity.ALL))

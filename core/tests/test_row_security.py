@@ -534,3 +534,37 @@ class GenericScopeTest(TestCase):
         # ParentScope cannot compose a path here, so it restricts through the
         # parent's queryset instead
         self.assertIn("tblInvoice", str(scoped.query))
+
+
+class LatestHistoryIdsTest(TestCase):
+    """Audits.at(date): each entity's latest history row, set-based (review of
+    openimis/openimis-be-core_py#496), on both the PostgreSQL and the window path."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.rows = []
+        for name in ("a", "b"):
+            i_user = create_test_interactive_user(username=f"sp_hist_{name}").i_user
+            for version in (1, 2):
+                i_user.other_names = f"sp_hist_{name}{version}"
+                i_user.save()
+            cls.rows.append(i_user)
+        cls.ids = [r.id for r in cls.rows]
+
+    def _latest(self):
+        from core.models import InteractiveUser
+        history = InteractiveUser.history.filter(id__in=self.ids)
+        self.assertGreater(history.count(), 2 * len(self.ids))  # several rows each
+        ids = RowSecurityMixin._latest_history_ids(history, "id")
+        return sorted(history.filter(history_id__in=ids).values_list("other_names", flat=True))
+
+    def test_postgresql_distinct_on(self):
+        from django.db import connection
+        if connection.vendor != "postgresql":
+            self.skipTest("PostgreSQL only")
+        self.assertEqual(["sp_hist_a2", "sp_hist_b2"], self._latest())
+
+    def test_window_function_path(self):
+        from django.db import connection
+        with patch.object(connection, "vendor", "other"):
+            self.assertEqual(["sp_hist_a2", "sp_hist_b2"], self._latest())

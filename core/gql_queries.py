@@ -63,7 +63,7 @@ def check_linked_object_access(is_own_record, info):
         raise PermissionDenied(_("unauthorized"))
 
 
-class OfficerGQLType(DjangoObjectType):
+class OfficerGQLType(ScopedQuerysetMixin, DjangoObjectType):
     """
     This type corresponds to the Enrolment Officer but is a bit more generic than just Enrolment.
     """
@@ -81,13 +81,8 @@ class OfficerGQLType(DjangoObjectType):
         }
         connection_class = ExtendedConnection
 
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        queryset = queryset.filter(*Officer.filter_validity())
-        return queryset
 
-
-class RoleGQLType(DjangoObjectType):
+class RoleGQLType(ScopedQuerysetMixin, DjangoObjectType):
     system_role_id = graphene.Int()
     name = graphene.String()
 
@@ -105,10 +100,6 @@ class RoleGQLType(DjangoObjectType):
     def resolve_name(self, info):
         return _(self.name)
 
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return Role.get_queryset(queryset, info)
-
 
 class UserRoleGQLType(DjangoObjectType):
     class Meta:
@@ -125,7 +116,7 @@ class UserRoleGQLType(DjangoObjectType):
         return Role.get_queryset(queryset, info)
 
 
-class RoleRightGQLType(DjangoObjectType):
+class RoleRightGQLType(ScopedQuerysetMixin, DjangoObjectType):
     class Meta:
         model = RoleRight
         interfaces = (graphene.relay.Node,)
@@ -135,10 +126,6 @@ class RoleRightGQLType(DjangoObjectType):
             **prefix_filterset("role__", RoleGQLType._meta.filter_fields),
         }
         connection_class = ExtendedConnection
-
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return RoleRight.get_queryset(queryset, info)
 
 
 class InteractiveUserGQLType(DjangoObjectType):
@@ -241,7 +228,7 @@ class InteractiveUserGQLType(DjangoObjectType):
         return InteractiveUser.get_queryset(queryset, info)
 
 
-class UserGQLType(DjangoObjectType):
+class UserGQLType(ScopedQuerysetMixin, DjangoObjectType):
     """
     This type provides an abstraction of the various user types, TechnicalUser and InteractiveUser. It corresponds
     to the core_User table added in the modular version. The TechnicalUser is for now not exposed here as it is not
@@ -268,10 +255,6 @@ class UserGQLType(DjangoObjectType):
         }
         interfaces = (graphene.relay.Node,)
         connection_class = ExtendedConnection
-
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return User.get_queryset(queryset, info)
 
     # healthFacility, officer and claimAdmin hang off the User row with no right
     # of their own, so without these guards the self fallback of resolve_users

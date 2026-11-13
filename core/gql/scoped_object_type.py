@@ -33,7 +33,14 @@ class ScopedQuerysetMixin:
             # Hand the model a user, never a ResolveInfo: the model owns the
             # policy, not the knowledge of which API is asking.
             user = getattr(getattr(info, "context", None), "user", None)
-            queryset = scope(queryset, user)
+            # OP-3317 phase 2: the connection's showHistory / isDeleted /
+            # validity-date arguments reach the model as validity / audits.
+            from core.gql.row_filter_args import accepts_row_filters, row_filter_kwargs
+            rows = row_filter_kwargs(model, info)
+            if rows and accepts_row_filters(scope):
+                queryset = scope(queryset, user, **rows)
+            else:
+                queryset = scope(queryset, user)
         return cls.refine_queryset(queryset, info)
 
     @classmethod

@@ -202,14 +202,12 @@ class Role(VersionedModel):
         return (self.uuid,)
 
     @classmethod
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, **rows):
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            pass
-        return queryset
+            return cls.no_rows(queryset)
+        return super().get_queryset(queryset, user, **rows)
 
     class Meta:
         managed = True
@@ -226,14 +224,12 @@ class RoleRight(VersionedModel):
     audit_user_id = models.IntegerField(db_column="AuditUserId", blank=True, null=True)
 
     @classmethod
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, **rows):
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            pass
-        return queryset
+            return cls.no_rows(queryset)
+        return super().get_queryset(queryset, user, **rows)
 
     @classmethod
     def _get_by_uuid(cls, uuid_value):
@@ -457,7 +453,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         return "email"
 
     @classmethod
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, *, validity=None, audits=None):
         """The interactive users `user` may read (OP-3124 / OP-3320).
 
         Users holding the users query right see every interactive user; anyone else
@@ -470,12 +466,15 @@ class InteractiveUser(OpenIMISMigrationModel):
         if queryset is None:
             queryset = cls.objects.all()
         if user is None or getattr(user, "is_anonymous", True):
-            return queryset.filter(id=-1) if settings.ROW_SECURITY else queryset
-        from core.apps import CoreConfig
-        if user.has_perms(CoreConfig.gql_query_users_perms):
-            return queryset
-        own_id = getattr(user, "i_user_id", None)
-        return queryset.filter(id=own_id) if own_id else queryset.filter(id=-1)
+            if settings.ROW_SECURITY:
+                queryset = queryset.filter(id=-1)
+        else:
+            from core.apps import CoreConfig
+            if not user.has_perms(CoreConfig.gql_query_users_perms):
+                own_id = getattr(user, "i_user_id", None)
+                queryset = queryset.filter(id=own_id) if own_id else queryset.filter(id=-1)
+        # Validity / audits (OP-2029) are applied by RowSecurityMixin.
+        return super().get_queryset(queryset, user, validity=validity, audits=audits)
 
     class Meta:
         managed = True
@@ -600,12 +599,16 @@ class Officer(VersionedModel, ExtendableModel):
         return Location.objects.filter(condition)
 
     @classmethod
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, **rows):
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        return queryset
+            return cls.no_rows(queryset)
+        if rows.get("validity") is None and rows.get("audits") is None:
+            # live officers unless validity / audits are asked for: OfficerGQLType
+            # used to filter them for every officer connection (OP-3317)
+            queryset = cls.filter_queryset(queryset)
+        return super().get_queryset(queryset, user, **rows)
 
     class Meta:
         managed = True
@@ -655,9 +658,10 @@ class ClaimAdmin(VersionedModel):
     row_scope = ParentScope("health_facility", allow_null=True)
 
     @classmethod
-    def get_queryset(cls, queryset, user=None):
-        # Kept for the validity filter and for REST callers passing None for "all rows".
-        return super().get_queryset(cls.filter_queryset(queryset), user)
+    def get_queryset(cls, queryset, user=None, *, validity=None, audits=None):
+        # Hides deleted rows unless asked; None stays "all rows" for REST callers.
+        queryset = cls.apply_row_filters(queryset, validity, audits, default=cls.filter_queryset)
+        return super().get_queryset(queryset, user)
 
     @property
     def id_for_audit(self):
@@ -1026,14 +1030,12 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
         super().save(*args, **kwargs)
 
     @classmethod
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, **rows):
         if isinstance(user, ResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            pass
-        return queryset
+            return cls.no_rows(queryset)
+        return super().get_queryset(queryset, user, **rows)
 
     class Meta:
         managed = True

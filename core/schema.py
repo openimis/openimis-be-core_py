@@ -37,7 +37,8 @@ from core.services import (
 from core.mutation_log_secrets import contains_secret, scrub_secrets
 from core.tasks import openimis_mutation_async
 from core import prefix_filterset
-from core.gql import ScopedQuerysetMixin
+from core.gql import ScopedQuerysetMixin, legacy_row_filters, row_filter_arguments
+from core.models.row_filters import Audits, Validity
 from core.data_masking import anonymize_gql
 from django import dispatch
 from django.conf import settings
@@ -807,9 +808,13 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
 
         _check_csrf_token(request)
 
-        qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
-            connection, iterable, info, args
-        )
+        # OP-3317: the connection's showHistory / isDeleted / validity-date arguments
+        # reach Model.get_queryset as validity / audits (core.gql.row_filter_args)
+        from core.gql.row_filter_args import row_filters_in_context
+        with row_filters_in_context(info, args):
+            qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
+                connection, iterable, info, args
+            )
         filter_kwargs = {k: v for k, v in args.items() if k in filtering_args}
 
         filter = filterset_class(data=filter_kwargs, queryset=qs, request=info.context)
@@ -905,7 +910,7 @@ class Query(graphene.ObjectType):
         is_system=graphene.Boolean(),
         role_right=graphene.Int(),
         system_role_id=graphene.Int(),
-        show_history=graphene.Boolean(),
+        **row_filter_arguments(),
         client_mutation_id=graphene.String(),
         str=graphene.String(description="Text search on any field"),
     )
@@ -915,6 +920,7 @@ class Query(graphene.ObjectType):
         orderBy=graphene.List(of_type=graphene.String),
         validity=graphene.Date(),
         max_limit=None,
+        **row_filter_arguments(),
     )
 
     interactiveUsers = OrderedDjangoFilterConnectionField(
@@ -963,11 +969,12 @@ class Query(graphene.ObjectType):
         parent_location=graphene.String(),
         parent_location_level=graphene.Int(),
     )
-    claim_admins = DjangoFilterConnectionField(
+    claim_admins = OrderedDjangoFilterConnectionField(
         ClaimAdminGQLType,
         search=graphene.String(),
         region_uuid=graphene.String(),
         district_uuid=graphene.String(),
+        **row_filter_arguments(),
     )
     user = graphene.Field(UserGQLType)
 
@@ -976,6 +983,7 @@ class Query(graphene.ObjectType):
         str=graphene.String(
             description="text search that will check username, last name, other names and email"
         ),
+        **row_filter_arguments(),
     )
 
     substitution_enrolment_officers = OrderedDjangoFilterConnectionField(
@@ -992,6 +1000,7 @@ class Query(graphene.ObjectType):
             required=False,
             description="Query that will return possible EO replacements.",
         ),
+        **row_filter_arguments(),
     )
 
     modules_permissions = graphene.Field(
@@ -1049,13 +1058,16 @@ class Query(graphene.ObjectType):
                 if not login_name:
                     raise PermissionDenied(_("unauthorized"))
                 own_claim_admin = Q(code__iexact=login_name, has_login=True)
-            return ClaimAdmin.objects.filter(
-                *ClaimAdmin.filter_validity(**kwargs), own_claim_admin
-            )
+            # live claim admins unless isDeleted / showHistory say otherwise (OP-3317)
+            legacy_row_filters(info, kwargs, validity=Validity.NOW)
+            return ClaimAdmin.objects.filter(own_claim_admin)
 
         # Which administrators the user may see is ClaimAdmin.row_scope; the
         # district and region arguments only narrow that further.
-        filters = [*ClaimAdmin.filter_validity(**kwargs)]
+        # the admins' own validity and row scope are applied by ClaimAdminGQLType ->
+        # ClaimAdmin.get_queryset (OP-2029 / OP-3317): live ones unless asked otherwise
+        legacy_row_filters(info, kwargs, validity=Validity.NOW)
+        filters = []
         district_uuid = kwargs.get("district_uuid", None)
         region_uuid = kwargs.get("region_uuid", None)
         if district_uuid is not None:
@@ -1070,7 +1082,7 @@ class Query(graphene.ObjectType):
                 | Q(other_names__icontains=search)
             ]
 
-        return ClaimAdmin.get_queryset(ClaimAdmin.objects.filter(*filters), user)
+        return ClaimAdmin.objects.filter(*filters)
 
     def resolve_username_length(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
@@ -1163,7 +1175,6 @@ class Query(graphene.ObjectType):
             .filter(
                 nb_village__gte=len(villages_uuids),
                 officer_villages__location__uuid__in=villages_uuids,
-                validity_to__isnull=True,
                 officer_villages__validity_to__isnull=True,
                 officer_villages__location__validity_to__isnull=True,
             )
@@ -1395,9 +1406,13 @@ class Query(graphene.ObjectType):
                 Q(mutations__mutation__client_mutation_id=client_mutation_id)
             )
 
+        # validity / audits are applied by Role.get_queryset (OP-2029 / OP-3317); the
+        # legacy arguments keep their meaning: showHistory or a uuid lookup -> every row
         show_history = kwargs.get("show_history", False)
-        if not show_history and not kwargs.get("uuid", None):
-            filters += Role.filter_validity(**kwargs)
+        legacy_row_filters(
+            info, kwargs,
+            validity=Validity.ALL if show_history or kwargs.get("uuid") else Validity.NOW,
+            audits=Audits.ALL if show_history else None)
 
         is_system_role = kwargs.get("is_system", None)
         # check if we can use default filter validity
@@ -1415,14 +1430,15 @@ class Query(graphene.ObjectType):
     def resolve_role_right(self, info, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_roles_perms):
             raise PermissionError("Unauthorized")
-        filters = []
-        if "validity" in kwargs:
-            filters += RoleRight.filter_validity(**kwargs)
-            return gql_optimizer.query(RoleRight.objects.filter(*filters), info)
-        else:
+        if kwargs.get("validity") is not None:
+            # "as of date": not expressible for a non-business model, kept here; the
+            # model is told not to filter again
+            legacy_row_filters(info, kwargs, validity=Validity.ALL, audits=Audits.ALL)
             return gql_optimizer.query(
-                RoleRight.objects.filter(validity_to__isnull=True), info
-            )
+                RoleRight.objects.filter(*RoleRight.filter_validity(**kwargs)), info)
+        # live rights unless isDeleted / showHistory say otherwise (OP-3317)
+        legacy_row_filters(info, kwargs, validity=Validity.NOW)
+        return gql_optimizer.query(RoleRight.objects.all(), info)
 
     def resolve_modules_permissions(self, info, **kwargs):
         """

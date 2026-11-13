@@ -54,12 +54,16 @@ location answers instead. A fallback here is another path, not a special case.
 """
 
 import logging
+from datetime import datetime as py_datetime
 
 from core.cache_control import cache_delete, cache_get, cache_set
-from django.db import DatabaseError
-from django.db.models import Q, TextField
-from django.db.models.functions import Cast
+from django.db import DatabaseError, connections
+from django.db.utils import NotSupportedError
+from django.db.models import F, Q, Subquery, TextField, Window
+from django.db.models.functions import Cast, RowNumber
 from django.db.models.signals import post_save
+
+from core.models.row_filters import NO_ROWS, Audits, Validity, day_bounds, refuse_date
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +177,7 @@ class RowSecurityMixin:
             # row. Every hand-written get_queryset in the modules carries its
             # own `if user.is_anonymous: return nothing` guard for exactly this
             # reason, so the wrapper owns it rather than inheriting the hole.
-            return [Q(pk__in=[])]
+            return [NO_ROWS]
 
         # From here the interactive user is what the location filter wants; it
         # handles a technical user (deliberately unfiltered) itself.
@@ -186,7 +190,7 @@ class RowSecurityMixin:
         return [condition]
 
     @classmethod
-    def get_queryset(cls, queryset, user=None):
+    def get_queryset(cls, queryset, user=None, *, validity=None, audits=None):
         """The rows ``user`` may see.
 
         Applies ``row_scope`` when the model declares one. Unrestricted
@@ -207,11 +211,188 @@ class RowSecurityMixin:
         base itself, or a caller passing None gets ``None`` back, or an
         AttributeError once a scope tries to filter it (OP-3196).
         """
-        if queryset is None:
-            queryset = cls._default_manager.all()
+        queryset = cls.apply_row_filters(queryset, validity, audits)
         if cls.row_scope is None:
             return queryset
         return cls.row_scope.filter(queryset, cls.scoping_user(user), cls)
+
+    # -- validity / audits (OP-2029) -------------------------------------
+    #
+    # Each model family records deletion and history its own way. A family
+    # states its markers through the hooks below; filter_rows turns the
+    # Validity / Audits values (core.models.row_filters) into one filter.
+
+    #: Field pair holding the business validity, or None when the model has
+    #: none and a validity date is meaningless for it.
+    business_validity_fields = None
+
+    @classmethod
+    def get_business_validity_fields(cls):
+        return cls.business_validity_fields
+
+    @classmethod
+    def live_rows_q(cls):
+        """The rows this family does not consider deleted."""
+        raise NotImplementedError(f"{cls.__name__} declares no deletion marker")
+
+    @classmethod
+    def current_rows_q(cls):
+        """Excludes in-table audit copies; None when audits live elsewhere."""
+        return None
+
+    @classmethod
+    def audit_rows_q(cls, audits):
+        """In-table audit copies matching ``audits``.
+
+        A family keeping its audit trail in a history table cannot return it
+        from the main query; it is served by ``get_audit_queryset``.
+        """
+        raise ValueError(
+            f"{cls.__name__} keeps its audits in a history table; "
+            f"use {cls.__name__}.get_audit_queryset()"
+        )
+
+    @classmethod
+    def business_validity_q(cls, start, end):
+        """Rows whose business validity overlaps [start, end]."""
+        date_from, date_to = cls.get_business_validity_fields()
+        condition = Q()
+        if end is not None:
+            condition &= Q(**{f"{date_from}__lte": end})
+        if start is not None:
+            condition &= Q(**{f"{date_to}__isnull": True}) | Q(**{f"{date_to}__gte": start})
+        return condition
+
+    @classmethod
+    def validity_q(cls, validity):
+        """The validity part of filter_rows; None means no restriction."""
+        if validity == Validity.ALL:
+            return cls.current_rows_q()
+        if validity == Validity.DELETED_NOW:
+            return cls._and(cls.current_rows_q(), ~cls.live_rows_q())
+        if validity == Validity.LIVE:
+            # Not deleted, whatever the business dates: future and expired rows included.
+            return cls._and(cls.current_rows_q(), cls.live_rows_q())
+        if validity == Validity.NOW:
+            condition = cls._and(cls.current_rows_q(), cls.live_rows_q())
+            if cls.get_business_validity_fields():
+                now = py_datetime.now()
+                condition &= cls.business_validity_q(now, now)
+            return condition
+        if not cls.get_business_validity_fields():
+            refuse_date(cls, validity)
+        start, end = day_bounds(*validity.range())
+        return cls.business_validity_q(start, end) & cls.dated_rows_q()
+
+    @classmethod
+    def dated_rows_q(cls):
+        """Which rows a validity date is looked up in: the live ones by default."""
+        return cls.live_rows_q()
+
+    @classmethod
+    def apply_row_filters(cls, queryset, validity=None, audits=None, default=None):
+        """filter_rows when the caller asked for validity or audits.
+
+        A caller that says nothing gets ``default(queryset)`` -- the model's
+        own default, typically its filter_queryset -- or the queryset as it
+        is, so nothing changes until the GraphQL path always passes both
+        (OP-2029). An overriding get_queryset opens with this.
+        """
+        if queryset is None:
+            queryset = cls._default_manager.all()
+        if validity is None and audits is None:
+            return queryset if default is None else default(queryset)
+        return cls.filter_rows(
+            queryset,
+            validity=Validity.NOW if validity is None else validity,
+            audits=Audits.NONE if audits is None else audits,
+        )
+
+    @classmethod
+    def filter_rows(cls, queryset=None, validity=Validity.NOW, audits=Audits.NONE):
+        """Narrow ``queryset`` to ``validity`` plus the ``audits`` asked for."""
+        if queryset is None:
+            queryset = cls._default_manager.all()
+        condition = cls.validity_q(validity)
+        if audits != Audits.NONE:
+            audit_condition = cls.audit_rows_q(audits)
+            if condition is not None:
+                condition = condition | audit_condition
+        return queryset if condition is None else queryset.filter(condition)
+
+    @classmethod
+    def get_audit_queryset(cls, user=None, audits=None, validity=None):
+        """The history-table audit trail of the rows ``user`` may see.
+
+        at(date) is each row's state as of that date; between(from, to) the
+        audit entries dated in that range; ALL the whole trail.
+        """
+        history = getattr(cls, "history", None)
+        if history is None:
+            raise ValueError(f"{cls.__name__} keeps no history table")
+        audits = Audits.ALL if audits is None else audits
+        if audits == Audits.NONE:
+            return history.none()
+        pk = cls._meta.pk.name
+        visible = cls.get_queryset(
+            None, user, validity=Validity.ALL if validity is None else validity
+        ).values(pk)
+        queryset = history.filter(**{f"{pk}__in": visible})
+        if audits == Audits.ALL:
+            return queryset
+        start, end = day_bounds(*audits.range())
+        if audits.kind == "at":
+            latest = cls._latest_history_ids(queryset.filter(history_date__lte=end), pk)
+            return queryset.filter(history_id__in=Subquery(latest)).exclude(history_type="-")
+        if start is not None:
+            queryset = queryset.filter(history_date__gte=start)
+        if end is not None:
+            queryset = queryset.filter(history_date__lte=end)
+        return queryset
+
+    @staticmethod
+    def _latest_history_ids(history_rows, pk):
+        """The id of each entity's latest history row, set-based.
+
+        Review of openimis/openimis-be-core_py#496: the correlated subquery ran one
+        inner lookup per history row. PostgreSQL uses DISTINCT ON; other databases a
+        ROW_NUMBER() window. history_id breaks ties between rows of the same date.
+        """
+        database = connections[history_rows.db]
+        if database.vendor == "postgresql":
+            return (
+                history_rows.order_by(pk, "-history_date", "-history_id")
+                .distinct(pk)
+                .values("history_id")
+            )
+        if not database.features.supports_over_clause:
+            raise NotSupportedError(
+                f"Audits.at() requires window-function support on {database.display_name}")
+        return (
+            history_rows.annotate(history_position=Window(
+                expression=RowNumber(),
+                partition_by=[F(pk)],
+                order_by=[F("history_date").desc(), F("history_id").desc()],
+            ))
+            .filter(history_position=1)
+            .order_by()
+            .values("history_id")
+        )
+
+    @classmethod
+    def no_rows(cls, queryset=None):
+        """The one spelling of "nothing": an empty queryset of this model."""
+        if queryset is None:
+            queryset = cls._default_manager.all()
+        return queryset.none()
+
+    @staticmethod
+    def _and(left, right):
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return left & right
 
 
 class Scope:
