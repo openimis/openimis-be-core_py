@@ -270,6 +270,9 @@ class RowSecurityMixin:
             return cls.current_rows_q()
         if validity == Validity.DELETED_NOW:
             return cls._and(cls.current_rows_q(), ~cls.live_rows_q())
+        if validity == Validity.LIVE:
+            # Not deleted, whatever the business dates: future and expired rows included.
+            return cls._and(cls.current_rows_q(), cls.live_rows_q())
         if validity == Validity.NOW:
             condition = cls._and(cls.current_rows_q(), cls.live_rows_q())
             if cls.get_business_validity_fields():

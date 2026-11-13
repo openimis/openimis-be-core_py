@@ -19,7 +19,7 @@ class GraphQLArgumentMappingTest(TestCase):
 
     def test_is_deleted_maps_to_validity(self):
         self.assertEqual(Validity.DELETED_NOW, row_filters_from_args({"isDeleted": True})["validity"])
-        self.assertEqual(Validity.NOW, row_filters_from_args({"isDeleted": False})["validity"])
+        self.assertEqual(Validity.LIVE, row_filters_from_args({"isDeleted": False})["validity"])
         self.assertEqual(Validity.ALL, row_filters_from_args({"isDeleted": None})["validity"])
 
     def test_nothing_asked_maps_to_nothing(self):
@@ -35,9 +35,9 @@ class GraphQLArgumentMappingTest(TestCase):
             self.assertEqual({"validity": Validity.ALL, "audits": Audits.ALL}, row_filter_kwargs(model, info))
         # an explicit isDeleted overrides the legacy validity
         rows = legacy_row_filters(info, {"isDeleted": False}, validity=Validity.ALL)
-        self.assertEqual({"validity": Validity.NOW}, rows)
+        self.assertEqual({"validity": Validity.LIVE}, rows)
         with row_filters_in_context(info, {"isDeleted": False}):
-            self.assertEqual({"validity": Validity.NOW}, row_filter_kwargs(model, info))
+            self.assertEqual({"validity": Validity.LIVE}, row_filter_kwargs(model, info))
 
     def test_legacy_defaults_do_not_leak_into_the_next_field(self):
         info = SimpleNamespace(context=SimpleNamespace())

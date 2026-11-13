@@ -1056,5 +1056,6 @@ def assert_row_filters(test, model, queryset, user, live, deleted, default_hides
 
     test.assertEqual({live} if default_hides_deleted else {live, deleted}, pks())
     test.assertEqual({live}, pks(validity=Validity.NOW))
+    test.assertEqual({live}, pks(validity=Validity.LIVE))
     test.assertEqual({deleted}, pks(validity=Validity.DELETED_NOW))
     test.assertEqual({live, deleted}, pks(validity=Validity.ALL))

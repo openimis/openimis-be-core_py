@@ -88,6 +88,19 @@ class VersionedModelRowsTest(TestCase):
                 {self.current.id, self.edited.id} <= self.rows(validity=Validity.at(datetime.now()))
             )
 
+    def test_live_keeps_rows_outside_their_business_validity(self):
+        # isDeleted: false maps to LIVE: a row valid from next month is not
+        # deleted and must stay listed, while NOW only keeps what is valid today.
+        future = create_test_role(name="row-filters-future")
+        Role.objects.filter(id=future.id).update(validity_from=datetime.now() + timedelta(days=30))
+        with patch.object(Role, "business_versioned", True, create=True):
+            self.assertNotIn(future.id, self.rows(validity=Validity.NOW))
+            self.assertEqual(
+                {self.current.id, self.edited.id, future.id},
+                self.rows(validity=Validity.LIVE),
+            )
+            self.assertNotIn(self.deleted.id, self.rows(validity=Validity.LIVE))
+
     def test_without_arguments_the_model_keeps_its_own_default(self):
         # Phase 1 changes no runtime behaviour: a caller that says nothing
         # gets what it got before the contract existed.
@@ -156,6 +169,7 @@ class RowFilterValuesTest(TestCase):
 
     def test_constants_are_distinct(self):
         self.assertNotEqual(Validity.NOW, Validity.ALL)
+        self.assertNotEqual(Validity.NOW, Validity.LIVE)
         self.assertNotEqual(Audits.NONE, Audits.ALL)
 
 

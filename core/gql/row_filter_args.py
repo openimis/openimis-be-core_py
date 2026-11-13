@@ -3,6 +3,8 @@ onto the OP-2029 ``validity`` / ``audits`` contract of ``Model.get_queryset``.
 
     showHistory: true          -> audits=ALL
     isDeleted: true            -> validity=DELETED_NOW
+    isDeleted: false           -> validity=LIVE  (not deleted, whatever the business dates;
+                                                  NOW would hide a contract starting next month)
     isDeleted: null (explicit) -> validity=ALL   (unreachable from GraphQL with graphql-core 2:
                                                   no null literal, and a null variable reaches
                                                   the resolver as an absent argument)
@@ -84,7 +86,7 @@ def row_filters_from_args(args):
     present, is_deleted = _arg(args, "isDeleted", "is_deleted")
     if present:
         rows["validity"] = Validity.DELETED_NOW if is_deleted else (
-            Validity.ALL if is_deleted is None else Validity.NOW)
+            Validity.ALL if is_deleted is None else Validity.LIVE)
     _, valid_from = _arg(args, "dateValidFrom__Gte", "date_valid_from__gte")
     _, valid_to = _arg(args, "dateValidTo__Lte", "date_valid_to__lte")
     if valid_from is not None or valid_to is not None:

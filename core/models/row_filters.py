@@ -2,9 +2,11 @@
 
 Two dimensions, each with a default:
 
-- ``validity``: NOW (default), ALL, DELETED_NOW, at(date), between(from, to).
-  NOW is the live, non-deleted state; ALL adds deleted rows; DELETED_NOW is
-  the deleted rows only. A date or range asks for the business validity, and
+- ``validity``: NOW (default), LIVE, ALL, DELETED_NOW, at(date), between(from, to).
+  NOW is the live, non-deleted state, valid today on families with a business
+  validity; LIVE is every non-deleted row whatever its business dates (what
+  ``isDeleted: false`` always meant: a contract starting next month is not
+  deleted); ALL adds deleted rows; DELETED_NOW is the deleted rows only. A date or range asks for the business validity, and
   only exists on families that carry one (ValidityMixin, or a VersionedModel
   declaring ``business_versioned``).
 - ``audits``: NONE (default), ALL, at(date), between(from, to).
@@ -56,6 +58,7 @@ def _between(cls, start, end):
 
 class Validity(_RowFilter):
     NOW = None
+    LIVE = None
     ALL = None
     DELETED_NOW = None
     at = classmethod(_at)
@@ -70,6 +73,7 @@ class Audits(_RowFilter):
 
 
 Validity.NOW = Validity("now")
+Validity.LIVE = Validity("live")
 Validity.ALL = Validity("all")
 Validity.DELETED_NOW = Validity("deleted_now")
 Audits.NONE = Audits("none")
@@ -79,7 +83,7 @@ Audits.ALL = Audits("all")
 def refuse_date(model, validity):
     raise ValueError(
         f"{model.__name__} has no business validity; "
-        f"use NOW, ALL or DELETED_NOW instead of {validity.kind}"
+        f"use NOW, LIVE, ALL or DELETED_NOW instead of {validity.kind}"
     )
 
 
