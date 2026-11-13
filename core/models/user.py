@@ -453,8 +453,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         return "email"
 
     @classmethod
-
-    def get_queryset(cls, queryset, user):
+    def get_queryset(cls, queryset, user, *, validity=None, audits=None):
         """The interactive users `user` may read (OP-3124 / OP-3320).
 
         Users holding the users query right see every interactive user; anyone else
@@ -467,12 +466,15 @@ class InteractiveUser(OpenIMISMigrationModel):
         if queryset is None:
             queryset = cls.objects.all()
         if user is None or getattr(user, "is_anonymous", True):
-            return queryset.filter(id=-1) if settings.ROW_SECURITY else queryset
-        from core.apps import CoreConfig
-        if user.has_perms(CoreConfig.gql_query_users_perms):
-            return queryset
-        own_id = getattr(user, "i_user_id", None)
-        return queryset.filter(id=own_id) if own_id else queryset.filter(id=-1)
+            if settings.ROW_SECURITY:
+                queryset = queryset.filter(id=-1)
+        else:
+            from core.apps import CoreConfig
+            if not user.has_perms(CoreConfig.gql_query_users_perms):
+                own_id = getattr(user, "i_user_id", None)
+                queryset = queryset.filter(id=own_id) if own_id else queryset.filter(id=-1)
+        # Validity / audits (OP-2029) are applied by RowSecurityMixin.
+        return super().get_queryset(queryset, user, validity=validity, audits=audits)
 
     class Meta:
         managed = True

@@ -82,7 +82,6 @@ class OfficerGQLType(ScopedQuerysetMixin, DjangoObjectType):
         connection_class = ExtendedConnection
 
 
-
 class RoleGQLType(ScopedQuerysetMixin, DjangoObjectType):
     system_role_id = graphene.Int()
     name = graphene.String()
@@ -100,7 +99,6 @@ class RoleGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
     def resolve_name(self, info):
         return _(self.name)
-
 
 
 class UserRoleGQLType(DjangoObjectType):
@@ -128,7 +126,6 @@ class RoleRightGQLType(ScopedQuerysetMixin, DjangoObjectType):
             **prefix_filterset("role__", RoleGQLType._meta.filter_fields),
         }
         connection_class = ExtendedConnection
-
 
 
 class InteractiveUserGQLType(DjangoObjectType):
@@ -258,7 +255,6 @@ class UserGQLType(ScopedQuerysetMixin, DjangoObjectType):
         }
         interfaces = (graphene.relay.Node,)
         connection_class = ExtendedConnection
-
 
     # healthFacility, officer and claimAdmin hang off the User row with no right
     # of their own, so without these guards the self fallback of resolve_users
