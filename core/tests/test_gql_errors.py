@@ -10,7 +10,7 @@ from rest_framework.exceptions import (
 )
 from django.test import RequestFactory, TestCase
 from graphql.error import GraphQLError
-from graphql.error.located_error import GraphQLLocatedError
+from graphql.error import located_error
 
 from core.gql_errors import (
     BAD_REQUEST,
@@ -37,7 +37,7 @@ from core.test_helpers import create_test_interactive_user
 
 def resolver_error(exc):
     """What the executor hands the view for an exception raised in a resolver."""
-    return GraphQLLocatedError(nodes=None, original_error=exc)
+    return located_error(exc, None)
 
 
 class ErrorCodeTest(TestCase):
@@ -179,9 +179,7 @@ class FormatErrorTest(TestCase):
         self.assertEqual(BAD_REQUEST, formatted["extensions"]["code"])
 
     def test_locations_and_path_are_preserved(self):
-        error = GraphQLLocatedError(
-            nodes=None, original_error=PermissionDenied("no"), path=["createUser"]
-        )
+        error = located_error(PermissionDenied("no"), None, ["createUser"])
 
         self.assertEqual(["createUser"], format_error(error, debug=True)["path"])
 
