@@ -23,7 +23,7 @@ from django.contrib.auth.models import (
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils.crypto import salted_hmac
-from graphql import ResolveInfo
+from graphql import GraphQLResolveInfo
 import core
 from hashlib import sha256
 from secrets import token_hex
@@ -203,7 +203,7 @@ class Role(VersionedModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        if isinstance(user, ResolveInfo):
+        if isinstance(user, GraphQLResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return queryset.filter(id=-1)
@@ -227,7 +227,7 @@ class RoleRight(VersionedModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        if isinstance(user, ResolveInfo):
+        if isinstance(user, GraphQLResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return queryset.filter(id=-1)
@@ -465,7 +465,7 @@ class InteractiveUser(OpenIMISMigrationModel):
         PII. `user` is the request user (core User), never its i_user: an
         InteractiveUser has no `is_anonymous`, which made this crash.
         """
-        if isinstance(user, ResolveInfo):
+        if isinstance(user, GraphQLResolveInfo):
             user = user.context.user
         if queryset is None:
             queryset = cls.objects.all()
@@ -601,7 +601,7 @@ class Officer(VersionedModel, ExtendableModel):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        if isinstance(user, ResolveInfo):
+        if isinstance(user, GraphQLResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return queryset.filter(id=-1)
@@ -947,6 +947,13 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
             raise ValueError("wrapper has not been initialised")
         elif name == "__name__":
             return self.username
+        elif name.startswith("_"):
+            # Never proxy private or protocol lookups: graphql-core 3 probes __await__
+            # on every resolved value, and Django's refresh_from_db looks up
+            # _prefetched_objects_cache. On a row with deferred fields, reaching _u
+            # reloads the row, which looks the attribute up again, until the
+            # recursion limit.
+            raise AttributeError(f"User has no attribute {name}")
         elif name == "get_session_auth_hash":
             return False
         elif hasattr(self._u, name):
@@ -1027,7 +1034,7 @@ class User(UUIDModel, OpenIMISHistoryMixin, PermissionsMixin):
 
     @classmethod
     def get_queryset(cls, queryset, user):
-        if isinstance(user, ResolveInfo):
+        if isinstance(user, GraphQLResolveInfo):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return queryset.filter(id=-1)

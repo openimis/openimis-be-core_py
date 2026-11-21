@@ -94,8 +94,10 @@ class AbsCalculationRulePropertyTest(TestCase):
         self.assertEqual(ConcreteCalculationRule.from_to, expected)
 
     def test_supports_advanced_criteria(self):
-        # supports_advanced_criteria defaults to True
-        self.assertTrue(ConcreteCalculationRule.supports_advanced_criteria)
+        # supports_advanced_criteria defaults to True: a real bool, read on the class.
+        # It used to be a property object there (truthy), which graphql-core 3 refuses
+        # to serialise as a Boolean.
+        self.assertIs(ConcreteCalculationRule.supports_advanced_criteria, True)
 
         ConcreteCalculationRule.supports_advanced_criteria = False
         self.assertFalse(ConcreteCalculationRule.supports_advanced_criteria)

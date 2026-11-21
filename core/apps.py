@@ -324,6 +324,13 @@ class CoreConfig(AppConfig):
         get_commands()["createsuperuser"] = MODULE_NAME
 
     def ready(self):
+        from .gql.lenient_scalars import register_lenient_number_variables
+        from .gql.relation_fields import register_relation_converters
+
+        # Before any module's GraphQL types are built (see relation_fields).
+        register_relation_converters()
+        register_lenient_number_variables()
+
         from .models import ModuleConfiguration
 
         self._register_management_commands()

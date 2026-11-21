@@ -6,6 +6,7 @@ from rest_framework.exceptions import JsonResponse
 from django.conf import settings
 from graphql_jwt.middleware import JSONWebTokenMiddleware
 
+from core.gql.enum_values import enum_values as _enum_values
 from core.utils import (
     impersonation_target_id,
     clear_current_user,
@@ -70,6 +71,21 @@ class CustomJSONWebTokenMiddleware(JSONWebTokenMiddleware):
             return next(root, info, **kwargs)
 
         return super().resolve(next, root, info, **kwargs)
+
+
+class EnumValuesMiddleware:
+    """Hand resolvers the values of enum arguments, as graphene 2 did.
+
+    graphene 3 passes a GraphQL enum argument as the Python enum member, which
+    is neither equal to the raw value module code compares it with nor JSON
+    serialisable when a mutation logs its input. Converting once here keeps the
+    graphene 2 contract for every resolver and mutation.
+    """
+
+    def resolve(self, next, root, info, **kwargs):
+        if kwargs:
+            kwargs = {key: _enum_values(value) for key, value in kwargs.items()}
+        return next(root, info, **kwargs)
 
 
 class DefaultAxesAttributesMiddleware:

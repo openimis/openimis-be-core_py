@@ -17,6 +17,8 @@ from promise import Promise
 from functools import reduce
 from django.utils.translation import gettext_lazy
 from graphql.error import GraphQLError
+
+from core.gql.enum_values import enum_values
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 from graphql_jwt.decorators import login_required
@@ -386,6 +388,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
+        # Enum inputs as values, as graphene 2 passed them, also when the mutation
+        # is executed without the GraphQL view's middleware (graphene.test.Client).
+        data = enum_values(data)
         request = getattr(info, "context", None)
 
         _check_csrf_token(request)
