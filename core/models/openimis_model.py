@@ -230,6 +230,10 @@ class OpenIMISModel(OpenIMISHistoryMixin):
         pass
 
     @classmethod
+    def live_rows_q(cls):
+        return Q(active=True)
+
+    @classmethod
     def filter_queryset(cls, queryset=None):
         if queryset is None:
             queryset = cls.objects.filter(active=True)
@@ -244,6 +248,8 @@ class ValidityMixin(Model):
     date_valid_from = DateTimeField(db_column="DateValidFrom", default=py_datetime.now)
     date_valid_to = DateTimeField(db_column="DateValidTo", blank=True, null=True)
     replacement_uuid = UUIDField(db_column="ReplacementUUID", blank=True, null=True)
+
+    business_validity_fields = ("date_valid_from", "date_valid_to")
 
     # to help migration from versionned model
     @property
@@ -324,6 +330,8 @@ class ValidityMixin(Model):
 
 
 class OpenIMISBusinessModel(OpenIMISModel, ValidityMixin):
+    business_validity_fields = ValidityMixin.business_validity_fields
+
     class Meta:
         abstract = True
 
@@ -364,6 +372,11 @@ class OpenIMISMigrationModel(OpenIMISModel):
             self.validity_to = py_datetime.now()
             self.save(*args, **kwargs)
         return result
+
+    @classmethod
+    def live_rows_q(cls):
+        # Deleted either way, as delete_history() writes both markers.
+        return Q(active=True, validity_to__isnull=True)
 
     @staticmethod
     def filter_validity(arg="validity", prefix="", **kwargs):
