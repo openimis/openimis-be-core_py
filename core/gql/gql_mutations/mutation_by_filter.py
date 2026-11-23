@@ -5,6 +5,7 @@ from functools import wraps
 import django.db.models
 from django.db.models import Q
 from graphene_django import DjangoObjectType
+from core.models.row_security import target_queryset
 from core.models.user import User
 from typing import Dict
 from core.utils import get_current_user
@@ -263,7 +264,10 @@ def mutation_on_uuids_from_filter_business_model(
 
                 now = datetime.datetime.now()
 
-                base_query = django_object.objects.filter(
+                # Start from the rows the caller may act on, like the other
+                # decorators in this module: a bulk mutation by filter must
+                # not reach rows its author cannot read.
+                base_query = target_queryset(django_object, user).filter(
                     Q(date_valid_from__lte=now),
                     Q(date_valid_to=None) | Q(date_valid_to__gte=now),
                     Q(is_deleted=False),
