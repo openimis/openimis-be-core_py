@@ -8,7 +8,7 @@ exists), so a client that branches on message text breaks as soon as the
 wording or the locale changes. Codes are what clients should match on.
 
 graphql-core copies an ``extensions`` attribute off the original exception when
-it wraps it in ``GraphQLLocatedError``, so the mixin below works for plain
+it wraps it in a located ``GraphQLError``, so the mixin below works for plain
 exceptions too, not only ``GraphQLError`` subclasses.
 """
 
@@ -18,7 +18,7 @@ from django.core.exceptions import (
     ValidationError as DjangoValidationError,
 )
 from django.utils.translation import gettext_lazy as _
-from graphql.error import GraphQLError, format_error as format_graphql_core_error
+from graphql.error import GraphQLError
 from graphql_jwt.exceptions import JSONWebTokenError
 from rest_framework.exceptions import (
     APIException,
@@ -190,7 +190,7 @@ def format_error(error, debug=None):
         debug = settings.DEBUG
 
     if isinstance(error, GraphQLError):
-        formatted = format_graphql_core_error(error)
+        formatted = dict(error.formatted)
     else:
         formatted = {"message": str(error)}
 

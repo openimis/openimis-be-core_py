@@ -88,15 +88,18 @@ class AbsStrategy(object, metaclass=abc.ABCMeta):
 
     from_to = property(get_from_to, set_from_to)
 
+    # Read on the rule class (rules are used as classes): a plain class attribute, not a
+    # property, which read on the class is the property object itself and is not a
+    # Boolean for GraphQL (graphql-core 3 refuses to serialise it).
+    supports_advanced_criteria = True
+
     @classmethod
     def get_supports_advanced_criteria(cls):
-        return getattr(cls, '_supports_advanced_criteria', True)
+        return cls.supports_advanced_criteria
 
     @classmethod
     def set_supports_advanced_criteria(cls, val):
-        cls._supports_advanced_criteria = val
-
-    supports_advanced_criteria = property(get_supports_advanced_criteria, set_supports_advanced_criteria)
+        cls.supports_advanced_criteria = val
 
     @classmethod
     def ready(cls):

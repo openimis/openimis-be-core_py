@@ -305,6 +305,26 @@ class openIMISGraphQLTestCase(GraphQLTestCase):
         self.assertTrue(edges, f"no mutation log found for {mutation_uuid}")
         return edges[0]["node"]
 
+    def query(self, query, operation_name=None, input_data=None, variables=None, headers=None):
+        """graphene-django 3 passes ``headers`` to Django's ``headers=`` argument
+        (header names, e.g. ``Authorization``), where graphene-django 2 spread them
+        as WSGI environ keys (``HTTP_AUTHORIZATION``). Tests across the modules use
+        the environ form, which Django would turn into ``HTTP_HTTP_AUTHORIZATION``,
+        so both forms are accepted here.
+        """
+        if headers:
+            headers = {
+                (key[5:].replace("_", "-").title() if key.startswith("HTTP_") else key): value
+                for key, value in headers.items()
+            }
+        return super().query(
+            query,
+            operation_name=operation_name,
+            input_data=input_data,
+            variables=variables,
+            headers=headers,
+        )
+
     def send_mutation_raw(self, mutation_raw, token, variables_param=None, follow=True):
         params = {"headers": {"HTTP_AUTHORIZATION": f"Bearer {token}"}}
         if variables_param:
