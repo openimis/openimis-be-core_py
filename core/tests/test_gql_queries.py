@@ -1,10 +1,13 @@
+import importlib
 import json
+import sys
 
 from django.test import TestCase, override_settings
 from django.utils.translation import gettext
 from graphql_relay import to_global_id
 
 from core.apps import CoreConfig
+from core.gql import max_length_constraints
 from core.gql.max_length_constraints import build_max_length_constraints
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase, BaseTestContext
 from core.test_helpers import create_test_interactive_user, create_test_role
@@ -63,6 +66,31 @@ class MaxLengthConstraintsTestCase(TestCase):
                 "status": 2,
             },
         )
+
+    def test_insuree_package_installed_but_not_an_installed_app(self):
+        """OP-3347: a solution without the insuree module can still have the package
+        (pulled in as a pip dependency). Loading the constraints must not import
+        insuree.models then, or Django raises RuntimeError and the schema fails."""
+        if not Insuree:
+            self.skipTest("Insuree module is not installed")
+
+        saved_modules = {
+            name: module for name, module in sys.modules.items()
+            if name == "insuree.models" or name.startswith("insuree.models.")
+        }
+        try:
+            with self.modify_settings(INSTALLED_APPS={"remove": ["insuree"]}):
+                for name in saved_modules:
+                    del sys.modules[name]
+
+                module = importlib.reload(max_length_constraints)
+                constraints = module.build_max_length_constraints()
+
+                self.assertIn("user", constraints["admin"])
+                self.assertNotIn("insuree", constraints)
+        finally:
+            sys.modules.update(saved_modules)
+            importlib.reload(max_length_constraints)
 
 
 @override_settings(ROW_SECURITY=False)
