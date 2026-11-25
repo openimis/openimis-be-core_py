@@ -42,31 +42,6 @@ class MaxLengthConstraintsTestCase(TestCase):
         self.assertNotIn("session", constraints)
         self.assertNotIn("historicalinteractiveuser", constraints)
 
-    def test_build_max_length_constraints_returns_insuree_fields_when_available(self):
-        if not Insuree:
-            self.skipTest("Insuree module is not installed")
-
-        constraints = build_max_length_constraints()
-
-        self.assertIn("insuree", constraints)
-        self.assertIn("insuree", constraints["insuree"])
-        self.assertEqual(
-            constraints["insuree"]["insuree"],
-            {
-                "uuid": 36,
-                "chfId": 50,
-                "lastName": 100,
-                "otherNames": 100,
-                "marital": 1,
-                "passport": 25,
-                "phone": 50,
-                "email": 100,
-                "currentAddress": 200,
-                "geolocation": 250,
-                "status": 2,
-            },
-        )
-
     def test_insuree_package_installed_but_not_an_installed_app(self):
         """OP-3347: a solution without the insuree module can still have the package
         (pulled in as a pip dependency). Loading the constraints must not import
@@ -78,6 +53,8 @@ class MaxLengthConstraintsTestCase(TestCase):
             name: module for name, module in sys.modules.items()
             if name == "insuree.models" or name.startswith("insuree.models.")
         }
+        # Reloading resets the registry that installed modules filled from ready().
+        saved_fields = dict(max_length_constraints.MAX_LENGTH_CONSTRAINTS_FIELDS)
         try:
             with self.modify_settings(INSTALLED_APPS={"remove": ["insuree"]}):
                 for name in saved_modules:
@@ -91,6 +68,7 @@ class MaxLengthConstraintsTestCase(TestCase):
         finally:
             sys.modules.update(saved_modules)
             importlib.reload(max_length_constraints)
+            max_length_constraints.MAX_LENGTH_CONSTRAINTS_FIELDS.update(saved_fields)
 
 
 @override_settings(ROW_SECURITY=False)

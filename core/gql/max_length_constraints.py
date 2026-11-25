@@ -5,8 +5,9 @@ import graphene
 from django.apps import apps
 
 # Registered form fields: {module: {form: {gql_field: ("app_label.Model", model_field)}}}.
-# Models are named, not imported, and resolved at query time: importing the models
-# of an app that is not in INSTALLED_APPS raises RuntimeError (OP-3347).
+# Each module registers its own forms, from its AppConfig.ready(). Models are named,
+# not imported, and resolved at query time: importing the models of an app that is
+# not in INSTALLED_APPS raises RuntimeError (OP-3347).
 MAX_LENGTH_CONSTRAINTS_FIELDS = {}
 _defaults_registered = False
 
@@ -36,21 +37,6 @@ def _register_default_fields():
             "email": ("core.InteractiveUser", "email"),
         },
     })
-    register_max_length_fields("insuree", {
-        "insuree": {
-            "uuid": ("insuree.Insuree", "uuid"),
-            "chfId": ("insuree.Insuree", "chf_id"),
-            "lastName": ("insuree.Insuree", "last_name"),
-            "otherNames": ("insuree.Insuree", "other_names"),
-            "marital": ("insuree.Insuree", "marital"),
-            "passport": ("insuree.Insuree", "passport"),
-            "phone": ("insuree.Insuree", "phone"),
-            "email": ("insuree.Insuree", "email"),
-            "currentAddress": ("insuree.Insuree", "current_address"),
-            "geolocation": ("insuree.Insuree", "geolocation"),
-            "status": ("insuree.Insuree", "status"),
-        },
-    }, app_label="insuree")
 
 
 def get_model(model_label):
