@@ -63,6 +63,12 @@ class AuthorizedFieldPathTestCase(TestCase):
             authorized_field_path(_RightsUser(), self.GroupIndividual, "group")
         )
 
+    def test_foreign_key_followed_by_its_target_field_is_the_own_column(self):
+        """`group.id` is what the group beneficiary export sends: no join, no right."""
+        self.assertTrue(
+            authorized_field_path(_RightsUser(), self.GroupIndividual, "group__id")
+        )
+
     def test_related_column_is_allowed_with_the_related_models_right(self):
         user = _RightsUser(self.individual_rights)
         self.assertTrue(
