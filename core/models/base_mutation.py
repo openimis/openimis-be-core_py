@@ -46,8 +46,21 @@ class ExportableQueryModel(models.Model):
     def create_csv_export(
         qs, values, user, column_names=None, patches=None, file_format="csv"
     ):
+        """
+        Export `values` (``__``-separated column paths) of the rows of `qs`.
+
+        The rows are scoped by the caller; the columns are checked here, the one place
+        every export reaches (OP-3353, CVE-2026-82491): a column that is secret, not a
+        forward field path, or crosses a relation to a model `user` has no query right
+        on is dropped (see `core.rights_scope.field_path_refusal`).
+        """
+        from core.rights_scope import authorized_field_paths
+
         if patches is None:
             patches = []
+        if column_names is None:
+            column_names = {}
+        values = authorized_field_paths(user, qs.model, list(values))
         sql = qs.query.sql_with_params()
         content = DataFrame.from_records(qs.values_list(*values))
         content.columns = values
