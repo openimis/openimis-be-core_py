@@ -17,6 +17,8 @@ from promise import Promise
 from functools import reduce
 from django.utils.translation import gettext_lazy
 from graphql.error import GraphQLError
+
+from core.gql.enum_values import enum_values
 from graphene.types.generic import GenericScalar
 from graphql_jwt.mutations import JSONWebTokenMutation, mixins
 from graphql_jwt.decorators import login_required
@@ -63,7 +65,6 @@ from django.utils.timezone import now
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
-from axes.attempts import get_user_attempts
 from axes.handlers.database import AxesDatabaseHandler
 from axes.models import AccessAttempt
 from typing import List, Dict, Any
@@ -388,6 +389,9 @@ class OpenIMISMutation(graphene.relay.ClientIDMutation):
 
     @classmethod
     def mutate_and_get_payload(cls, root, info, **data):
+        # Enum inputs as values, as graphene 2 passed them, also when the mutation
+        # is executed without the GraphQL view's middleware (graphene.test.Client).
+        data = enum_values(data)
         request = getattr(info, "context", None)
 
         _check_csrf_token(request)
@@ -2590,6 +2594,16 @@ def log_reset_password_attempt(request, username):
         attempt.get_data = attempt_data["get_data"]
         attempt.post_data = attempt_data["post_data"]
         attempt.save()
+
+
+def get_user_attempts(request):
+    # django-axes 7 moved get_user_attempts from axes.attempts onto the database handler.
+    handler = AxesDatabaseHandler()
+    if hasattr(handler, "get_user_attempts"):
+        return handler.get_user_attempts(request)
+    from axes.attempts import get_user_attempts as legacy_get_user_attempts
+
+    return legacy_get_user_attempts(request)
 
 
 def check_lockout(request):
