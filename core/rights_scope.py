@@ -42,6 +42,7 @@ continues to its scope parent.
 """
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -127,3 +128,132 @@ def has_model_right(user, model, action):
         )
         return False
     return user.has_perms(rights)
+
+
+# --- client-supplied field paths ------------------------------------------------------
+#
+# Exports and the deduplication summary take column paths from the client (``a__b__c``)
+# and hand them to ``.values()`` / ``.values_list()``. The root rows are scoped by the
+# list resolver, but a path can follow any foreign key to any model: without a check,
+# ``user_created__i_user__password`` exports password hashes (CVE-2026-82491,
+# CVE-2026-82492). `field_path_refusal` is the one place that decides which paths are
+# acceptable.
+#
+# Known limit: only the *model* right of each related model is checked. The row scope of
+# the joined row (its ``get_queryset``) is not re-applied; only the root rows are scoped.
+
+FIELD_PATH_INVALID = "invalid"
+FIELD_PATH_SECRET = "secret"
+FIELD_PATH_UNAUTHORIZED = "unauthorized"
+
+_JSON_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class FieldPathRefused(ValueError):
+    """A client-supplied field path that may not be used, whatever the caller's rights."""
+
+    def __init__(self, path, reason):
+        super().__init__(f"field path {path!r} refused ({reason})")
+        self.path = path
+        self.reason = reason
+
+
+def field_path_relations(model, path):
+    """
+    The related models a ``__``-separated `path` crosses from `model`, in order.
+
+    Raises `FieldPathRefused` when the path is unusable whatever the rights:
+
+    * a segment that looks like a secret (`core.mutation_log_secrets.is_secret_key`);
+    * an unknown field, a reverse or many-to-many relation (they multiply rows and reach
+      sets of objects), or anything after a concrete field (lookups and transforms);
+    * a key under a JSON field that is not a plain identifier.
+
+    A foreign key as the *last* segment is the id stored on the row itself and crosses
+    nothing.
+    """
+    from django.core.exceptions import FieldDoesNotExist
+    from django.db.models import JSONField
+    from core.mutation_log_secrets import is_secret_key
+
+    segments = path.split("__") if isinstance(path, str) else []
+    if not segments or any(not segment for segment in segments):
+        raise FieldPathRefused(path, FIELD_PATH_INVALID)
+
+    crossed = []
+    current = model
+    for index, segment in enumerate(segments):
+        if is_secret_key(segment):
+            raise FieldPathRefused(path, FIELD_PATH_SECRET)
+        try:
+            field = current._meta.get_field(segment)
+        except FieldDoesNotExist:
+            raise FieldPathRefused(path, FIELD_PATH_INVALID)
+        is_last = index == len(segments) - 1
+
+        if field.is_relation:
+            if not (field.concrete and (field.many_to_one or field.one_to_one)):
+                raise FieldPathRefused(path, FIELD_PATH_INVALID)
+            if not is_last:
+                current = field.related_model
+                crossed.append(current)
+            continue
+
+        if isinstance(field, JSONField):
+            for key in segments[index + 1:]:
+                if is_secret_key(key):
+                    raise FieldPathRefused(path, FIELD_PATH_SECRET)
+                if not _JSON_KEY.match(key):
+                    raise FieldPathRefused(path, FIELD_PATH_INVALID)
+            return crossed
+
+        if not is_last:
+            raise FieldPathRefused(path, FIELD_PATH_INVALID)
+    return crossed
+
+
+def field_path_refusal(user, model, path):
+    """
+    Why `user` may not read `path` from rows of `model`, or None when it may.
+
+    `FIELD_PATH_INVALID` / `FIELD_PATH_SECRET`: see `field_path_relations`.
+    `FIELD_PATH_UNAUTHORIZED`: a crossed relation leads to a model whose ``query`` right
+    the user does not hold, or which declares none (`has_model_right` fails closed).
+    The root model itself is not checked: its rows are scoped by the caller.
+    """
+    try:
+        crossed = field_path_relations(model, path)
+    except FieldPathRefused as refused:
+        return refused.reason
+    for related_model in crossed:
+        if not has_model_right(user, related_model, "query"):
+            return FIELD_PATH_UNAUTHORIZED
+    return None
+
+
+def authorized_field_path(user, model, path):
+    """Whether `user` may read the ``__``-separated `path` from rows of `model`."""
+    return field_path_refusal(user, model, path) is None
+
+
+def authorized_field_paths(user, model, paths):
+    """
+    The `paths` `user` may read from rows of `model`, in request order.
+
+    Each refused path is dropped and logged. When paths were requested and none is
+    left, PermissionError: a caller passing an empty list to ``values_list()`` would get
+    every column of the model instead.
+    """
+    allowed = []
+    for path in paths:
+        refusal = field_path_refusal(user, model, path)
+        if refusal is None:
+            allowed.append(path)
+        else:
+            logger.warning(
+                "%s: field path %r refused (%s) for user %s",
+                _model_label(model), path, refusal, getattr(user, "id", None),
+            )
+    if paths and not allowed:
+        raise PermissionError("None of the requested columns may be read")
+    return allowed
