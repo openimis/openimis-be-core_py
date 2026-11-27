@@ -4,51 +4,51 @@ from graphene.types.generic import GenericScalar
 import graphene
 from django.apps import apps
 
-try:
-    from insuree.models import Insuree
-except ImportError:
-    Insuree = None
+# Registered form fields: {module: {form: {gql_field: ("app_label.Model", model_field)}}}.
+# Each module registers its own forms, from its AppConfig.ready(). Models are named,
+# not imported, and resolved at query time: importing the models of an app that is
+# not in INSTALLED_APPS raises RuntimeError (OP-3347).
+MAX_LENGTH_CONSTRAINTS_FIELDS = {}
+_defaults_registered = False
 
 
-def get_model(model_name):
-    """Look up a model from its name."""
+def register_max_length_fields(module, forms, app_label=None):
+    """Register the max_length form fields of a module.
+
+    Skipped when app_label is given and that app is not installed, so a module can
+    declare fields for an optional app without importing it.
+    """
+    if app_label and not apps.is_installed(app_label):
+        return
+    MAX_LENGTH_CONSTRAINTS_FIELDS.setdefault(module, {}).update(forms)
+
+
+def _register_default_fields():
+    global _defaults_registered
+    if _defaults_registered:
+        return
+    _defaults_registered = True
+    register_max_length_fields("admin", {
+        "user": {
+            "username": ("core.User", "username"),
+            "lastName": ("core.InteractiveUser", "last_name"),
+            "otherNames": ("core.InteractiveUser", "other_names"),
+            "phone": ("core.InteractiveUser", "phone"),
+            "email": ("core.InteractiveUser", "email"),
+        },
+    })
+
+
+def get_model(model_label):
+    """Look up a model from its "app_label.Model" label."""
     try:
-        return apps.get_model('core', model_name)
+        return apps.get_model(model_label)
     except LookupError:
         return None
 
 
-MAX_LENGTH_CONSTRAINTS_FIELDS = {
-    "admin": {
-        "user": {
-            "username": ("User", "username"),
-            "lastName": ("InteractiveUser", "last_name"),
-            "otherNames": ("InteractiveUser", "other_names"),
-            "phone": ("InteractiveUser", "phone"),
-            "email": ("InteractiveUser", "email"),
-        },
-    },
-}
-
-if Insuree:
-    MAX_LENGTH_CONSTRAINTS_FIELDS["insuree"] = {
-        "insuree": {
-            "uuid": (Insuree, "uuid"),
-            "chfId": (Insuree, "chf_id"),
-            "lastName": (Insuree, "last_name"),
-            "otherNames": (Insuree, "other_names"),
-            "marital": (Insuree, "marital"),
-            "passport": (Insuree, "passport"),
-            "phone": (Insuree, "phone"),
-            "email": (Insuree, "email"),
-            "currentAddress": (Insuree, "current_address"),
-            "geolocation": (Insuree, "geolocation"),
-            "status": (Insuree, "status"),
-        },
-    }
-
-
 def build_max_length_constraints():
+    _register_default_fields()
     constraints = {}
 
     for module_name, forms in MAX_LENGTH_CONSTRAINTS_FIELDS.items():
@@ -57,13 +57,10 @@ def build_max_length_constraints():
         for form_name, fields in forms.items():
             form_constraints = {}
 
-            for field_name, (model_or_name, model_field_name) in fields.items():
-                if isinstance(model_or_name, str):
-                    model = get_model(model_or_name)
-                    if model is None:
-                        continue
-                else:
-                    model = model_or_name
+            for field_name, (model_label, model_field_name) in fields.items():
+                model = get_model(model_label)
+                if model is None:
+                    continue
 
                 try:
                     field = model._meta.get_field(model_field_name)
