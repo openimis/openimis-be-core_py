@@ -158,6 +158,11 @@ class FieldPathRefused(ValueError):
         self.reason = reason
 
 
+def _is_stored_key(field, rest):
+    target = getattr(field, "target_field", None)
+    return len(rest) == 1 and target is not None and rest[0] == target.name
+
+
 def field_path_relations(model, path):
     """
     The related models a ``__``-separated `path` crosses from `model`, in order.
@@ -169,8 +174,8 @@ def field_path_relations(model, path):
       sets of objects), or anything after a concrete field (lookups and transforms);
     * a key under a JSON field that is not a plain identifier.
 
-    A foreign key as the *last* segment is the id stored on the row itself and crosses
-    nothing.
+    A foreign key as the last segment, or followed only by the field it points to
+    (``group__id``), is the value stored on the row itself and crosses nothing.
     """
     from django.core.exceptions import FieldDoesNotExist
     from django.db.models import JSONField
@@ -194,9 +199,11 @@ def field_path_relations(model, path):
         if field.is_relation:
             if not (field.concrete and (field.many_to_one or field.one_to_one)):
                 raise FieldPathRefused(path, FIELD_PATH_INVALID)
-            if not is_last:
-                current = field.related_model
-                crossed.append(current)
+            if is_last or _is_stored_key(field, segments[index + 1:]):
+                # The value the foreign key stores on this row: nothing is joined.
+                return crossed
+            current = field.related_model
+            crossed.append(current)
             continue
 
         if isinstance(field, JSONField):
